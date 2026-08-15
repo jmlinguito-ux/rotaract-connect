@@ -44,7 +44,8 @@
           "photosPermission": "Rotaract Connect needs access to your photos to allow you to upload and crop cover photos for events."
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "./plugins/withDisableScriptSandboxing"
     ],
     "extra": {
       "eas": {
