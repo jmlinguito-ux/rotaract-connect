@@ -85,10 +85,13 @@ export default function ClubsScreen() {
 
   const isDistrictAdmin = user?.role === 'DISTRICT_ADMIN' || user?.role === 'APP_ADMIN';
 
-  // District Admin Review Requests
+  // District Admin Review Requests — only applications still needing a decision.
+  // Once approved (VERIFIED) or rejected, they leave the Requests bucket.
   const pendingRequests = useMemo(() => {
     if (!user || !isDistrictAdmin) return [];
-    return applicationsForRole(user.role);
+    return applicationsForRole(user.role).filter(
+      a => a.status !== 'VERIFIED' && a.status !== 'REJECTED'
+    );
   }, [user, isDistrictAdmin, applicationsForRole]);
 
   // Filter Clubs by zone, name, city, president, or member match
