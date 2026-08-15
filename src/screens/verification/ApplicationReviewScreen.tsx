@@ -67,9 +67,9 @@ export default function ApplicationReviewScreen({ route, navigation }: Props) {
   const isPresidentApp = app.position.toLowerCase().includes('president');
   const canClubValidate = user.role === 'CLUB_PRESIDENT' && app.club_id === user.club_id && !isPresidentApp && app.status === 'AWAITING_CLUB_VALIDATION';
   const canDistrict = user.role === 'DISTRICT_ADMIN' && isPresidentApp && ['AWAITING_DISTRICT_VALIDATION', 'AWAITING_CLUB_VALIDATION'].includes(app.status);
-  // The App Administrator is the final step — they only act after the club validated,
-  // not on applications still waiting for a Club President.
-  const canAdmin = user.role === 'APP_ADMIN' && app.status === 'AWAITING_ADMIN_VERIFICATION';
+  // The App Administrator can approve or reject at any pending stage (overriding
+  // the club/district steps), but not re-decide an already finalized application.
+  const canAdmin = user.role === 'APP_ADMIN' && !['VERIFIED', 'REJECTED'].includes(app.status);
 
   const canReview = canClubValidate || canDistrict || canAdmin;
 

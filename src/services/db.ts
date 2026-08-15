@@ -292,6 +292,18 @@ export const db = {
     const { club_name, ...row } = updates;
     reportError('updateApplication', (await supabase.from('verification_applications').update(row).eq('id', id)).error);
   },
+  /**
+   * Runs the full review transition server-side (application + applicant profile
+   * + audit log) via the review_application RPC, which enforces authorization by
+   * role and can update another user's profile — something RLS forbids directly.
+   */
+  reviewApplication: async (appId: string, action: string, notes: string) => {
+    reportError('reviewApplication', (await supabase.rpc('review_application', {
+      p_app_id: appId,
+      p_action: action,
+      p_notes: notes,
+    })).error);
+  },
   insertAuditLog: async (l: AuditLog) => {
     reportError('insertAuditLog', (await supabase.from('audit_logs').insert(l)).error);
   },

@@ -858,12 +858,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
 
     setApplications(prev => prev.map(x => (x.id === appId ? { ...x, status: newStatus, notes: notes || x.notes } : x)));
-    db.updateApplication(appId, { status: newStatus, notes: notes || a.notes });
 
     // Keep the applicant's user record in step, or an approved member stays
     // "unverified" everywhere the app checks verification_status.
     setUsers(usersPrev => usersPrev.map(u => (u.id === a.user_id ? { ...u, verification_status: newStatus } : u)));
-    db.updateProfileVerification(a.user_id, newStatus);
 
     const log: AuditLog = {
       id: nextId('log'),
@@ -877,7 +875,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
       created_at: now(),
     };
     setAuditLogs(logs => [log, ...logs]);
-    db.insertAuditLog(log);
+
+    // One authorized, atomic server-side transition: updates the application,
+    // the applicant's profile verification, and the audit log. Replaces the
+    // three separate client writes (the profile update is blocked by RLS).
+    db.reviewApplication(appId, action, notes);
 
     pushNotif({
       user_id: a.user_id,
