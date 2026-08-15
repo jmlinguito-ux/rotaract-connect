@@ -1,0 +1,56 @@
+{
+  "expo": {
+    "name": "rotaract-connect",
+    "slug": "rotaract-connect",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.rotaractconnect.app",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "Rotaract Connect needs access to your photos to allow you to upload and crop cover photos for events."
+      }
+    },
+    "android": {
+      "package": "com.rotaractconnect.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#FFFFFF",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyDVd2ymIl2wn_xXWcZ4FPbzq6YUkDqsERA"
+        }
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-font",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Rotaract Connect uses your location to confirm you are at the venue when you check in to an event."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Rotaract Connect needs access to your photos to allow you to upload and crop cover photos for events."
+        }
+      ],
+      "@react-native-community/datetimepicker"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "0f6d4311-21c9-4826-929f-67efb348a59d"
+      }
+    },
+    "owner": "jmlinguito"
+  }
+}
