@@ -18,6 +18,7 @@ import { RootStackParamList } from '../../navigation/types';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useAppRefreshControl } from '../../hooks/useAppRefreshControl';
 import { AreaOfFocus, RotaractEvent } from '../../types';
 
 import { visibleEvents } from '../../utils/eventApproval';
@@ -68,6 +69,7 @@ export default function EventsScreen() {
   const { events, participants, invitations, userStats, users } = useData();
   const { user } = useAuth();
   const { colors: themeColors } = useTheme();
+  const refreshControl = useAppRefreshControl();
 
   // Multi-select dropdown filters
   const [selectedParticipations, setSelectedParticipations] = useState<ParticipationOption[]>([]);
@@ -367,6 +369,7 @@ export default function EventsScreen() {
       <FlatList
         data={filteredEvents}
         keyExtractor={i => i.id}
+        refreshControl={refreshControl}
         contentContainerStyle={styles.list}
         ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
         renderItem={({ item }) => (

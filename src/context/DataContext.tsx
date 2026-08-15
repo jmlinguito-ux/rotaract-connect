@@ -55,6 +55,11 @@ interface DataContextValue {
   conversations: Conversation[];
   messages: DirectMessage[];
 
+  /** True while a manual pull-to-refresh fetch is in flight. */
+  refreshing: boolean;
+  /** Re-pulls the full dataset from Supabase (pull-to-refresh). */
+  refresh: () => Promise<void>;
+
   createEvent: (e: Omit<RotaractEvent, 'id'>) => RotaractEvent;
   updateEvent: (eventId: string, updates: Partial<Omit<RotaractEvent, 'id'>>) => void;
   updateEventStatus: (eventId: string, status: RotaractEvent['status']) => void;
@@ -156,28 +161,44 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [messages, setMessages] = useState<DirectMessage[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Pulls the full dataset from Supabase and replaces local state with it.
+  // Supabase is the source of truth, so this both hydrates on load and reconciles
+  // any optimistic writes with what actually persisted. `cancelledRef` guards
+  // against a resolve arriving after the provider unmounted.
+  const applySnapshot = useCallback(async (cancelledRef?: { current: boolean }) => {
+    const d = await loadAll();
+    if (cancelledRef?.current) return;
+    setUsers(d.users); setClubs(d.clubs); setEvents(d.events);
+    setParticipants(d.participants); setInvitations(d.invitations);
+    setImpacts(d.impacts); setApplications(d.applications);
+    setAuditLogs(d.auditLogs); setNotifications(d.notifications);
+    setConversations(d.conversations); setMessages(d.messages);
+  }, []);
+
+  // Manual refresh for pull-to-refresh. Serialized behind `refreshing` so a
+  // second pull mid-fetch is ignored rather than racing the first.
+  const refresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await applySnapshot();
+    } catch (e) {
+      console.warn('Failed to refresh data from Supabase', e);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [applySnapshot]);
 
   // Supabase is the source of truth. Reload whenever auth changes: clubs and
   // zones are world-readable so the registration club picker is populated even
   // before sign-in, while the RLS-protected tables come back empty until the
   // user is authenticated (and empty again after sign-out, clearing the cache).
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const d = await loadAll();
-        if (cancelled) return;
-        setUsers(d.users); setClubs(d.clubs); setEvents(d.events);
-        setParticipants(d.participants); setInvitations(d.invitations);
-        setImpacts(d.impacts); setApplications(d.applications);
-        setAuditLogs(d.auditLogs); setNotifications(d.notifications);
-        setConversations(d.conversations); setMessages(d.messages);
-      } catch (e) {
-        console.warn('Failed to load data from Supabase', e);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [isAuthenticated]);
+    const cancelledRef = { current: false };
+    applySnapshot(cancelledRef).catch(e => console.warn('Failed to load data from Supabase', e));
+    return () => { cancelledRef.current = true; };
+  }, [isAuthenticated, applySnapshot]);
 
   const addClub = useCallback((c: {
     club_name: string;
@@ -228,7 +249,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const newPosition = becomesPresident ? 'President' : losesPresidency ? 'Member' : undefined;
 
     setUsers(prev => prev.map(u => (u.id === targetUserId ? { ...u, role: newRole, ...(newPosition ? { position: newPosition } : {}) } : u)));
-    db.updateProfileRole(targetUserId, newRole, newPosition);
+    // admin_set_role persists the role, position, and the club president sync
+    // server-side in one atomic transaction (RLS blocks direct cross-user
+    // updates to profiles and clubs).
+    db.updateProfileRole(targetUserId, newRole);
 
     if (target?.club_id && (becomesPresident || losesPresidency)) {
       const presidentId = becomesPresident ? targetUserId : '';
@@ -239,7 +263,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
             president_name: becomesPresident ? target.full_name : 'Pending Election',
           }
         : c)));
-      db.updateClubPresident(target.club_id, presidentId || null);
     }
 
     const label = ROLE_LABELS[newRole];
@@ -993,6 +1016,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   return (
     <DataContext.Provider value={{
       users, events: resolvedEvents, participants, invitations, impacts, applications, auditLogs, notifications, clubs, conversations, messages,
+      refreshing, refresh,
       createEvent, updateEvent, updateEventStatus, resetEventApprovals, cancelEvent, approveEvent, rejectEvent,
       joinEvent, leaveEvent, approveParticipant, declineParticipant, markAttendance, checkIn, addClub,
       invite, respondInvitation, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, sendDirectMessage, saveImpact, reviewApplication, resubmitApplication, markNotificationsRead, deleteNotification, updateUserRole, removeUser, addApplication,

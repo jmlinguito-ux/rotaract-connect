@@ -328,17 +328,21 @@ export const db = {
     const { sender_name, receiver_name, ...row } = msg;
     reportError('insertMessage', (await supabase.from('direct_messages').insert(row)).error);
   },
-  updateClubPresident: async (clubId: string, presidentId: string | null) => {
-    reportError('updateClubPresident', (await supabase.from('clubs').update({ president_id: presidentId }).eq('id', clubId)).error);
-  },
   insertClub: async (c: Club) => {
     const { president_name, ...row } = c;
     reportError('insertClub', (await supabase.from('clubs').insert({ ...row, president_id: row.president_id || null })).error);
   },
-  updateProfileRole: async (userId: string, role: string, position?: string) => {
-    const updates: any = { role };
-    if (position) updates.position = position;
-    reportError('updateProfileRole', (await supabase.from('profiles').update(updates).eq('id', userId)).error);
+  /**
+   * Role change via the admin_set_role RPC. A direct profiles update is blocked
+   * by RLS for any row other than the caller's own, so an App Admin changing
+   * someone else's role never persisted. The RPC enforces the APP_ADMIN check
+   * server-side and also syncs the profile position and the club's president.
+   */
+  updateProfileRole: async (userId: string, role: string) => {
+    reportError('updateProfileRole', (await supabase.rpc('admin_set_role', {
+      p_user_id: userId,
+      p_role: role,
+    })).error);
   },
   updateProfileVerification: async (userId: string, status: string) => {
     reportError('updateProfileVerification', (await supabase.from('profiles').update({ verification_status: status }).eq('id', userId)).error);

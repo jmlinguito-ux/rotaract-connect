@@ -19,6 +19,7 @@ import { RootStackParamList } from '../../navigation/types';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useAppRefreshControl } from '../../hooks/useAppRefreshControl';
 import { AppUser, VerificationApplication } from '../../types';
 import { BottomSheet } from '../../components/BottomSheet';
 import UserAvatar from '../../components/UserAvatar';
@@ -67,6 +68,7 @@ export default function ClubsScreen() {
   const { user } = useAuth();
   const { clubs, users, getOrCreateConversation, addClub, applicationsForRole, removeUser } = useData();
   const { colors: themeColors } = useTheme();
+  const refreshControl = useAppRefreshControl();
 
   const isAppAdmin = user?.role === 'APP_ADMIN';
   const [memberToRemove, setMemberToRemove] = useState<AppUser | null>(null);
@@ -293,6 +295,7 @@ export default function ClubsScreen() {
         <FlatList
           data={filteredClubs}
           keyExtractor={i => i.id}
+          refreshControl={refreshControl}
           contentContainerStyle={styles.list}
           ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
           renderItem={({ item }) => {
@@ -319,6 +322,7 @@ export default function ClubsScreen() {
         <FlatList
           data={filteredMembers}
           keyExtractor={i => i.id}
+          refreshControl={refreshControl}
           contentContainerStyle={styles.list}
           ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
           renderItem={({ item }) => {
@@ -361,6 +365,7 @@ export default function ClubsScreen() {
         <FlatList
           data={filteredRequests}
           keyExtractor={i => i.id}
+          refreshControl={refreshControl}
           contentContainerStyle={styles.list}
           ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
           renderItem={({ item }) => (

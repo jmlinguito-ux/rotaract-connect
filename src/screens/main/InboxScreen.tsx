@@ -9,6 +9,7 @@ import { RootStackParamList } from '../../navigation/types';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useAppRefreshControl } from '../../hooks/useAppRefreshControl';
 import { DeclineReasonModal } from '../../components/DeclineReasonModal';
 import { SwipeableRow } from '../../components/SwipeableRow';
 import UserAvatar from '../../components/UserAvatar';
@@ -72,6 +73,7 @@ export default function InboxScreen() {
     deleteNotification,
   } = useData();
   const { colors: themeColors } = useTheme();
+  const refreshControl = useAppRefreshControl();
 
   const [inviteDeclineTarget, setInviteDeclineTarget] = useState<{
     invitationId: string;
@@ -293,6 +295,7 @@ export default function InboxScreen() {
       <FlatList
         data={rows}
         keyExtractor={r => r.key}
+        refreshControl={refreshControl}
         contentContainerStyle={styles.list}
         renderItem={({ item }) => renderRow(item)}
       />

@@ -8,6 +8,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useAppRefreshControl } from '../../hooks/useAppRefreshControl';
 import { RootStackParamList } from '../../navigation/types';
 import { ROLE_BADGES } from '../../utils/roles';
 import UserAvatar from '../../components/UserAvatar';
@@ -19,6 +20,7 @@ export default function ProfileScreen() {
   const { user, signOut, updateAvatar } = useAuth();
   const { userStats } = useData();
   const { colors: themeColors } = useTheme();
+  const refreshControl = useAppRefreshControl();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [fullImageUri, setFullImageUri] = useState<string | null>(null);
 
@@ -51,7 +53,7 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.bg }]} edges={['top']}>
-      <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
+      <ScrollView contentContainerStyle={{ paddingBottom: 40 }} refreshControl={refreshControl}>
         <View style={styles.header}>
           <View style={styles.avatarWrap}>
             {/* Tapping the photo opens it full resolution; the camera button changes it. */}

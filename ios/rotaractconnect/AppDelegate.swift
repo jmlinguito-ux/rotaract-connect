@@ -22,7 +22,7 @@ public class AppDelegate: ExpoAppDelegate {
     bindReactNativeFactory(factory)
 
 #if os(iOS) || os(tvOS)
-    window = UIWindow(frame: UIScreen.main.bounds)
+    window = UIWindow()
     factory.startReactNative(
       withModuleName: "main",
       in: window,
