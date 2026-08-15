@@ -236,8 +236,11 @@ export default function ChatScreen({ route, navigation }: Props) {
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={headerHeight}
+        // Android's activity is windowSoftInputMode=adjustResize, so the window
+        // already shrinks above the keyboard — adding `height` + an offset here
+        // double-counts and leaves a gap. Only iOS needs manual avoidance.
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? headerHeight : 0}
       >
         <FlatList
           ref={listRef}
