@@ -236,19 +236,27 @@ export default function InboxScreen() {
       case 'chat': {
         const ev = row.event;
         const partsCount = participantsFor(ev.id).filter(p => p.status === 'JOINED').length;
+        const archived = ev.status === 'COMPLETED' || ev.status === 'CANCELLED';
         return (
           <TouchableOpacity
             style={[styles.card, styles.cardTopRow, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}
             activeOpacity={0.8}
             onPress={() => openGroupChat(ev)}
           >
-            <View style={[styles.iconCircle, { backgroundColor: themeColors.primary }]}>
-              <Ionicons name="chatbubbles" size={18} color="#fff" />
+            <View style={[styles.iconCircle, { backgroundColor: archived ? themeColors.textMuted : themeColors.primary }]}>
+              <Ionicons name={archived ? 'archive' : 'chatbubbles'} size={18} color="#fff" />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.rowTitle, { color: themeColors.text }]} numberOfLines={1}>{ev.title}</Text>
+              <View style={styles.inlineRow}>
+                <Text style={[styles.rowTitle, { color: themeColors.text, flexShrink: 1 }]} numberOfLines={1}>{ev.title}</Text>
+                {archived && (
+                  <View style={[styles.archivedPill, { backgroundColor: themeColors.textMuted + '22' }]}>
+                    <Text style={[styles.archivedPillText, { color: themeColors.textMuted }]}>Archived</Text>
+                  </View>
+                )}
+              </View>
               <Text style={[styles.rowMeta, { color: themeColors.textMuted }]} numberOfLines={1}>
-                {partsCount} participants • Tap to chat
+                {partsCount} participants • {archived ? 'Read-only' : 'Tap to chat'}
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={16} color={themeColors.textMuted} />
@@ -383,6 +391,8 @@ const styles = StyleSheet.create({
   rowTime: { fontSize: 10, marginTop: 3 },
   inlineRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   unreadDot: { width: 8, height: 8, borderRadius: 4, alignSelf: 'flex-start', marginTop: 4 },
+  archivedPill: { paddingHorizontal: 6, paddingVertical: 1, borderRadius: 8 },
+  archivedPillText: { fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
 
   inviteBtns: { flexDirection: 'row', gap: 8, marginTop: 12 },
   acceptBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: 10, borderRadius: 10 },

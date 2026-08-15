@@ -224,6 +224,16 @@ export default function EventDetailScreen({ route, navigation }: Props) {
     run: () => navigation.navigate('MarkAttendance', { eventId }),
   });
 
+  // Banner announcements only make sense once an event is live and has participants.
+  if (['PUBLISHED', 'RECRUITING', 'SCHEDULED', 'ONGOING'].includes(event.status)) {
+    optionsMenuItems.push({
+      label: 'Send Banner Notification',
+      sub: 'Announce an update to participants (Normal / Alert / High priority).',
+      icon: 'megaphone-outline',
+      run: () => navigation.navigate('OrganizerBroadcast', { eventId }),
+    });
+  }
+
   // Impact can only be recorded once the event has actually happened — completing
   // early would release scoreboard points for an event that never ran.
   const eventHasEnded = Date.now() >= end.getTime();

@@ -10,6 +10,7 @@ import { zones } from '../../data/mockData';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import FullImageModal from '../../components/FullImageModal';
+import { PickedImage } from '../../services/storage';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Register'>;
 
@@ -30,13 +31,18 @@ export default function RegisterScreen({ navigation }: Props) {
   const [contactNumber, setContactNumber] = useState('');
   const [position, setPosition] = useState('Member');
   const [positionModalVisible, setPositionModalVisible] = useState(false);
-  const [proofUrl, setProofUrl] = useState<string | null>(null);
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  // Hold the full picked asset (uri + base64) so the image can be uploaded to
+  // Supabase Storage AFTER sign-up establishes a session (uploads need the new
+  // user's id + auth). The `.uri` is only used for the on-screen preview.
+  const [proofAsset, setProofAsset] = useState<PickedImage | null>(null);
+  const [avatarAsset, setAvatarAsset] = useState<PickedImage | null>(null);
+  const proofUrl = proofAsset?.uri ?? null;
+  const avatarUrl = avatarAsset?.uri ?? null;
   const [fullImageUri, setFullImageUri] = useState<{ uri: string; title: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const pickImage = async (onPicked: (uri: string) => void, square: boolean) => {
+  const pickImage = async (onPicked: (asset: PickedImage) => void, square: boolean) => {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
@@ -48,17 +54,19 @@ export default function RegisterScreen({ navigation }: Props) {
         allowsEditing: true,
         ...(square ? { aspect: [1, 1] as [number, number] } : {}),
         quality: 0.8,
+        base64: true,
       });
       if (!res.canceled && res.assets?.[0]?.uri) {
-        onPicked(res.assets[0].uri);
+        const a = res.assets[0];
+        onPicked({ uri: a.uri, base64: a.base64, mimeType: a.mimeType, fileName: a.fileName });
       }
     } catch (e) {
       Alert.alert('Upload Error', 'Unable to open image library.');
     }
   };
 
-  const handlePickProof = () => pickImage(setProofUrl, false);
-  const handlePickAvatar = () => pickImage(setAvatarUrl, true);
+  const handlePickProof = () => pickImage(setProofAsset, false);
+  const handlePickAvatar = () => pickImage(setAvatarAsset, true);
 
   const selectedClub = clubs.find(c => c.id === selectedClubId);
   const selectedZone = selectedClub ? zones.find(z => z.id === selectedClub.zone_id) : null;
@@ -266,9 +274,9 @@ export default function RegisterScreen({ navigation }: Props) {
                 club_name: selectedClub?.club_name ?? '',
                 position,
                 role: position === 'President' ? 'CLUB_PRESIDENT' : 'MEMBER',
-                avatar_url: avatarUrl || undefined,
+                avatar_asset: avatarAsset || undefined,
                 member_id: memberId,
-                proof_url: proofUrl || undefined,
+                proof_asset: proofAsset || undefined,
               });
               setLoading(false);
 

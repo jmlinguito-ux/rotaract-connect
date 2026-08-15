@@ -1,7 +1,7 @@
 import { supabase } from './supabase';
 import {
   AppUser, Club, RotaractEvent, EventParticipant, EventInvitation, EventImpact,
-  VerificationApplication, AuditLog, AppNotification, Conversation, DirectMessage,
+  VerificationApplication, AuditLog, AppNotification, Conversation, DirectMessage, ReadCursor,
 } from '../types';
 
 /**
@@ -27,12 +27,13 @@ export interface LoadedData {
   notifications: AppNotification[];
   conversations: Conversation[];
   messages: DirectMessage[];
+  readCursors: ReadCursor[];
 }
 
 export async function loadAll(): Promise<LoadedData> {
   const [
     profilesRes, clubsRes, eventsRes, epcRes, partsRes, invRes, impRes,
-    appsRes, auditRes, notifRes, convRes, msgRes,
+    appsRes, auditRes, notifRes, convRes, msgRes, readsRes,
   ] = await Promise.all([
     supabase.from('profiles').select('*'),
     supabase.from('clubs').select('*'),
@@ -45,7 +46,9 @@ export async function loadAll(): Promise<LoadedData> {
     supabase.from('audit_logs').select('*'),
     supabase.from('notifications').select('*'),
     supabase.from('conversations').select('*'),
-    supabase.from('direct_messages').select('*'),
+    supabase.from('direct_messages').select('*').order('created_at', { ascending: true }),
+    // message_reads may not exist until migration 0007 is applied — tolerate that.
+    supabase.from('message_reads').select('*'),
   ]);
 
   const profiles = profilesRes.data ?? [];
@@ -194,6 +197,7 @@ export async function loadAll(): Promise<LoadedData> {
     conversation_id: n.conversation_id ?? undefined,
     is_read: n.is_read,
     created_at: n.created_at,
+    priority: n.priority ?? undefined,
   }));
 
   const conversations: Conversation[] = (convRes.data ?? []).map((c: any) => ({
@@ -221,13 +225,22 @@ export async function loadAll(): Promise<LoadedData> {
     sender_name: nameById.get(d.sender_id) || '',
     receiver_id: d.receiver_id ?? undefined,
     receiver_name: (d.receiver_id && nameById.get(d.receiver_id)) || 'Group Chat',
-    text: d.text,
+    text: d.text ?? '',
     created_at: d.created_at,
+    attachment_path: d.attachment_path ?? undefined,
+    attachment_type: d.attachment_type ?? undefined,
+  }));
+
+  const readCursors: ReadCursor[] = (readsRes.data ?? []).map((r: any) => ({
+    conversation_id: r.conversation_id,
+    user_id: r.user_id,
+    last_read_at: r.last_read_at,
+    last_read_message_id: r.last_read_message_id ?? undefined,
   }));
 
   return {
     users, clubs: mappedClubs, events: mappedEvents, participants, invitations,
-    impacts, applications, auditLogs, notifications, conversations, messages,
+    impacts, applications, auditLogs, notifications, conversations, messages, readCursors,
   };
 }
 
@@ -324,9 +337,29 @@ export const db = {
     const { participant_name, organizer_name, ...row } = updates;
     reportError('updateConversation', (await supabase.from('conversations').update(row).eq('id', id)).error);
   },
-  insertMessage: async (msg: DirectMessage) => {
-    const { sender_name, receiver_name, ...row } = msg;
-    reportError('insertMessage', (await supabase.from('direct_messages').insert(row)).error);
+  insertMessage: async (msg: DirectMessage): Promise<boolean> => {
+    // Strip derived / transient fields; keep attachment_path + attachment_type.
+    const { sender_name, receiver_name, send_status, ...row } = msg;
+    const { error } = await supabase.from('direct_messages').insert(row);
+    reportError('insertMessage', error);
+    return !error;
+  },
+  /** Upserts the caller's read cursor for a conversation (one row per user). */
+  upsertReadCursor: async (conversationId: string, userId: string, lastMessageId?: string) => {
+    reportError('upsertReadCursor', (await supabase.from('message_reads').upsert({
+      conversation_id: conversationId,
+      user_id: userId,
+      last_read_at: new Date().toISOString(),
+      last_read_message_id: lastMessageId ?? null,
+    }, { onConflict: 'conversation_id,user_id' })).error);
+  },
+  /** Authorized organizer banner fan-out to every JOINED participant of an event. */
+  broadcastToEvent: async (eventId: string, title: string, message: string, priority: string): Promise<{ ok: boolean; error?: string }> => {
+    const { error } = await supabase.rpc('send_event_broadcast', {
+      p_event_id: eventId, p_title: title, p_message: message, p_priority: priority,
+    });
+    reportError('broadcastToEvent', error);
+    return { ok: !error, error: error?.message };
   },
   insertClub: async (c: Club) => {
     const { president_name, ...row } = c;

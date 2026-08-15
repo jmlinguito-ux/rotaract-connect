@@ -10,6 +10,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { BottomSheet } from '../../components/BottomSheet';
 import FullImageModal from '../../components/FullImageModal';
 import UserAvatar from '../../components/UserAvatar';
+import { getSignedImageUrl, isRemoteUrl } from '../../services/storage';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ApplicationReview'>;
 
@@ -25,6 +26,10 @@ export default function ApplicationReviewScreen({ route, navigation }: Props) {
   const [rejectReason, setRejectReason] = useState('');
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const [proofModalUri, setProofModalUri] = useState<string | null>(null);
+  // proof_url is now an object path in the private verification-proofs bucket, so
+  // resolve a short-lived signed URL to display it. Older rows may already hold a
+  // full URL — pass those through unchanged.
+  const [proofDisplayUri, setProofDisplayUri] = useState<string | null>(null);
 
   // Re-apply State
   const [reapplyModalVisible, setReapplyModalVisible] = useState(false);
@@ -61,6 +66,17 @@ export default function ApplicationReviewScreen({ route, navigation }: Props) {
       setEditPosition(app.position || 'Member');
     }
   }, [app?.member_id, app?.club_id, app?.club_name, app?.position]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const proof = app?.proof_url;
+    if (!proof) { setProofDisplayUri(null); return; }
+    if (isRemoteUrl(proof) || proof.startsWith('file:')) { setProofDisplayUri(proof); return; }
+    getSignedImageUrl('verification-proofs', proof)
+      .then(url => { if (!cancelled) setProofDisplayUri(url); })
+      .catch(() => { if (!cancelled) setProofDisplayUri(null); });
+    return () => { cancelled = true; };
+  }, [app?.proof_url]);
 
   if (!app || !user) return <Text style={{ padding: 20, color: themeColors.text }}>Application not found.</Text>;
 
@@ -155,9 +171,9 @@ export default function ApplicationReviewScreen({ route, navigation }: Props) {
             <TouchableOpacity
               activeOpacity={0.9}
               style={{ marginTop: 8, borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: themeColors.border, height: 180 }}
-              onPress={() => setProofModalUri(app.proof_url!)}
+              onPress={() => proofDisplayUri && setProofModalUri(proofDisplayUri)}
             >
-              <Image source={{ uri: app.proof_url }} style={{ width: '100%', height: '100%', resizeMode: 'cover' }} />
+              <Image source={{ uri: proofDisplayUri ?? undefined }} style={{ width: '100%', height: '100%', resizeMode: 'cover' }} />
               <View style={{ position: 'absolute', bottom: 8, right: 8, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                 <Ionicons name="expand-outline" size={12} color="#fff" />
                 <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>Tap for Full Resolution</Text>

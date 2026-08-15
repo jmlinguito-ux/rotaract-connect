@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { StyleProp, StyleSheet, ViewStyle } from 'react-native';
-import MapView, { Marker, Region } from 'react-native-maps';
+import MapView, { Marker, Circle, Region } from 'react-native-maps';
 import { RotaractEvent } from '../types';
 import { statusColor } from '../theme/statusColor';
 
@@ -56,8 +56,15 @@ export type EventMapProps = {
   events: RotaractEvent[];
   userCoords?: { latitude: number; longitude: number } | null;
   style?: StyleProp<ViewStyle>;
-  /** Preview maps are static; the fullscreen map pans, zooms and taps. */
+  /** Fullscreen maps additionally allow rotate/pitch; pan + zoom work everywhere. */
   interactive?: boolean;
+  /**
+   * Draw an approximate-area circle around each event instead of implying an exact
+   * pinpoint. Venue coordinates are often only approximate.
+   */
+  showAreas?: boolean;
+  /** Radius in metres for the approximate-area circles. */
+  areaRadiusM?: number;
   onMarkerPress?: (eventId: string) => void;
 };
 
@@ -73,11 +80,14 @@ function sameRegion(a: Region | null, b: Region): boolean {
   );
 }
 
-export function EventMap({ events, userCoords, style, interactive = false, onMarkerPress }: EventMapProps) {
+export function EventMap({ events, userCoords, style, interactive = false, showAreas = true, areaRadiusM = 400, onMarkerPress }: EventMapProps) {
   const mapRef = useRef<MapView>(null);
   const isMapReady = useRef(false);
   const hasSize = useRef(false);
   const lastAnimated = useRef<Region | null>(null);
+  // Once the user pans/zooms, stop auto-reframing so realtime data updates don't
+  // yank the map out from under them.
+  const userInteracted = useRef(false);
   const region = useMemo(() => regionFor(events, userCoords), [events, userCoords]);
 
   /**
@@ -89,6 +99,7 @@ export function EventMap({ events, userCoords, style, interactive = false, onMar
    */
   useEffect(() => {
     if (!isMapReady.current || !hasSize.current || !mapRef.current) return;
+    if (userInteracted.current) return;
     if (sameRegion(lastAnimated.current, region)) return;
     lastAnimated.current = region;
     mapRef.current.animateToRegion(region, 400);
@@ -99,8 +110,9 @@ export function EventMap({ events, userCoords, style, interactive = false, onMar
       ref={mapRef}
       style={[styles.map, style]}
       initialRegion={region}
-      scrollEnabled={interactive}
-      zoomEnabled={interactive}
+      // Pan + zoom work directly in the container now — no need to open fullscreen.
+      scrollEnabled
+      zoomEnabled
       rotateEnabled={interactive}
       pitchEnabled={interactive}
       toolbarEnabled={false}
@@ -114,6 +126,11 @@ export function EventMap({ events, userCoords, style, interactive = false, onMar
         isMapReady.current = true;
         // initialRegion already framed this; don't animate to it again.
         lastAnimated.current = region;
+      }}
+      onRegionChangeComplete={(_r, details) => {
+        // `details.isGesture` is true only for user-driven changes (iOS/newer
+        // Android); treat any user movement as opting out of auto-reframing.
+        if (details?.isGesture) userInteracted.current = true;
       }}
     >
       {userCoords && (
@@ -133,16 +150,28 @@ export function EventMap({ events, userCoords, style, interactive = false, onMar
           distText = `${formatDistance(d)} away • `;
         }
 
+        const color = statusColor(event.status);
         return (
-          <Marker
-            key={event.id}
-            coordinate={{ latitude: event.latitude, longitude: event.longitude }}
-            pinColor={statusColor(event.status)}
-            title={event.title}
-            description={`${distText}${event.address}, ${event.city}`}
-            tracksViewChanges={false}
-            onPress={interactive ? () => onMarkerPress?.(event.id) : undefined}
-          />
+          <React.Fragment key={event.id}>
+            {showAreas && (
+              // Communicates an approximate area rather than a precise pinpoint.
+              <Circle
+                center={{ latitude: event.latitude, longitude: event.longitude }}
+                radius={areaRadiusM}
+                strokeWidth={1}
+                strokeColor={color + '99'}
+                fillColor={color + '26'}
+              />
+            )}
+            <Marker
+              coordinate={{ latitude: event.latitude, longitude: event.longitude }}
+              pinColor={color}
+              title={event.title}
+              description={`${distText}${event.address}, ${event.city}`}
+              tracksViewChanges={false}
+              onPress={() => onMarkerPress?.(event.id)}
+            />
+          </React.Fragment>
         );
       })}
     </MapView>

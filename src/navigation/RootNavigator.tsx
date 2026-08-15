@@ -1,5 +1,7 @@
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { navigationRef } from './navigationRef';
+import { InAppNotificationBanner } from '../components/InAppNotificationBanner';
 import { StatusBar } from 'expo-status-bar';
 import { RootStackParamList } from './types';
 import { useAuth } from '../context/AuthContext';
@@ -23,6 +25,7 @@ import ScoreboardScreen from '../screens/scoreboard/ScoreboardScreen';
 import ChatScreen from '../screens/messaging/ChatScreen';
 import SettingsScreen from '../screens/profile/SettingsScreen';
 import RoleManagementScreen from '../screens/admin/RoleManagementScreen';
+import OrganizerBroadcastScreen from '../screens/events/OrganizerBroadcastScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -43,7 +46,7 @@ export default function RootNavigator() {
   };
 
   return (
-    <NavigationContainer theme={navTheme}>
+    <NavigationContainer theme={navTheme} ref={navigationRef}>
       <StatusBar style={isNightMode ? 'light' : 'dark'} />
       <Stack.Navigator
         screenOptions={{
@@ -72,11 +75,13 @@ export default function RootNavigator() {
             <Stack.Screen name="Chat" component={ChatScreen} options={({ route }) => ({ title: route.params.recipientName || 'Chat' })} />
             <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: 'Settings & Preferences' }} />
             <Stack.Screen name="RoleManagement" component={RoleManagementScreen} options={{ title: 'Roles & Permissions' }} />
+            <Stack.Screen name="OrganizerBroadcast" component={OrganizerBroadcastScreen} options={{ title: 'Send Banner Notification' }} />
           </>
         ) : (
           <Stack.Screen name="Auth" component={AuthStack} options={{ headerShown: false }} />
         )}
       </Stack.Navigator>
+      {isAuthenticated && <InAppNotificationBanner />}
     </NavigationContainer>
   );
 }

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import { AppUser, UserRole, VerificationStatus } from '../types';
 import { supabase } from '../services/supabase';
+import { PickedImage, uploadPublicImage, uploadImageAsset } from '../services/storage';
 
 interface AuthContextValue {
   user: AppUser | null;
@@ -26,9 +27,11 @@ export interface SignUpDetails {
   club_name: string;
   position: string;
   role?: UserRole;
-  avatar_url?: string;
+  /** Picked profile photo, uploaded to Storage after the account is created. */
+  avatar_asset?: PickedImage;
   member_id?: string;
-  proof_url?: string;
+  /** Picked ID/roster proof, uploaded to the private bucket after account creation. */
+  proof_asset?: PickedImage;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -132,6 +135,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { error: error?.message ?? 'Sign up failed' };
     }
 
+    // The account (and its session) now exists, so Storage uploads authorize
+    // under the new user's id. Do them BEFORE inserting the rows so the persisted
+    // values are real Supabase URLs/paths, never dead local file:// uris.
+    let avatarUrl: string | undefined;
+    let proofPath: string | undefined;
+    try {
+      if (details.avatar_asset) {
+        avatarUrl = await uploadPublicImage('avatars', data.user.id, details.avatar_asset);
+      }
+    } catch (e) {
+      console.warn('[auth] avatar upload failed', e);
+    }
+    try {
+      if (details.proof_asset) {
+        // Private bucket: store the object path, resolve a signed URL when viewed.
+        proofPath = await uploadImageAsset('verification-proofs', data.user.id, details.proof_asset);
+      }
+    } catch (e) {
+      console.warn('[auth] proof upload failed', e);
+    }
+
     const profile = {
       id: data.user.id,
       full_name: details.full_name,
@@ -141,7 +165,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       position: details.position,
       role: details.role ?? 'MEMBER',
       verification_status: 'AWAITING_CLUB_VALIDATION' as VerificationStatus,
-      avatar_url: details.avatar_url,
+      avatar_url: avatarUrl,
       contact_number: details.contact_number,
     };
 
@@ -160,7 +184,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         member_id: details.member_id,
         position: details.position,
         status: 'AWAITING_CLUB_VALIDATION',
-        proof_url: details.proof_url,
+        proof_url: proofPath,
       });
     }
 

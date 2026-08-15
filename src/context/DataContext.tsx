@@ -1,11 +1,12 @@
-import React, { createContext, useContext, useState, ReactNode, useCallback, useMemo, useEffect } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useCallback, useMemo, useEffect, useRef } from 'react';
 import {
   RotaractEvent, EventParticipant, EventInvitation, EventImpact,
   VerificationApplication, AuditLog, AppNotification,
   VerificationStatus, AttendanceStatus, AppUser, UserRole, Club,
-  Conversation, DirectMessage,
+  Conversation, DirectMessage, ReadCursor, NotificationPriority,
 } from '../types';
 import { loadAll, db } from '../services/db';
+import { supabase } from '../services/supabase';
 import { useAuth } from './AuthContext';
 import { getEffectiveEventStatus } from '../utils/eventUtils';
 import { approverClubIdsFor, pendingApproverClubIdsFor } from '../utils/eventApproval';
@@ -54,6 +55,7 @@ interface DataContextValue {
   clubs: Club[];
   conversations: Conversation[];
   messages: DirectMessage[];
+  readCursors: ReadCursor[];
 
   /** True while a manual pull-to-refresh fetch is in flight. */
   refreshing: boolean;
@@ -81,7 +83,15 @@ interface DataContextValue {
   getOrCreateConversation: (eventId: string | undefined, senderUser: AppUser, receiverId: string, receiverName: string, eventTitle?: string) => Conversation;
   getOrCreateEventGroupConversation: (eventId: string) => Conversation;
   canAccessEventGroupChat: (eventId: string, userId: string) => boolean;
-  sendDirectMessage: (conversationId: string, eventId: string | undefined, senderUser: AppUser, receiverId: string | undefined, receiverName: string, text: string, eventTitle?: string) => void;
+  sendDirectMessage: (conversationId: string, eventId: string | undefined, senderUser: AppUser, receiverId: string | undefined, receiverName: string, text: string, eventTitle?: string, attachmentPath?: string) => void;
+  /** Re-sends a message whose persistence failed, without duplicating it. */
+  retryMessage: (messageId: string) => void;
+  /** Marks a conversation read up to its latest message (call when it is visible). */
+  markConversationRead: (conversationId: string, userId: string) => void;
+  /** Read cursors for a conversation — who has read up to when. */
+  readCursorsFor: (conversationId: string) => ReadCursor[];
+  /** Organizer-only: fan a banner notification out to every JOINED participant. */
+  broadcastToEvent: (eventId: string, title: string, message: string, priority: NotificationPriority) => Promise<{ ok: boolean; error?: string }>;
 
   saveImpact: (impact: EventImpact) => void;
 
@@ -141,6 +151,7 @@ interface DataContextValue {
   impactFor: (eventId: string) => EventImpact | undefined;
   notificationsFor: (userId: string) => AppNotification[];
   messagesForConversation: (conversationId: string) => DirectMessage[];
+  unreadCountForUser: (userId: string) => number;
   auditFor: (appId: string) => AuditLog[];
   applicationsForRole: (role: UserRole, clubId?: string) => VerificationApplication[];
   userStats: (userId: string) => { joined: number; organized: number; hours: number; clubsCollab: number; service: number; fellowships: number };
@@ -149,7 +160,7 @@ interface DataContextValue {
 const DataContext = createContext<DataContextValue | undefined>(undefined);
 
 export function DataProvider({ children }: { children: ReactNode }) {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user: authUser } = useAuth();
   const [users, setUsers] = useState<AppUser[]>([]);
   const [clubs, setClubs] = useState<Club[]>([]);
   const [events, setEvents] = useState<RotaractEvent[]>([]);
@@ -161,6 +172,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [messages, setMessages] = useState<DirectMessage[]>([]);
+  const [readCursors, setReadCursors] = useState<ReadCursor[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
   // Pulls the full dataset from Supabase and replaces local state with it.
@@ -175,6 +187,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setImpacts(d.impacts); setApplications(d.applications);
     setAuditLogs(d.auditLogs); setNotifications(d.notifications);
     setConversations(d.conversations); setMessages(d.messages);
+    setReadCursors(d.readCursors);
   }, []);
 
   // Manual refresh for pull-to-refresh. Serialized behind `refreshing` so a
@@ -199,6 +212,131 @@ export function DataProvider({ children }: { children: ReactNode }) {
     applySnapshot(cancelledRef).catch(e => console.warn('Failed to load data from Supabase', e));
     return () => { cancelledRef.current = true; };
   }, [isAuthenticated, applySnapshot]);
+
+  // Keep a live reference to `users` for realtime row-mapping without making the
+  // subscription effect depend on (and tear down/rebuild on) every user change.
+  const usersRef = useRef<AppUser[]>(users);
+  useEffect(() => { usersRef.current = users; }, [users]);
+
+  // ------------------------------------------------------------------
+  // REALTIME LAYER
+  // ------------------------------------------------------------------
+  // A single subscription layer keeps every device in sync without reopening the
+  // app. High-frequency, latency-sensitive tables (messages, notifications) are
+  // merged row-by-row so the UI updates instantly and cheaply. Lower-frequency
+  // tables trigger a debounced snapshot reload — far simpler than re-deriving the
+  // display fields (club/organizer names, participating-club lists) row by row,
+  // and infrequent enough that the extra fetch is negligible. Rows are keyed by
+  // id, so an incoming INSERT that matches an optimistic local row is de-duped.
+  useEffect(() => {
+    if (!isAuthenticated || !authUser) return;
+    const uid = authUser.id;
+
+    const mapMessage = (d: any): DirectMessage => {
+      const nameById = usersRef.current;
+      const senderName = nameById.find(u => u.id === d.sender_id)?.full_name || '';
+      const receiverName = d.receiver_id
+        ? (nameById.find(u => u.id === d.receiver_id)?.full_name || '')
+        : 'Group Chat';
+      return {
+        id: d.id,
+        conversation_id: d.conversation_id,
+        event_id: d.event_id ?? undefined,
+        sender_id: d.sender_id,
+        sender_name: senderName,
+        receiver_id: d.receiver_id ?? undefined,
+        receiver_name: receiverName,
+        text: d.text ?? '',
+        created_at: d.created_at,
+        attachment_path: d.attachment_path ?? undefined,
+        attachment_type: d.attachment_type ?? undefined,
+      };
+    };
+
+    // Debounced full reload for the lower-frequency tables.
+    let reloadTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleReload = () => {
+      if (reloadTimer) clearTimeout(reloadTimer);
+      reloadTimer = setTimeout(() => { applySnapshot().catch(() => {}); }, 400);
+    };
+
+    const messagesChannel = supabase
+      .channel('rt-messages')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'direct_messages' }, payload => {
+        const msg = mapMessage(payload.new);
+        setMessages(prev => (prev.some(m => m.id === msg.id) ? prev : [...prev, msg]));
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'direct_messages' }, payload => {
+        const msg = mapMessage(payload.new);
+        setMessages(prev => prev.map(m => (m.id === msg.id ? { ...m, ...msg } : m)));
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'direct_messages' }, payload => {
+        const id = (payload.old as any)?.id;
+        if (id) setMessages(prev => prev.filter(m => m.id !== id));
+      })
+      .subscribe();
+
+    // Notifications are scoped to the signed-in user so no one receives another
+    // user's private notifications over the wire.
+    const notifChannel = supabase
+      .channel(`rt-notifications-${uid}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${uid}` }, payload => {
+        const n = payload.new as any;
+        const notif: AppNotification = {
+          id: n.id, user_id: n.user_id, kind: n.kind, title: n.title, message: n.message,
+          event_id: n.event_id ?? undefined, application_id: n.application_id ?? undefined,
+          conversation_id: n.conversation_id ?? undefined, is_read: n.is_read,
+          created_at: n.created_at, priority: n.priority ?? undefined,
+        };
+        setNotifications(prev => (prev.some(x => x.id === notif.id) ? prev : [notif, ...prev]));
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'notifications', filter: `user_id=eq.${uid}` }, payload => {
+        const n = payload.new as any;
+        setNotifications(prev => prev.map(x => (x.id === n.id ? { ...x, is_read: n.is_read, priority: n.priority ?? x.priority } : x)));
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'notifications' }, payload => {
+        const id = (payload.old as any)?.id;
+        if (id) setNotifications(prev => prev.filter(x => x.id !== id));
+      })
+      .subscribe();
+
+    // Conversations move fast enough (last_message updates) to merge directly, so
+    // the Inbox reorders live; heavier tables just schedule a reload.
+    const tablesChannel = supabase
+      .channel('rt-tables')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, scheduleReload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'event_participants' }, scheduleReload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'event_invitations' }, scheduleReload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'event_impacts' }, scheduleReload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'verification_applications' }, scheduleReload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations' }, scheduleReload)
+      // Read receipts merge directly so ticks flip to "seen" the moment the other
+      // party opens the conversation — no reload needed.
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'message_reads' }, payload => {
+        const r = (payload.new ?? payload.old) as any;
+        if (!r?.conversation_id || !r?.user_id) return;
+        if (payload.eventType === 'DELETE') {
+          setReadCursors(prev => prev.filter(c => !(c.conversation_id === r.conversation_id && c.user_id === r.user_id)));
+          return;
+        }
+        const cursor: ReadCursor = {
+          conversation_id: r.conversation_id, user_id: r.user_id,
+          last_read_at: r.last_read_at, last_read_message_id: r.last_read_message_id ?? undefined,
+        };
+        setReadCursors(prev => {
+          const others = prev.filter(c => !(c.conversation_id === cursor.conversation_id && c.user_id === cursor.user_id));
+          return [...others, cursor];
+        });
+      })
+      .subscribe();
+
+    return () => {
+      if (reloadTimer) clearTimeout(reloadTimer);
+      supabase.removeChannel(messagesChannel);
+      supabase.removeChannel(notifChannel);
+      supabase.removeChannel(tablesChannel);
+    };
+  }, [isAuthenticated, authUser, applySnapshot]);
 
   const addClub = useCallback((c: {
     club_name: string;
@@ -824,7 +962,32 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return conv;
   }, [conversations, events]);
 
-  const sendDirectMessage = useCallback((conversationId: string, eventId: string | undefined, senderUser: AppUser, receiverId: string | undefined, receiverName: string, text: string, eventTitle?: string) => {
+  // Persists an optimistic message, tracking its send lifecycle so the composer
+  // can show Sending → Sent, or Failed with a retry. Group messages fan out inside
+  // the conversation (no single receiver to notify).
+  const persistMessage = useCallback((msg: DirectMessage, notify: boolean) => {
+    setMessages(prev => (prev.some(m => m.id === msg.id) ? prev : [...prev, { ...msg, send_status: 'sending' }]));
+    const preview = msg.text?.trim() ? msg.text : (msg.attachment_path ? '📷 Photo' : '');
+    setConversations(prev => prev.map(c => c.id === msg.conversation_id ? { ...c, last_message: preview, last_message_at: msg.created_at } : c));
+    db.insertMessage(msg).then(ok => {
+      setMessages(prev => prev.map(m => (m.id === msg.id ? { ...m, send_status: ok ? 'sent' : 'failed' } : m)));
+      if (ok) {
+        db.updateConversation(msg.conversation_id, { last_message: preview, last_message_at: msg.created_at });
+        if (notify && msg.receiver_id) {
+          pushNotif({
+            user_id: msg.receiver_id,
+            kind: 'INQUIRY_RECEIVED',
+            title: `Inquiry from ${msg.sender_name}`,
+            message: preview,
+            event_id: msg.event_id,
+            conversation_id: msg.conversation_id,
+          });
+        }
+      }
+    });
+  }, [pushNotif]);
+
+  const sendDirectMessage = useCallback((conversationId: string, eventId: string | undefined, senderUser: AppUser, receiverId: string | undefined, receiverName: string, text: string, eventTitle?: string, attachmentPath?: string) => {
     const msg: DirectMessage = {
       id: nextId('msg'),
       conversation_id: conversationId,
@@ -835,28 +998,47 @@ export function DataProvider({ children }: { children: ReactNode }) {
       receiver_name: receiverName,
       text,
       created_at: now(),
+      attachment_path: attachmentPath,
+      attachment_type: attachmentPath ? 'image' : undefined,
     };
-    setMessages(prev => [...prev, msg]);
-    db.insertMessage(msg);
-    setConversations(prev => prev.map(c => c.id === conversationId ? { ...c, last_message: text, last_message_at: now() } : c));
-    db.updateConversation(conversationId, { last_message: text, last_message_at: now() });
-    // Group messages fan out inside the conversation itself — there is no single
-    // recipient to notify (and 'ALL_PARTICIPANTS' is not a real user to notify).
-    if (receiverId) {
-      pushNotif({
-        user_id: receiverId,
-        kind: 'INQUIRY_RECEIVED',
-        title: `Inquiry from ${senderUser.full_name}`,
-        message: text,
-        event_id: eventId,
-        conversation_id: conversationId,
-      });
-    }
-  }, [pushNotif]);
+    persistMessage(msg, true);
+  }, [persistMessage]);
+
+  // Re-sends a message that failed to persist, without creating a duplicate row.
+  const retryMessage = useCallback((messageId: string) => {
+    setMessages(prev => {
+      const m = prev.find(x => x.id === messageId);
+      if (m) persistMessage({ ...m, send_status: 'sending' }, true);
+      return prev;
+    });
+  }, [persistMessage]);
+
+  // Marks the conversation read up to its latest message. Called when the chat is
+  // actually visible — one upsert, not a write per message or per render.
+  const markConversationRead = useCallback((conversationId: string, userId: string) => {
+    const convMsgs = messages.filter(m => m.conversation_id === conversationId);
+    const last = convMsgs.length ? convMsgs[convMsgs.length - 1] : undefined;
+    const iso = now();
+    setReadCursors(prev => {
+      const others = prev.filter(c => !(c.conversation_id === conversationId && c.user_id === userId));
+      return [...others, { conversation_id: conversationId, user_id: userId, last_read_at: iso, last_read_message_id: last?.id }];
+    });
+    db.upsertReadCursor(conversationId, userId, last?.id);
+  }, [messages]);
+
+  const broadcastToEvent = useCallback(async (eventId: string, title: string, message: string, priority: NotificationPriority) => {
+    return db.broadcastToEvent(eventId, title, message, priority);
+  }, []);
 
   const messagesForConversation = useCallback((conversationId: string) => {
-    return messages.filter(m => m.conversation_id === conversationId);
+    return messages
+      .filter(m => m.conversation_id === conversationId)
+      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
   }, [messages]);
+
+  const readCursorsFor = useCallback((conversationId: string) => {
+    return readCursors.filter(c => c.conversation_id === conversationId);
+  }, [readCursors]);
 
   const sendMessageToOrganizer = useCallback((eventId: string, senderUser: AppUser, text: string) => {
     const ev = events.find(e => e.id === eventId);
@@ -961,6 +1143,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const participationFor = useCallback((eventId: string, userId: string) => participants.find(p => p.event_id === eventId && p.user_id === userId), [participants]);
   const impactFor = useCallback((eventId: string) => impacts.find(i => i.event_id === eventId), [impacts]);
   const notificationsFor = useCallback((userId: string) => notifications.filter(n => n.user_id === userId), [notifications]);
+  const unreadCountForUser = useCallback((userId: string) => notifications.filter(n => n.user_id === userId && !n.is_read).length, [notifications]);
   const auditFor = useCallback((appId: string) => auditLogs.filter(l => l.application_id === appId), [auditLogs]);
 
   const applicationsForRole = useCallback((role: UserRole, clubId?: string) => {
@@ -1015,12 +1198,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   return (
     <DataContext.Provider value={{
-      users, events: resolvedEvents, participants, invitations, impacts, applications, auditLogs, notifications, clubs, conversations, messages,
+      users, events: resolvedEvents, participants, invitations, impacts, applications, auditLogs, notifications, clubs, conversations, messages, readCursors,
       refreshing, refresh,
       createEvent, updateEvent, updateEventStatus, resetEventApprovals, cancelEvent, approveEvent, rejectEvent,
       joinEvent, leaveEvent, approveParticipant, declineParticipant, markAttendance, checkIn, addClub,
-      invite, respondInvitation, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, sendDirectMessage, saveImpact, reviewApplication, resubmitApplication, markNotificationsRead, deleteNotification, updateUserRole, removeUser, addApplication,
-      participantsFor, invitationFor, participationFor, impactFor, notificationsFor, messagesForConversation, auditFor,
+      invite, respondInvitation, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, sendDirectMessage, retryMessage, markConversationRead, readCursorsFor, broadcastToEvent, saveImpact, reviewApplication, resubmitApplication, markNotificationsRead, deleteNotification, updateUserRole, removeUser, addApplication,
+      participantsFor, invitationFor, participationFor, impactFor, notificationsFor, unreadCountForUser, messagesForConversation, auditFor,
       applicationsForRole, userStats,
     }}>
       {children}

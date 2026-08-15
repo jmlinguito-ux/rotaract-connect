@@ -35,4 +35,5 @@ export type RootStackParamList = {
   Chat: { conversationId: string; eventId?: string; recipientId: string; recipientName: string; eventTitle?: string };
   Settings: undefined;
   RoleManagement: undefined;
+  OrganizerBroadcast: { eventId: string };
 };

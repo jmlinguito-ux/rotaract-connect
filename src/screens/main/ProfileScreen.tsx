@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -8,6 +8,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
 import { useTheme } from '../../context/ThemeContext';
+import { uploadPublicImage } from '../../services/storage';
 import { useAppRefreshControl } from '../../hooks/useAppRefreshControl';
 import { RootStackParamList } from '../../navigation/types';
 import { ROLE_BADGES } from '../../utils/roles';
@@ -23,6 +24,7 @@ export default function ProfileScreen() {
   const refreshControl = useAppRefreshControl();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [fullImageUri, setFullImageUri] = useState<string | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   if (!user) return null;
   const stats = userStats(user.id);
@@ -41,10 +43,26 @@ export default function ProfileScreen() {
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.8,
+        base64: true,
       });
 
-      if (!result.canceled && result.assets && result.assets[0].uri) {
-        updateAvatar(result.assets[0].uri);
+      if (result.canceled || !result.assets?.[0]?.uri) return;
+      const asset = result.assets[0];
+      setUploadingAvatar(true);
+      try {
+        // Upload to Supabase Storage and persist the public URL — NOT the local
+        // file:// uri, which would vanish on the next launch / other devices.
+        const url = await uploadPublicImage('avatars', user.id, {
+          uri: asset.uri,
+          base64: asset.base64,
+          mimeType: asset.mimeType,
+          fileName: asset.fileName,
+        });
+        await updateAvatar(url);
+      } catch (err: any) {
+        Alert.alert('Upload Failed', err?.message || 'Could not upload your photo. Please try again.');
+      } finally {
+        setUploadingAvatar(false);
       }
     } catch (e) {
       Alert.alert('Error', 'Failed to pick image from photo library.');
@@ -66,9 +84,12 @@ export default function ProfileScreen() {
             <TouchableOpacity
               style={[styles.cameraBadge, { backgroundColor: themeColors.primary, borderColor: themeColors.cardBg }]}
               onPress={handlePickImage}
+              disabled={uploadingAvatar}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Ionicons name="camera" size={12} color="#fff" />
+              {uploadingAvatar
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Ionicons name="camera" size={12} color="#fff" />}
             </TouchableOpacity>
           </View>
           {roleBadge ? (

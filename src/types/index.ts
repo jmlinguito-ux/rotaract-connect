@@ -192,6 +192,9 @@ export type NotificationKind =
   | 'MEMBERSHIP_REQUEST'
   | 'INQUIRY_RECEIVED';
 
+/** Organizer banner priority. HIGH triggers sound + vibration where the OS allows. */
+export type NotificationPriority = 'NORMAL' | 'ALERT' | 'HIGH';
+
 export interface AppNotification {
   id: string;
   user_id: string;
@@ -203,6 +206,8 @@ export interface AppNotification {
   conversation_id?: string;
   is_read: boolean;
   created_at: string;
+  /** Banner priority for organizer broadcasts; absent/`NORMAL` for routine notifications. */
+  priority?: NotificationPriority;
 }
 
 export interface DirectMessage {
@@ -216,6 +221,20 @@ export interface DirectMessage {
   receiver_name: string;
   text: string;
   created_at: string;
+  /** Object path in the private `chat-media` bucket when the message carries a photo. */
+  attachment_path?: string;
+  /** Attachment kind — currently only 'image'. */
+  attachment_type?: string;
+  /** Optimistic-send lifecycle for the composer; not persisted. */
+  send_status?: 'sending' | 'sent' | 'failed';
+}
+
+/** Per-user read cursor for a conversation — powers read receipts. */
+export interface ReadCursor {
+  conversation_id: string;
+  user_id: string;
+  last_read_at: string;
+  last_read_message_id?: string;
 }
 
 export interface Conversation {

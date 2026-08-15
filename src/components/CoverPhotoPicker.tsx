@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, Alert, Modal, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Alert, Modal, ScrollView, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { colors } from '../theme/colors';
 import { BottomSheet } from './BottomSheet';
+import { useAuth } from '../context/AuthContext';
+import { uploadPublicImage } from '../services/storage';
 
 interface CoverPhotoPickerProps {
   value?: string;
@@ -19,6 +21,8 @@ const PRESET_PHOTOS = [
 
 export function CoverPhotoPicker({ value, onChange }: CoverPhotoPickerProps) {
   const [presetModalVisible, setPresetModalVisible] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const { user } = useAuth();
 
   const handleLaunchDevicePicker = async () => {
     try {
@@ -40,10 +44,23 @@ export function CoverPhotoPicker({ value, onChange }: CoverPhotoPickerProps) {
         allowsEditing: true,
         aspect: [16, 9],
         quality: 0.8,
+        base64: true,
       });
 
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        onChange(result.assets[0].uri);
+      if (result.canceled || !result.assets?.length) return;
+      const a = result.assets[0];
+      // Upload immediately and hand back the persistent Supabase URL, so the event
+      // row stores a real URL rather than a local file:// uri that never syncs.
+      setUploading(true);
+      try {
+        const url = await uploadPublicImage('event-covers', user?.id ?? 'covers', {
+          uri: a.uri, base64: a.base64, mimeType: a.mimeType, fileName: a.fileName,
+        });
+        onChange(url);
+      } catch (err: any) {
+        Alert.alert('Upload Failed', err?.message || 'Could not upload the cover photo. Please try again.');
+      } finally {
+        setUploading(false);
       }
     } catch (error) {
       setPresetModalVisible(true);
@@ -80,12 +97,21 @@ export function CoverPhotoPicker({ value, onChange }: CoverPhotoPickerProps) {
           </View>
         </View>
       ) : (
-        <TouchableOpacity style={styles.uploadPlaceholder} onPress={handleOpenOptions}>
-          <View style={styles.uploadIconCircle}>
-            <Ionicons name="camera-outline" size={24} color={colors.primary} />
-          </View>
-          <Text style={styles.uploadTitle}>Upload Event Cover Photo</Text>
-          <Text style={styles.uploadSub}>Tap to select, crop, zoom, and reposition photo</Text>
+        <TouchableOpacity style={styles.uploadPlaceholder} onPress={handleOpenOptions} disabled={uploading}>
+          {uploading ? (
+            <>
+              <ActivityIndicator color={colors.primary} />
+              <Text style={[styles.uploadTitle, { marginTop: 8 }]}>Uploading photo…</Text>
+            </>
+          ) : (
+            <>
+              <View style={styles.uploadIconCircle}>
+                <Ionicons name="camera-outline" size={24} color={colors.primary} />
+              </View>
+              <Text style={styles.uploadTitle}>Upload Event Cover Photo</Text>
+              <Text style={styles.uploadSub}>Tap to select, crop, zoom, and reposition photo</Text>
+            </>
+          )}
         </TouchableOpacity>
       )}
 
