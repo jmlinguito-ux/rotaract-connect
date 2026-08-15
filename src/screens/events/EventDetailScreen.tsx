@@ -278,6 +278,8 @@ export default function EventDetailScreen({ route, navigation }: Props) {
 
   const handleCheckIn = async () => {
     if (!user) return;
+    // A completed/cancelled event is a locked record — no further check-ins.
+    if (event.status === 'COMPLETED' || event.status === 'CANCELLED') return;
 
     // Unverified members cannot check-in directly. Treat check-in attempt as join request.
     if (user.verification_status !== 'VERIFIED') {
@@ -370,6 +372,8 @@ export default function EventDetailScreen({ route, navigation }: Props) {
 
   const handleLeaveOrJoinEvent = () => {
     if (!user) return;
+    // Joining/leaving a finished event is not allowed.
+    if (event.status === 'COMPLETED' || event.status === 'CANCELLED') return;
 
     if (isLeaveLocked) {
       Alert.alert(
@@ -991,13 +995,15 @@ export default function EventDetailScreen({ route, navigation }: Props) {
         </View>
       </ScrollView>
 
-      {/* A cancelled event is read-only: details and the reason stay visible to
-          everyone, but joining, checking in and inviting are no longer meaningful. */}
-      {event.status === 'CANCELLED' ? (
+      {/* A cancelled or completed event is read-only: details stay visible to
+          everyone, but joining, checking in and leaving are no longer meaningful. */}
+      {event.status === 'CANCELLED' || event.status === 'COMPLETED' ? (
         <View style={styles.footer}>
           <View style={styles.cancelledFooterBtn}>
-            <Ionicons name="close-circle" size={18} color={colors.textMuted} />
-            <Text style={styles.cancelledFooterText}>This event was cancelled</Text>
+            <Ionicons name={event.status === 'COMPLETED' ? 'checkmark-done-circle' : 'close-circle'} size={18} color={colors.textMuted} />
+            <Text style={styles.cancelledFooterText}>
+              {event.status === 'COMPLETED' ? 'This event has been completed' : 'This event was cancelled'}
+            </Text>
           </View>
         </View>
       ) : (

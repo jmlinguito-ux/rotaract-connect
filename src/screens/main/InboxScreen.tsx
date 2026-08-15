@@ -52,6 +52,7 @@ type Row =
   | { type: 'header'; key: string; label: string; count?: number }
   | { type: 'invite'; key: string; invitation: EventInvitation }
   | { type: 'chat'; key: string; event: RotaractEvent }
+  | { type: 'dm'; key: string; conversationId: string }
   | { type: 'notif'; key: string; notification: AppNotification }
   | { type: 'more'; key: string; label: string; onPress: () => void }
   | { type: 'empty'; key: string; label: string };
@@ -71,6 +72,9 @@ export default function InboxScreen() {
     getOrCreateEventGroupConversation,
     participantsFor,
     deleteNotification,
+    messagesForConversation,
+    readCursorsFor,
+    markConversationRead,
   } = useData();
   const { colors: themeColors } = useTheme();
   const refreshControl = useAppRefreshControl();
@@ -89,12 +93,58 @@ export default function InboxScreen() {
   const myGroupEvents = user ? events.filter(e => canAccessEventGroupChat(e.id, user.id)) : [];
 
   // An invitation that is actionable above would otherwise appear a second time as
-  // a "You were invited" notification, so only one of the two is shown.
+  // a "You were invited" notification, so only one of the two is shown. Direct
+  // messages are no longer listed as individual notification rows — they collapse
+  // into the live conversation threads below (see `myDMs`).
   const notifications = useMemo(() => {
     const all = user ? notificationsFor(user.id) : [];
     const pendingEventIds = new Set(myInvites.map(i => i.event_id));
-    return all.filter(n => !(n.kind === 'INVITATION_RECEIVED' && n.event_id && pendingEventIds.has(n.event_id)));
+    return all.filter(n =>
+      n.kind !== 'INQUIRY_RECEIVED' && !n.conversation_id &&
+      !(n.kind === 'INVITATION_RECEIVED' && n.event_id && pendingEventIds.has(n.event_id)),
+    );
   }, [user, notificationsFor, myInvites]);
+
+  // One live thread per 1-on-1 conversation the user is part of, newest first —
+  // the last message updates in place instead of piling up a row per message.
+  const myDMs = useMemo(() => {
+    if (!user) return [];
+    return conversations
+      .filter(c => !c.is_group && (c.participant_user_id === user.id || c.organizer_user_id === user.id))
+      .map(c => {
+        const msgs = messagesForConversation(c.id);
+        return { conv: c, last: msgs[msgs.length - 1] };
+      })
+      .filter(x => !!x.last)
+      .sort((a, b) => new Date(b.last!.created_at).getTime() - new Date(a.last!.created_at).getTime());
+  }, [user, conversations, messagesForConversation]);
+
+  const dmUnreadCount = useMemo(() => {
+    if (!user) return 0;
+    return myDMs.filter(({ conv, last }) => {
+      if (!last || last.sender_id === user.id) return false;
+      const cursor = readCursorsFor(conv.id).find(c => c.user_id === user.id);
+      return !cursor || new Date(last.created_at).getTime() > new Date(cursor.last_read_at).getTime();
+    }).length;
+  }, [user, myDMs, readCursorsFor]);
+
+  const openDM = (conversationId: string) => {
+    const conv = conversations.find(c => c.id === conversationId);
+    if (!conv || !user) return;
+    const otherId = conv.participant_user_id === user.id ? conv.organizer_user_id : conv.participant_user_id;
+    const other = otherId ? users.find(u => u.id === otherId) : undefined;
+    // Clear this thread's unread state; also flip the notification badge like the
+    // rest of the Inbox does on open.
+    markConversationRead(conversationId, user.id);
+    markNotificationsRead(user.id);
+    navigation.navigate('Chat', {
+      conversationId,
+      eventId: conv.event_id,
+      recipientId: otherId ?? '',
+      recipientName: other?.full_name ?? conv.participant_name ?? 'Rotaractor',
+      eventTitle: conv.event_title,
+    });
+  };
 
   const openGroupChat = (ev: RotaractEvent) => {
     const groupConv = getOrCreateEventGroupConversation(ev.id);
@@ -114,6 +164,11 @@ export default function InboxScreen() {
     myInvites.forEach(inv => rows.push({ type: 'invite', key: `inv_${inv.id}`, invitation: inv }));
   }
 
+  if (myDMs.length > 0) {
+    rows.push({ type: 'header', key: 'h_dms', label: 'Messages', count: dmUnreadCount || undefined });
+    myDMs.forEach(({ conv }) => rows.push({ type: 'dm', key: `dm_${conv.id}`, conversationId: conv.id }));
+  }
+
   if (myGroupEvents.length > 0) {
     rows.push({ type: 'header', key: 'h_chats', label: 'Event Group Chats', count: myGroupEvents.length });
     const shown = showAllChats ? myGroupEvents : myGroupEvents.slice(0, CHATS_PREVIEW);
@@ -130,7 +185,7 @@ export default function InboxScreen() {
     }
   }
 
-  rows.push({ type: 'header', key: 'h_notifs', label: 'Notifications & Messages', count: notifications.length || undefined });
+  rows.push({ type: 'header', key: 'h_notifs', label: 'Notifications', count: notifications.length || undefined });
   if (notifications.length === 0) {
     rows.push({ type: 'empty', key: 'notifs_empty', label: 'Nothing new here.' });
   } else {
@@ -264,6 +319,57 @@ export default function InboxScreen() {
         );
       }
 
+      case 'dm': {
+        const conv = conversations.find(c => c.id === row.conversationId);
+        if (!conv || !user) return null;
+        const otherId = conv.participant_user_id === user.id ? conv.organizer_user_id : conv.participant_user_id;
+        const other = otherId ? users.find(u => u.id === otherId) : undefined;
+        const name = other?.full_name ?? conv.participant_name ?? 'Rotaractor';
+        const msgs = messagesForConversation(conv.id);
+        const last = msgs[msgs.length - 1];
+        const isMine = last?.sender_id === user.id;
+        const cursor = readCursorsFor(conv.id).find(c => c.user_id === user.id);
+        const unread = !!last && !isMine && (!cursor || new Date(last.created_at).getTime() > new Date(cursor.last_read_at).getTime());
+        const previewText = last
+          ? (last.attachment_path && !last.text ? '📷 Photo' : last.text)
+          : 'Say hi 👋';
+        const preview = `${isMine ? 'You: ' : ''}${previewText}`;
+        const when = last ? new Date(last.created_at) : undefined;
+        const timeStr = when
+          ? (Date.now() - when.getTime() < 86400000
+              ? when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+              : when.toLocaleDateString([], { month: 'short', day: 'numeric' }))
+          : '';
+        return (
+          <TouchableOpacity
+            style={[
+              styles.card, styles.cardTopRow,
+              { backgroundColor: unread ? themeColors.primary + '0F' : themeColors.cardBg, borderColor: unread ? themeColors.primary + '3D' : themeColors.border },
+            ]}
+            activeOpacity={0.8}
+            onPress={() => openDM(conv.id)}
+          >
+            <UserAvatar user={other ?? { full_name: name }} size={44} />
+            <View style={{ flex: 1 }}>
+              <View style={styles.dmTopRow}>
+                <View style={styles.inlineRow}>
+                  <Text style={[styles.rowTitle, { color: themeColors.text, flexShrink: 1 }]} numberOfLines={1}>{name}</Text>
+                  <VerifiedCheck user={other} size={12} />
+                </View>
+                {timeStr ? <Text style={[styles.rowTime, { color: themeColors.textMuted }]}>{timeStr}</Text> : null}
+              </View>
+              <Text
+                style={[styles.rowMeta, { color: unread ? themeColors.text : themeColors.textMuted, fontWeight: unread ? '700' : '400' }]}
+                numberOfLines={1}
+              >
+                {preview}
+              </Text>
+            </View>
+            {unread && <View style={[styles.unreadDot, { backgroundColor: themeColors.primary, alignSelf: 'center', marginTop: 0 }]} />}
+          </TouchableOpacity>
+        );
+      }
+
       case 'more':
         return (
           <TouchableOpacity style={styles.moreBtn} onPress={row.onPress}>
@@ -390,6 +496,7 @@ const styles = StyleSheet.create({
   rowMeta: { fontSize: 12, marginTop: 2, lineHeight: 16 },
   rowTime: { fontSize: 10, marginTop: 3 },
   inlineRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  dmTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   unreadDot: { width: 8, height: 8, borderRadius: 4, alignSelf: 'flex-start', marginTop: 4 },
   archivedPill: { paddingHorizontal: 6, paddingVertical: 1, borderRadius: 8 },
   archivedPillText: { fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },

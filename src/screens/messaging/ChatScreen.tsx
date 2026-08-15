@@ -123,17 +123,38 @@ export default function ChatScreen({ route, navigation }: Props) {
   };
 
   // Read-receipt status for one of MY messages.
+  //
+  // Compared by message ORDER, not wall-clock time: each reader's cursor records
+  // the last message id they read, and every device shares the same ordered list,
+  // so "their last-read message is at or after mine" is independent of device
+  // clock skew (comparing created_at vs last_read_at across two phones made "Seen"
+  // show only on whichever device had the faster clock). A timestamp check is kept
+  // as a fallback for legacy cursors that predate last_read_message_id.
   const cursors = readCursorsFor(conversationId);
+  const messageIndex = useMemo(() => {
+    const m = new Map<string, number>();
+    messages.forEach((msg, i) => m.set(msg.id, i));
+    return m;
+  }, [messages]);
+
   const seenSummary = useCallback((msg: DirectMessage): string | null => {
     if (msg.sender_id !== user?.id) return null;
+    const myPos = messageIndex.get(msg.id);
+    if (myPos === undefined) return null;
     const created = new Date(msg.created_at).getTime();
-    const readers = cursors.filter(c => c.user_id !== user?.id && new Date(c.last_read_at).getTime() >= created);
+    const readers = cursors.filter(c => {
+      if (c.user_id === user?.id) return false;
+      const readerPos = c.last_read_message_id !== undefined ? messageIndex.get(c.last_read_message_id) : undefined;
+      if (readerPos !== undefined) return readerPos >= myPos;
+      // Fallback for cursors without a message id.
+      return new Date(c.last_read_at).getTime() >= created;
+    });
     if (isGroupChat) {
       if (readers.length === 0) return null;
       return `Seen by ${readers.length}`;
     }
     return readers.length > 0 ? 'Seen' : null;
-  }, [cursors, user?.id, isGroupChat]);
+  }, [cursors, messageIndex, user?.id, isGroupChat]);
 
   if (!user) return null;
 

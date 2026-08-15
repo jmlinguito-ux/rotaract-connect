@@ -977,7 +977,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
           pushNotif({
             user_id: msg.receiver_id,
             kind: 'INQUIRY_RECEIVED',
-            title: `Inquiry from ${msg.sender_name}`,
+            // Title is just the sender's name; the Inbox/Notifications rows still
+            // derive the sender via `.replace('Inquiry from ', '')`, a no-op here.
+            title: msg.sender_name,
             message: preview,
             event_id: msg.event_id,
             conversation_id: msg.conversation_id,
