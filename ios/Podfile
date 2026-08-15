@@ -20,6 +20,11 @@ platform :ios, podfile_properties['ios.deploymentTarget'] || '15.1'
 
 prepare_react_native_project!
 
+# Silence warnings from third-party Pods (React Native, Expo, Yoga, Google Maps,
+# etc.). These are dependency-owned (nullability, deprecations, non-portable
+# include paths) and flood Xcode's Issue navigator; none come from app code.
+inhibit_all_warnings!
+
 target 'rotaractconnect' do
   use_expo_modules!
 
@@ -59,5 +64,14 @@ target 'rotaractconnect' do
       :mac_catalyst_enabled => false,
       :ccache_enabled => ccache_enabled?(podfile_properties),
     )
+
+    # Belt-and-suspenders: force-inhibit clang warnings on every Pod target so
+    # dependency warnings never surface in Xcode, even for pods that opt out of
+    # inhibit_all_warnings!.
+    installer.pods_project.targets.each do |t|
+      t.build_configurations.each do |cfg|
+        cfg.build_settings['GCC_WARN_INHIBIT_ALL_WARNINGS'] = 'YES'
+      end
+    end
   end
 end
