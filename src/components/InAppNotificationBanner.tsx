@@ -5,8 +5,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { useData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { usePreferences } from '../context/PreferencesContext';
 import { AppNotification } from '../types';
 import { navigate } from '../navigation/navigationRef';
+import { playAlertSound, stopAlertSound } from '../services/sound';
 
 /**
  * Foreground, in-app banner for realtime notifications. When a new notification
@@ -16,9 +18,10 @@ import { navigate } from '../navigation/navigationRef';
  * EAS credentials — see the PR notes.
  */
 export function InAppNotificationBanner() {
-  const { notifications } = useData();
+  const { notifications, conversations, users } = useData();
   const { user } = useAuth();
   const { colors } = useTheme();
+  const { inAppBannerEnabled } = usePreferences();
   const insets = useSafeAreaInsets();
   const [banner, setBanner] = useState<AppNotification | null>(null);
   const translateY = useRef(new Animated.Value(-200)).current;
@@ -40,32 +43,75 @@ export function InAppNotificationBanner() {
     if (!latest || seenIds.current.has(latest.id)) return;
     seenIds.current.add(latest.id);
     if (latest.is_read) return; // don't pop a banner for something already read elsewhere
+    if (!inAppBannerEnabled) return; // user turned off in-app popups in Settings
 
     setBanner(latest);
+    Vibration.cancel(); // stop any previous pattern before starting a new one
     if (latest.priority === 'HIGH') {
-      Vibration.vibrate(Platform.OS === 'ios' ? [0, 200, 100, 200] : 400);
+      // Long, repeating vibration that keeps going until the user sees/dismisses it.
+      Vibration.vibrate([0, 700, 500], true);
+      playAlertSound('HIGH');
     } else if (latest.priority === 'ALERT') {
-      Vibration.vibrate(200);
+      Vibration.vibrate(300); // short buzz
+      playAlertSound('ALERT');
     }
 
     Animated.spring(translateY, { toValue: 0, useNativeDriver: true, bounciness: 6 }).start();
-    if (hideTimer.current) clearTimeout(hideTimer.current);
-    hideTimer.current = setTimeout(dismiss, latest.priority === 'HIGH' ? 7000 : 4500);
+    if (hideTimer.current) { clearTimeout(hideTimer.current); hideTimer.current = null; }
+    // HIGH priority stays on screen (and keeps vibrating) until acknowledged;
+    // lower priorities auto-dismiss.
+    if (latest.priority !== 'HIGH') {
+      hideTimer.current = setTimeout(dismiss, latest.priority === 'ALERT' ? 6000 : 4500);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [latest?.id, user?.id]);
+  }, [latest?.id, user?.id, inAppBannerEnabled]);
+
+  // Safety net: never leave the device buzzing if the banner unmounts.
+  useEffect(() => () => { Vibration.cancel(); stopAlertSound(); }, []);
 
   const dismiss = () => {
+    Vibration.cancel();
+    stopAlertSound();
     if (hideTimer.current) { clearTimeout(hideTimer.current); hideTimer.current = null; }
     Animated.timing(translateY, { toValue: -200, duration: 220, useNativeDriver: true }).start(() => setBanner(null));
   };
+
+  // "Stops when seen": if the shown notification gets marked read anywhere (e.g. the
+  // user opens the linked chat), tear the banner down and stop the HIGH vibration.
+  useEffect(() => {
+    if (banner && notifications.find(n => n.id === banner.id)?.is_read) dismiss();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notifications, banner?.id]);
 
   const handlePress = () => {
     const n = banner;
     dismiss();
     if (!n) return;
-    if (n.conversation_id && n.event_id) {
-      // Best-effort deep link to the related event; the Inbox surfaces the thread.
-      navigate('EventDetail', { eventId: n.event_id });
+    if (n.conversation_id) {
+      const conv = conversations.find(c => c.id === n.conversation_id);
+      if (conv?.is_group) {
+        // Organizer broadcast → open the event group chat.
+        navigate('Chat', {
+          conversationId: conv.id,
+          eventId: conv.event_id,
+          recipientId: 'ALL_PARTICIPANTS',
+          recipientName: `${conv.event_title ?? 'Event'} Group Chat`,
+          eventTitle: conv.event_title,
+        });
+      } else if (conv) {
+        // 1-on-1 message → open the direct chat with the other party.
+        const otherId = conv.participant_user_id === user?.id ? conv.organizer_user_id : conv.participant_user_id;
+        const other = otherId ? users.find(u => u.id === otherId) : undefined;
+        navigate('Chat', {
+          conversationId: conv.id,
+          eventId: conv.event_id,
+          recipientId: other?.id ?? '',
+          recipientName: other?.full_name ?? n.title,
+          eventTitle: conv.event_title,
+        });
+      } else {
+        navigate('Notifications');
+      }
     } else if (n.event_id) {
       navigate('EventDetail', { eventId: n.event_id });
     } else if (n.application_id) {

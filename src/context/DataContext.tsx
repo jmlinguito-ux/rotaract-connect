@@ -260,6 +260,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
       reloadTimer = setTimeout(() => { applySnapshot().catch(() => {}); }, 400);
     };
 
+    // Surface channel health in the Metro console. A CHANNEL_ERROR usually means a
+    // bound table is not in the `supabase_realtime` publication.
+    const logStatus = (name: string) => (status: string, err?: Error) => {
+      if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        console.warn(`[realtime] ${name}: ${status}`, err?.message ?? '');
+      }
+    };
+
     const messagesChannel = supabase
       .channel('rt-messages')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'direct_messages' }, payload => {
@@ -274,7 +282,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         const id = (payload.old as any)?.id;
         if (id) setMessages(prev => prev.filter(m => m.id !== id));
       })
-      .subscribe();
+      .subscribe(logStatus('messages'));
 
     // Notifications are scoped to the signed-in user so no one receives another
     // user's private notifications over the wire.
@@ -298,20 +306,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
         const id = (payload.old as any)?.id;
         if (id) setNotifications(prev => prev.filter(x => x.id !== id));
       })
-      .subscribe();
+      .subscribe(logStatus('notifications'));
 
-    // Conversations move fast enough (last_message updates) to merge directly, so
-    // the Inbox reorders live; heavier tables just schedule a reload.
-    const tablesChannel = supabase
-      .channel('rt-tables')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, scheduleReload)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'event_participants' }, scheduleReload)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'event_invitations' }, scheduleReload)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'event_impacts' }, scheduleReload)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'verification_applications' }, scheduleReload)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations' }, scheduleReload)
-      // Read receipts merge directly so ticks flip to "seen" the moment the other
-      // party opens the conversation — no reload needed.
+    // Read receipts get their OWN channel so an unpublished table on another
+    // channel can never break "Seen" delivery. Merged directly so ticks flip the
+    // moment the other party opens the conversation — no reload needed.
+    const readsChannel = supabase
+      .channel('rt-reads')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'message_reads' }, payload => {
         const r = (payload.new ?? payload.old) as any;
         if (!r?.conversation_id || !r?.user_id) return;
@@ -328,13 +329,28 @@ export function DataProvider({ children }: { children: ReactNode }) {
           return [...others, cursor];
         });
       })
-      .subscribe();
+      .subscribe(logStatus('reads'));
+
+    // Conversations move fast enough (last_message updates) to merge directly, so
+    // the Inbox reorders live; heavier tables just schedule a reload. Each table
+    // gets its OWN channel so one table missing from the realtime publication
+    // cannot error out the others (a shared channel fails as a unit).
+    const tableReloadChannels = ([
+      'events', 'event_participants', 'event_invitations', 'event_impacts',
+      'verification_applications', 'conversations',
+    ] as const).map(table =>
+      supabase
+        .channel(`rt-${table}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table }, scheduleReload)
+        .subscribe(logStatus(table)),
+    );
 
     return () => {
       if (reloadTimer) clearTimeout(reloadTimer);
       supabase.removeChannel(messagesChannel);
       supabase.removeChannel(notifChannel);
-      supabase.removeChannel(tablesChannel);
+      supabase.removeChannel(readsChannel);
+      tableReloadChannels.forEach(ch => supabase.removeChannel(ch));
     };
   }, [isAuthenticated, authUser, applySnapshot]);
 

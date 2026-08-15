@@ -1,8 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { View, Text, FlatList, StyleSheet, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, Image, Alert, ActivityIndicator } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text, FlatList, StyleSheet, TextInput, TouchableOpacity, Platform, Image, Alert, ActivityIndicator, Keyboard } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useHeaderHeight } from '@react-navigation/elements';
 import { useIsFocused } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -21,6 +20,10 @@ import { DirectMessage } from '../../types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Chat'>;
 
+// Colour for the "read" double-check — a light blue that stays legible on the
+// primary-coloured outgoing bubble.
+const READ_TICK_COLOR = '#8ED2FF';
+
 export default function ChatScreen({ route, navigation }: Props) {
   const { conversationId, eventId, recipientId, recipientName, eventTitle } = route.params;
   const { user } = useAuth();
@@ -29,13 +32,43 @@ export default function ChatScreen({ route, navigation }: Props) {
     getOrCreateConversation, markConversationRead, readCursorsFor,
   } = useData();
   const { colors: themeColors } = useTheme();
-  const headerHeight = useHeaderHeight();
+  const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
   const listRef = useRef<FlatList>(null);
+  // Track the keyboard height ourselves instead of relying on KeyboardAvoidingView:
+  // this app is edge-to-edge on Android, where windowSoftInputMode=adjustResize
+  // does not resize the window, so KAV either overshot (gap) or did nothing
+  // (keyboard covered the composer). Padding by the measured keyboard height
+  // (minus the bottom safe-area inset the SafeAreaView already adds) is reliable
+  // on both platforms and every device size.
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvt, e => {
+      setKeyboardHeight(e.endCoordinates?.height ?? 0);
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
+    });
+    const hideSub = Keyboard.addListener(hideEvt, () => setKeyboardHeight(0));
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, []);
+  // Bottom spacing for the composer, split by platform because the two OSes handle
+  // the keyboard differently:
+  //  • Android (edge-to-edge) already resizes the window above the keyboard, so
+  //    adding the keyboard height here would double-count and leave a gap — we only
+  //    clear the nav bar when the keyboard is down.
+  //  • iOS does NOT resize, so we lift the composer by the keyboard height ourselves.
+  // The SafeAreaView below does not claim the bottom edge, so this is the only
+  // bottom spacing (no double-count from safe-area padding).
+  const bottomPad = Platform.OS === 'ios'
+    ? Math.max(insets.bottom, keyboardHeight)
+    : (keyboardHeight > 0 ? 0 : insets.bottom);
   const [text, setText] = useState('');
   const [selectedUserModal, setSelectedUserModal] = useState<any>(null);
   const [fullImageUri, setFullImageUri] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  // Message whose "Seen by …" detail is expanded (tap to toggle, group chats).
+  const [expandedSeenId, setExpandedSeenId] = useState<string | null>(null);
 
   const messages = messagesForConversation(conversationId);
   const event = eventId ? events.find(e => e.id === eventId) : undefined;
@@ -137,24 +170,37 @@ export default function ChatScreen({ route, navigation }: Props) {
     return m;
   }, [messages]);
 
-  const seenSummary = useCallback((msg: DirectMessage): string | null => {
+  // How many OTHER participants have read a given one of my messages.
+  const readCountFor = useCallback((msg: DirectMessage): number | null => {
     if (msg.sender_id !== user?.id) return null;
     const myPos = messageIndex.get(msg.id);
     if (myPos === undefined) return null;
     const created = new Date(msg.created_at).getTime();
-    const readers = cursors.filter(c => {
+    return cursors.filter(c => {
       if (c.user_id === user?.id) return false;
       const readerPos = c.last_read_message_id !== undefined ? messageIndex.get(c.last_read_message_id) : undefined;
       if (readerPos !== undefined) return readerPos >= myPos;
       // Fallback for cursors without a message id.
       return new Date(c.last_read_at).getTime() >= created;
-    });
-    if (isGroupChat) {
-      if (readers.length === 0) return null;
-      return `Seen by ${readers.length}`;
-    }
-    return readers.length > 0 ? 'Seen' : null;
-  }, [cursors, messageIndex, user?.id, isGroupChat]);
+    }).length;
+  }, [cursors, messageIndex, user?.id]);
+
+  // The participants (other than the author and me) who have read a given message —
+  // used for the tap-to-reveal "Seen by …" detail in group chats.
+  const readersFor = useCallback((msg: DirectMessage) => {
+    const myPos = messageIndex.get(msg.id);
+    if (myPos === undefined) return [];
+    const created = new Date(msg.created_at).getTime();
+    return cursors
+      .filter(c => c.user_id !== msg.sender_id && c.user_id !== user?.id)
+      .filter(c => {
+        const rp = c.last_read_message_id !== undefined ? messageIndex.get(c.last_read_message_id) : undefined;
+        if (rp !== undefined) return rp >= myPos;
+        return new Date(c.last_read_at).getTime() >= created;
+      })
+      .map(c => users.find(u => u.id === c.user_id))
+      .filter((u): u is NonNullable<typeof u> => !!u);
+  }, [cursors, messageIndex, users, user?.id]);
 
   if (!user) return null;
 
@@ -172,10 +218,8 @@ export default function ChatScreen({ route, navigation }: Props) {
     : typingUsers.length === 2 ? `${typingUsers[0].name.split(' ')[0]} and ${typingUsers[1].name.split(' ')[0]} are typing…`
     : `${typingUsers.length} people are typing…`;
 
-  const lastMyMessageId = [...messages].reverse().find(m => m.sender_id === user.id)?.id;
-
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.bg }]} edges={['bottom']}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.bg }]} edges={[]}>
       {/* Header Card */}
       <View style={[styles.userHeaderCard, { backgroundColor: themeColors.cardBg, borderBottomColor: themeColors.border }]}>
         {isGroupChat ? (
@@ -234,24 +278,19 @@ export default function ChatScreen({ route, navigation }: Props) {
         </TouchableOpacity>
       ) : null}
 
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        // Android's activity is windowSoftInputMode=adjustResize, so the window
-        // already shrinks above the keyboard — adding `height` + an offset here
-        // double-counts and leaves a gap. Only iOS needs manual avoidance.
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? headerHeight : 0}
-      >
+      <View style={{ flex: 1, paddingBottom: bottomPad }}>
         <FlatList
           ref={listRef}
           data={messages}
           keyExtractor={m => m.id}
+          style={{ flex: 1 }}
           contentContainerStyle={styles.messageList}
           onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
           renderItem={({ item }) => {
             const isMe = item.sender_id === user.id;
             const senderUser = users.find(u => u.id === item.sender_id);
-            const seen = item.id === lastMyMessageId ? seenSummary(item) : null;
+            const readCount = isMe ? (readCountFor(item) ?? 0) : 0;
+            const isRead = readCount > 0;
             return (
               <View>
                 <View style={[styles.messageWrapper, isMe ? styles.myWrapper : styles.theirWrapper]}>
@@ -260,7 +299,10 @@ export default function ChatScreen({ route, navigation }: Props) {
                       <UserAvatar user={senderUser ?? { full_name: item.sender_name }} size={28} />
                     </TouchableOpacity>
                   )}
-                  <View
+                  <TouchableOpacity
+                    activeOpacity={isGroupChat ? 0.85 : 1}
+                    // In group chats, tapping a message reveals who has seen it.
+                    onPress={isGroupChat ? () => setExpandedSeenId(prev => (prev === item.id ? null : item.id)) : undefined}
                     style={[
                       styles.bubble,
                       isMe
@@ -286,24 +328,64 @@ export default function ChatScreen({ route, navigation }: Props) {
                       <Text style={[styles.messageText, { color: isMe ? '#fff' : themeColors.text }]}>{item.text}</Text>
                     )}
 
-                    <View style={styles.metaRow}>
+                    {/* The meta row (time + ticks) is also a toggle target for the
+                        "Seen by …" detail — this is the tap that works on photo
+                        messages, where tapping the image opens it fullscreen. */}
+                    <TouchableOpacity
+                      style={styles.metaRow}
+                      activeOpacity={isGroupChat ? 0.6 : 1}
+                      onPress={isGroupChat ? () => setExpandedSeenId(prev => (prev === item.id ? null : item.id)) : undefined}
+                    >
                       <Text style={[styles.messageTime, { color: isMe ? 'rgba(255,255,255,0.7)' : themeColors.textMuted }]}>
                         {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </Text>
                       {isMe && item.send_status === 'sending' && <Ionicons name="time-outline" size={12} color="rgba(255,255,255,0.7)" />}
-                      {isMe && item.send_status === 'sent' && <Ionicons name="checkmark" size={13} color="rgba(255,255,255,0.7)" />}
                       {isMe && item.send_status === 'failed' && (
                         <TouchableOpacity onPress={() => retryMessage(item.id)} style={styles.retryBtn}>
                           <Ionicons name="alert-circle" size={13} color="#FFD7D7" />
                           <Text style={styles.retryText}>Retry</Text>
                         </TouchableOpacity>
                       )}
-                    </View>
-                  </View>
+                      {/* Delivery/read ticks: ✓ = sent, ✓✓ (colored) = read.
+                          Group chats append the number of readers. */}
+                      {isMe && item.send_status !== 'sending' && item.send_status !== 'failed' && (
+                        <View style={styles.receiptRow}>
+                          <Ionicons
+                            name={isRead ? 'checkmark-done' : 'checkmark'}
+                            size={15}
+                            color={isRead ? READ_TICK_COLOR : 'rgba(255,255,255,0.7)'}
+                          />
+                          {isRead && isGroupChat && (
+                            <Text style={[styles.receiptCount, { color: READ_TICK_COLOR }]}>{readCount}</Text>
+                          )}
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  </TouchableOpacity>
                 </View>
-                {seen ? (
-                  <Text style={[styles.seenText, { color: themeColors.textMuted }]}>{seen}</Text>
-                ) : null}
+                {isGroupChat && expandedSeenId === item.id && (() => {
+                  const readers = readersFor(item);
+                  return (
+                    <View style={[styles.seenByRow, isMe ? styles.myWrapper : styles.seenByTheir]}>
+                      {readers.length === 0 ? (
+                        <Text style={[styles.seenByText, { color: themeColors.textMuted }]}>Not seen yet</Text>
+                      ) : (
+                        <>
+                          <Text style={[styles.seenByText, { color: themeColors.textMuted }]}>
+                            Seen by {readers.map(r => r.full_name.split(' ')[0]).join(', ')}
+                          </Text>
+                          <View style={styles.seenByAvatars}>
+                            {readers.slice(0, 6).map(r => (
+                              <View key={r.id} style={styles.seenByAvatar}>
+                                <UserAvatar user={r} size={16} />
+                              </View>
+                            ))}
+                          </View>
+                        </>
+                      )}
+                    </View>
+                  );
+                })()}
               </View>
             );
           }}
@@ -346,7 +428,7 @@ export default function ChatScreen({ route, navigation }: Props) {
             </TouchableOpacity>
           </View>
         )}
-      </KeyboardAvoidingView>
+      </View>
 
       <FullImageModal
         visible={!!fullImageUri}
@@ -421,7 +503,13 @@ const styles = StyleSheet.create({
   messageTime: { fontSize: 10 },
   retryBtn: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   retryText: { fontSize: 10, color: '#FFD7D7', fontWeight: '700' },
-  seenText: { fontSize: 10, alignSelf: 'flex-end', marginTop: 2, marginRight: 4 },
+  receiptRow: { flexDirection: 'row', alignItems: 'center', gap: 1 },
+  receiptCount: { fontSize: 10, fontWeight: '800' },
+  seenByRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3, marginHorizontal: 4, flexWrap: 'wrap' },
+  seenByTheir: { justifyContent: 'flex-start', paddingLeft: 36 },
+  seenByText: { fontSize: 11, fontStyle: 'italic' },
+  seenByAvatars: { flexDirection: 'row', gap: 2 },
+  seenByAvatar: { borderRadius: 8, overflow: 'hidden' },
   chatImage: { width: 200, height: 200, borderRadius: 12, marginBottom: 4 },
   chatImageLoading: { alignItems: 'center', justifyContent: 'center' },
   typingLabel: { fontSize: 12, fontStyle: 'italic', paddingHorizontal: 20, paddingBottom: 4 },

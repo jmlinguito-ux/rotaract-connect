@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { RootStackParamList } from '../../navigation/types';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
+import { usePreferences } from '../../context/PreferencesContext';
 import RoleBadgeIcon from '../../components/RoleBadgeIcon';
 import { VerifiedName } from '../../components/VerifiedCheck';
 import { ROLE_BADGES } from '../../utils/roles';
@@ -15,6 +16,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 export default function SettingsScreen({ navigation }: Props) {
   const { user, changePassword } = useAuth();
   const { isNightMode, setNightMode, colors: themeColors } = useTheme();
+  const { inAppBannerEnabled, setInAppBannerEnabled } = usePreferences();
 
   // Change-password modal state
   const [pwModalVisible, setPwModalVisible] = useState(false);
@@ -177,6 +179,24 @@ export default function SettingsScreen({ navigation }: Props) {
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: themeColors.primary }]}>NOTIFICATION PREFERENCES</Text>
           <View style={cardStyle}>
+            <View style={styles.row}>
+              <View style={[styles.rowIconWrap, { backgroundColor: themeColors.primary + '1A' }]}>
+                <Ionicons name="notifications-outline" size={18} color={themeColors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={titleStyle}>In-App Notification Popups</Text>
+                <Text style={subStyle}>Show a banner at the top when something new arrives</Text>
+              </View>
+              <Switch
+                value={inAppBannerEnabled}
+                onValueChange={setInAppBannerEnabled}
+                trackColor={{ false: themeColors.border, true: themeColors.primary }}
+                thumbColor="#fff"
+              />
+            </View>
+
+            <View style={dividerStyle} />
+
             <View style={styles.row}>
               <View style={[styles.rowIconWrap, { backgroundColor: themeColors.primary + '1A' }]}>
                 <Ionicons name="alarm-outline" size={18} color={themeColors.primary} />

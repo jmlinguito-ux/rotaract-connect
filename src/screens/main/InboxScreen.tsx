@@ -99,11 +99,16 @@ export default function InboxScreen() {
   const notifications = useMemo(() => {
     const all = user ? notificationsFor(user.id) : [];
     const pendingEventIds = new Set(myInvites.map(i => i.event_id));
+    // 1-on-1 message notifications are represented by the live DM threads below, so
+    // drop those. Group-chat announcements (broadcasts) DO stay in the list and,
+    // when tapped, open the group chat.
+    const groupConvIds = new Set(conversations.filter(c => c.is_group).map(c => c.id));
     return all.filter(n =>
-      n.kind !== 'INQUIRY_RECEIVED' && !n.conversation_id &&
+      n.kind !== 'INQUIRY_RECEIVED' &&
+      (!n.conversation_id || groupConvIds.has(n.conversation_id)) &&
       !(n.kind === 'INVITATION_RECEIVED' && n.event_id && pendingEventIds.has(n.event_id)),
     );
-  }, [user, notificationsFor, myInvites]);
+  }, [user, notificationsFor, myInvites, conversations]);
 
   // One live thread per 1-on-1 conversation the user is part of, newest first —
   // the last message updates in place instead of piling up a row per message.
@@ -195,9 +200,25 @@ export default function InboxScreen() {
   const handleNotificationPress = (item: AppNotification) => {
     if (user) markNotificationsRead(user.id);
     if (item.conversation_id) {
-      // Resolve the other party from the conversation itself — never from the
-      // notification title, which breaks on name collisions or copy changes.
       const conv = conversations.find(c => c.id === item.conversation_id);
+      // Organizer broadcasts link to the event group chat. If the group
+      // conversation hasn't synced locally yet, fall back to resolving it by event.
+      if (conv?.is_group) {
+        navigation.navigate('Chat', {
+          conversationId: conv.id,
+          eventId: conv.event_id,
+          recipientId: 'ALL_PARTICIPANTS',
+          recipientName: `${conv.event_title ?? 'Event'} Group Chat`,
+          eventTitle: conv.event_title,
+        });
+        return;
+      }
+      if (!conv && item.event_id) {
+        const ev = events.find(e => e.id === item.event_id);
+        if (ev) { openGroupChat(ev); return; }
+      }
+      // Otherwise resolve the other party from the conversation itself — never from
+      // the notification title, which breaks on name collisions or copy changes.
       const otherId = conv
         ? (conv.participant_user_id === user?.id ? conv.organizer_user_id : conv.participant_user_id)
         : undefined;
