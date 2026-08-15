@@ -15,7 +15,7 @@ import { UserProfileModal } from '../../components/UserProfileModal';
 import UserAvatar from '../../components/UserAvatar';
 import VerifiedCheck from '../../components/VerifiedCheck';
 import { BottomSheet } from '../../components/BottomSheet';
-import { callNumber, sendEmail } from '../../utils/contactLinks';
+import { callNumber, sendEmail, openMaps } from '../../utils/contactLinks';
 import { AppUser } from '../../types';
 import { areaOfFocusIcon, areaOfFocusLabel } from '../../data/areasOfFocus';
 
@@ -796,7 +796,11 @@ export default function EventDetailScreen({ route, navigation }: Props) {
           </Section>
 
           <Section title="Where">
-            <InfoRow icon="location-outline" text={event.address} />
+            <InfoRow
+              icon="location-outline"
+              text={event.address}
+              onPress={() => openMaps(event.latitude, event.longitude, event.address)}
+            />
             <InfoRow icon="business-outline" text={event.city} />
           </Section>
 
@@ -1364,7 +1368,16 @@ function Section({ title, children }: any) {
   );
 }
 
-function InfoRow({ icon, text }: { icon: keyof typeof Ionicons.glyphMap; text: string }) {
+function InfoRow({ icon, text, onPress }: { icon: keyof typeof Ionicons.glyphMap; text: string; onPress?: () => void }) {
+  if (onPress) {
+    return (
+      <TouchableOpacity style={styles.infoRow} onPress={onPress} activeOpacity={0.6}>
+        <Ionicons name={icon} size={16} color={colors.primary} />
+        <Text style={[styles.infoText, { color: colors.primary, flex: 1 }]}>{text}</Text>
+        <Ionicons name="open-outline" size={15} color={colors.primary} />
+      </TouchableOpacity>
+    );
+  }
   return (
     <View style={styles.infoRow}>
       <Ionicons name={icon} size={16} color={colors.textMuted} />

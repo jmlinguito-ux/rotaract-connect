@@ -1,17 +1,12 @@
 import React, { createContext, useContext, useState, ReactNode, useCallback, useMemo, useEffect } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   RotaractEvent, EventParticipant, EventInvitation, EventImpact,
   VerificationApplication, AuditLog, AppNotification,
   VerificationStatus, AttendanceStatus, AppUser, UserRole, Club,
   Conversation, DirectMessage,
 } from '../types';
-import {
-  events as seedEvents, initialParticipants, initialInvitations,
-  initialImpacts, initialApplications, initialAuditLogs, initialNotifications,
-  initialConversations, initialDirectMessages,
-  users as seedUsers, clubs as seedClubs,
-} from '../data/mockData';
+import { loadAll, db } from '../services/db';
+import { useAuth } from './AuthContext';
 import { getEffectiveEventStatus } from '../utils/eventUtils';
 import { approverClubIdsFor, pendingApproverClubIdsFor } from '../utils/eventApproval';
 import { ROLE_LABELS } from '../utils/roles';
@@ -25,8 +20,19 @@ export type CheckInRecord = {
   recordedBy?: 'SELF_GPS' | 'ORGANIZER';
 };
 
-let idCounter = 1000;
-const nextId = (prefix: string) => `${prefix}_${++idCounter}`;
+/**
+ * RFC-4122 v4 UUID, dependency-free (Hermes lacks crypto.randomUUID). Ids are
+ * generated client-side so the optimistic local row and the persisted Supabase
+ * row share the same primary key.
+ */
+function genId(): string {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+const nextId = (_prefix?: string) => genId();
 const now = () => new Date().toISOString();
 
 export type EventApprovalResult = {
@@ -136,84 +142,40 @@ interface DataContextValue {
 const DataContext = createContext<DataContextValue | undefined>(undefined);
 
 export function DataProvider({ children }: { children: ReactNode }) {
-  const [users, setUsers] = useState<AppUser[]>(seedUsers);
-  const [clubs, setClubs] = useState<Club[]>(seedClubs);
-  const [events, setEvents] = useState<RotaractEvent[]>(seedEvents);
-  const [participants, setParticipants] = useState<EventParticipant[]>(initialParticipants);
-  const [invitations, setInvitations] = useState<EventInvitation[]>(initialInvitations);
-  const [impacts, setImpacts] = useState<EventImpact[]>(initialImpacts);
-  const [applications, setApplications] = useState<VerificationApplication[]>(initialApplications);
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(initialAuditLogs);
-  const [notifications, setNotifications] = useState<AppNotification[]>(initialNotifications);
-  const [conversations, setConversations] = useState<Conversation[]>(initialConversations);
-  const [messages, setMessages] = useState<DirectMessage[]>(initialDirectMessages);
+  const { isAuthenticated } = useAuth();
+  const [users, setUsers] = useState<AppUser[]>([]);
+  const [clubs, setClubs] = useState<Club[]>([]);
+  const [events, setEvents] = useState<RotaractEvent[]>([]);
+  const [participants, setParticipants] = useState<EventParticipant[]>([]);
+  const [invitations, setInvitations] = useState<EventInvitation[]>([]);
+  const [impacts, setImpacts] = useState<EventImpact[]>([]);
+  const [applications, setApplications] = useState<VerificationApplication[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [messages, setMessages] = useState<DirectMessage[]>([]);
 
-  // Load persisted state from AsyncStorage on app start
+  // Supabase is the source of truth. Reload whenever auth changes: clubs and
+  // zones are world-readable so the registration club picker is populated even
+  // before sign-in, while the RLS-protected tables come back empty until the
+  // user is authenticated (and empty again after sign-out, clearing the cache).
   useEffect(() => {
-    const loadPersistedData = async () => {
+    let cancelled = false;
+    (async () => {
       try {
-        const storedUsers = await AsyncStorage.getItem('@rc_users');
-        if (storedUsers) setUsers(JSON.parse(storedUsers));
-
-        const storedClubs = await AsyncStorage.getItem('@rc_clubs');
-        if (storedClubs) setClubs(JSON.parse(storedClubs));
-
-        const storedApps = await AsyncStorage.getItem('@rc_applications');
-        if (storedApps) setApplications(JSON.parse(storedApps));
-
-        const storedEvents = await AsyncStorage.getItem('@rc_events');
-        if (storedEvents) setEvents(JSON.parse(storedEvents));
-
-        const storedNotifs = await AsyncStorage.getItem('@rc_notifications');
-        if (storedNotifs) setNotifications(JSON.parse(storedNotifs));
-
-        const storedAudit = await AsyncStorage.getItem('@rc_auditLogs');
-        if (storedAudit) setAuditLogs(JSON.parse(storedAudit));
-
-        const storedConvs = await AsyncStorage.getItem('@rc_conversations');
-        if (storedConvs) setConversations(JSON.parse(storedConvs));
-
-        const storedMsgs = await AsyncStorage.getItem('@rc_messages');
-        if (storedMsgs) setMessages(JSON.parse(storedMsgs));
+        const d = await loadAll();
+        if (cancelled) return;
+        setUsers(d.users); setClubs(d.clubs); setEvents(d.events);
+        setParticipants(d.participants); setInvitations(d.invitations);
+        setImpacts(d.impacts); setApplications(d.applications);
+        setAuditLogs(d.auditLogs); setNotifications(d.notifications);
+        setConversations(d.conversations); setMessages(d.messages);
       } catch (e) {
-        console.warn('Failed to load persisted data', e);
+        console.warn('Failed to load data from Supabase', e);
       }
-    };
-    loadPersistedData();
-  }, []);
-
-  // Save state updates to AsyncStorage so they survive code reloads & Fast Refresh
-  useEffect(() => {
-    AsyncStorage.setItem('@rc_clubs', JSON.stringify(clubs)).catch(() => {});
-  }, [clubs]);
-
-  useEffect(() => {
-    AsyncStorage.setItem('@rc_applications', JSON.stringify(applications)).catch(() => {});
-  }, [applications]);
-
-  useEffect(() => {
-    AsyncStorage.setItem('@rc_events', JSON.stringify(events)).catch(() => {});
-  }, [events]);
-
-  useEffect(() => {
-    AsyncStorage.setItem('@rc_notifications', JSON.stringify(notifications)).catch(() => {});
-  }, [notifications]);
-
-  useEffect(() => {
-    AsyncStorage.setItem('@rc_auditLogs', JSON.stringify(auditLogs)).catch(() => {});
-  }, [auditLogs]);
-
-  useEffect(() => {
-    AsyncStorage.setItem('@rc_conversations', JSON.stringify(conversations)).catch(() => {});
-  }, [conversations]);
-
-  useEffect(() => {
-    AsyncStorage.setItem('@rc_users', JSON.stringify(users)).catch(() => {});
-  }, [users]);
-
-  useEffect(() => {
-    AsyncStorage.setItem('@rc_messages', JSON.stringify(messages)).catch(() => {});
-  }, [messages]);
+    })();
+    return () => { cancelled = true; };
+  }, [isAuthenticated]);
 
   const addClub = useCallback((c: {
     club_name: string;
@@ -243,15 +205,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
       president_name: c.president_name || 'Pending Election',
     };
     setClubs(prev => [...prev, newClub]);
+    db.insertClub(newClub);
     return newClub;
   }, []);
 
   const pushNotif = useCallback((n: Omit<AppNotification, 'id' | 'created_at' | 'is_read'>) => {
-    setNotifications(prev => [{ ...n, id: nextId('n'), created_at: now(), is_read: false }, ...prev]);
+    if (!n.user_id) return; // never persist a notification with no recipient
+    const notif: AppNotification = { ...n, id: nextId('n'), created_at: now(), is_read: false };
+    setNotifications(prev => [notif, ...prev]);
+    db.insertNotification(notif);
   }, []);
 
   const updateUserRole = useCallback((targetUserId: string, newRole: UserRole, actor?: AppUser) => {
-    const target = seedUsers.concat(users).find(u => u.id === targetUserId);
+    const target = users.find(u => u.id === targetUserId);
     // Role and position must tell the same story, and the club's recorded
     // president must follow the role — otherwise application routing keeps
     // notifying the previous president.
@@ -260,28 +226,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const newPosition = becomesPresident ? 'President' : losesPresidency ? 'Member' : undefined;
 
     setUsers(prev => prev.map(u => (u.id === targetUserId ? { ...u, role: newRole, ...(newPosition ? { position: newPosition } : {}) } : u)));
-
-    // The seed array backs AuthContext's sign-in and demo pickers, so keep it in
-    // step or a promoted user loses the role the moment they switch accounts.
-    const seedIdx = seedUsers.findIndex(u => u.id === targetUserId);
-    if (seedIdx !== -1) seedUsers[seedIdx] = { ...seedUsers[seedIdx], role: newRole, ...(newPosition ? { position: newPosition } : {}) };
+    db.updateProfileRole(targetUserId, newRole, newPosition);
 
     if (target?.club_id && (becomesPresident || losesPresidency)) {
+      const presidentId = becomesPresident ? targetUserId : '';
       setClubs(prev => prev.map(c => (c.id === target.club_id
         ? {
             ...c,
-            president_id: becomesPresident ? targetUserId : '',
+            president_id: presidentId,
             president_name: becomesPresident ? target.full_name : 'Pending Election',
           }
         : c)));
-      const seedClubIdx = seedClubs.findIndex(c => c.id === target.club_id);
-      if (seedClubIdx !== -1) {
-        seedClubs[seedClubIdx] = {
-          ...seedClubs[seedClubIdx],
-          president_id: becomesPresident ? targetUserId : '',
-          president_name: becomesPresident ? target.full_name : 'Pending Election',
-        };
-      }
+      db.updateClubPresident(target.club_id, presidentId || null);
     }
 
     const label = ROLE_LABELS[newRole];
@@ -293,7 +249,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         ? `${actor.full_name} assigned you the ${label} role.`
         : `Your role was changed to ${label}.`,
     });
-  }, [pushNotif]);
+  }, [users, pushNotif]);
 
   const addApplication = useCallback((a: {
     user_id: string;
@@ -314,11 +270,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
       notes: '',
     };
     setApplications(prev => [application, ...prev]);
+    db.insertApplication(application);
 
     // Route the new application to whoever reviews it, so the uploaded proof is
     // waiting in their queue instead of sitting unseen on the applicant's record.
     if (isPresident) {
-      const districtAdmins = seedUsers.concat(users).filter(u => u.role === 'DISTRICT_ADMIN');
+      const districtAdmins = users.filter(u => u.role === 'DISTRICT_ADMIN');
       for (const admin of districtAdmins) {
         pushNotif({
           user_id: admin.id,
@@ -347,6 +304,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const createEvent = useCallback((e: Omit<RotaractEvent, 'id'>) => {
     const ev: RotaractEvent = { ...e, id: nextId('e') };
     setEvents(prev => [ev, ...prev]);
+    db.insertEvent(ev);
 
     // Automatically register organizer and co-organizers as JOINED participants
     const teamUserIds = [
@@ -354,37 +312,38 @@ export function DataProvider({ children }: { children: ReactNode }) {
       ...(ev.co_organizer_user_ids ?? []),
     ];
     if (teamUserIds.length > 0) {
-      setParticipants(prev => [
-        ...teamUserIds.map(uid => ({
-          id: nextId('p'),
-          event_id: ev.id,
-          user_id: uid,
-          status: 'JOINED' as const,
-          attendance_status: 'NOT_MARKED' as const,
-          joined_at: now(),
-        })),
-        ...prev,
-      ]);
+      const teamParts: EventParticipant[] = teamUserIds.map(uid => ({
+        id: nextId('p'),
+        event_id: ev.id,
+        user_id: uid,
+        status: 'JOINED' as const,
+        attendance_status: 'NOT_MARKED' as const,
+        joined_at: now(),
+      }));
+      setParticipants(prev => [...teamParts, ...prev]);
+      teamParts.forEach(p => db.insertParticipant(p));
     }
     if (ev.status === 'PENDING_APPROVAL') {
-      const creatorName = seedUsers.concat(users).find(u => u.id === ev.organizer_user_id)?.full_name ?? 'A member';
+      const creatorName = users.find(u => u.id === ev.organizer_user_id)?.full_name ?? 'A member';
       if (ev.event_type === 'DISTRICT_EVENT') {
-        const districtAdmin = seedUsers.concat(users).find(u => u.role === 'DISTRICT_ADMIN');
-        const districtAdminId = districtAdmin?.id ?? 'u_district';
-        pushNotif({
-          user_id: districtAdminId,
-          kind: 'EVENT_APPROVAL_REQUEST',
-          title: 'District Event Approval Needed',
-          message: `${creatorName} submitted District Event "${ev.title}" for District Administrator approval.`,
-          event_id: ev.id,
-        });
+        const districtAdmin = users.find(u => u.role === 'DISTRICT_ADMIN');
+        if (districtAdmin) {
+          pushNotif({
+            user_id: districtAdmin.id,
+            kind: 'EVENT_APPROVAL_REQUEST',
+            title: 'District Event Approval Needed',
+            message: `${creatorName} submitted District Event "${ev.title}" for District Administrator approval.`,
+            event_id: ev.id,
+          });
+        }
       } else {
         // Every involved club's President must sign off, not just the organizing club's.
-        const approverClubIds = approverClubIdsFor(ev, seedUsers.concat(users));
+        const approverClubIds = approverClubIdsFor(ev, users);
         const others = approverClubIds.length - 1;
         for (const clubId of approverClubIds) {
           const club = clubs.find(c => c.id === clubId);
-          const presidentId = club?.president_id ?? 'u_pres';
+          const presidentId = club?.president_id;
+          if (!presidentId) continue;
           pushNotif({
             user_id: presidentId,
             kind: 'EVENT_APPROVAL_REQUEST',
@@ -402,6 +361,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const updateEvent = useCallback((eventId: string, updates: Partial<Omit<RotaractEvent, 'id'>>) => {
     setEvents(prev => prev.map(e => (e.id === eventId ? { ...e, ...updates } : e)));
+    db.updateEvent(eventId, updates);
 
     // When co-organizers change, ensure any newly added ones are in the participant list
     if (updates.co_organizer_user_ids) {
@@ -410,17 +370,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
         const existingUserIds = new Set(prev.filter(p => p.event_id === eventId).map(p => p.user_id));
         const toAdd = newCoOrgs.filter(uid => !existingUserIds.has(uid));
         if (toAdd.length === 0) return prev;
-        return [
-          ...toAdd.map(uid => ({
-            id: nextId('p'),
-            event_id: eventId,
-            user_id: uid,
-            status: 'JOINED' as const,
-            attendance_status: 'NOT_MARKED' as const,
-            joined_at: now(),
-          })),
-          ...prev,
-        ];
+        const added: EventParticipant[] = toAdd.map(uid => ({
+          id: nextId('p'),
+          event_id: eventId,
+          user_id: uid,
+          status: 'JOINED' as const,
+          attendance_status: 'NOT_MARKED' as const,
+          joined_at: now(),
+        }));
+        added.forEach(p => db.insertParticipant(p));
+        return [...added, ...prev];
       });
     }
   }, []);
@@ -435,8 +394,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
     if (!ev) return;
 
     setEvents(prev => prev.map(e => (e.id === eventId ? { ...e, approved_by_club_ids: [] } : e)));
+    db.updateEvent(eventId, { approved_by_club_ids: [] });
 
-    for (const clubId of approverClubIdsFor(ev, seedUsers.concat(users))) {
+    for (const clubId of approverClubIdsFor(ev, users)) {
       const president = clubs.find(c => c.id === clubId)?.president_id;
       if (!president) continue;
       pushNotif({
@@ -447,10 +407,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
         event_id: ev.id,
       });
     }
-  }, [events, users, pushNotif]);
+  }, [events, clubs, users, pushNotif]);
 
   const updateEventStatus = useCallback((eventId: string, status: RotaractEvent['status']) => {
     setEvents(prev => prev.map(e => (e.id === eventId ? { ...e, status } : e)));
+    db.updateEvent(eventId, { status });
   }, []);
 
   const cancelEvent = useCallback((eventId: string, reason?: string, actor?: AppUser) => {
@@ -461,6 +422,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const reasonText = reason && reason.trim() ? reason.trim() : `Cancelled by ${actorName}`;
 
     setEvents(prev => prev.map(e => (e.id === eventId ? { ...e, status: 'CANCELLED', cancellation_reason: reasonText } : e)));
+    db.updateEvent(eventId, { status: 'CANCELLED', cancellation_reason: reasonText });
 
     const joinedParts = participants.filter(p => p.event_id === eventId && p.status === 'JOINED');
     const userIdsToNotify = new Set<string>([
@@ -487,7 +449,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const ev = events.find(e => e.id === eventId);
     if (!ev) return { published: false, remainingApprovals: 0 };
 
-    const allUsers = seedUsers.concat(users);
     const isDistrictEvent = ev.event_type === 'DISTRICT_EVENT';
 
     // District events are a single District Administrator decision. Club events need
@@ -499,14 +460,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     const remaining = isDistrictEvent
       ? 0
-      : pendingApproverClubIdsFor({ ...ev, approved_by_club_ids: approvedByClubIds }, allUsers).length;
+      : pendingApproverClubIdsFor({ ...ev, approved_by_club_ids: approvedByClubIds }, users).length;
     const published = remaining === 0;
 
+    const newStatus = published ? 'RECRUITING' : ev.status;
     setEvents(prev => prev.map(e => (
       e.id === eventId
-        ? { ...e, approved_by_club_ids: approvedByClubIds, status: published ? 'RECRUITING' : e.status }
+        ? { ...e, approved_by_club_ids: approvedByClubIds, status: newStatus }
         : e
     )));
+    db.updateEvent(eventId, { approved_by_club_ids: approvedByClubIds, status: newStatus });
 
     pushNotif({
       user_id: ev.organizer_user_id,
@@ -524,24 +487,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
         ev.organizer_user_id,
         ...(ev.co_organizer_user_ids ?? []),
       ]);
-      const usersToInvite = allUsers.filter(u => !teamIds.has(u.id));
-      setInvitations(prev => {
-        const existingPairs = new Set(
-          prev.filter(i => i.event_id === eventId && i.status === 'PENDING')
-            .map(i => i.invited_user_id),
-        );
-        const newInvitations = usersToInvite
-          .filter(u => !existingPairs.has(u.id))
-          .map(u => ({
-            id: nextId('i'),
-            event_id: eventId,
-            invited_user_id: u.id,
-            invited_by_user_id: actor.id,
-            status: 'PENDING' as const,
-            sent_at: now(),
-          }));
-        return [...prev, ...newInvitations];
-      });
+      const usersToInvite = users.filter(u => !teamIds.has(u.id));
+      const existingPairs = new Set(
+        invitations.filter(i => i.event_id === eventId && i.status === 'PENDING')
+          .map(i => i.invited_user_id),
+      );
+      const newInvitations: EventInvitation[] = usersToInvite
+        .filter(u => !existingPairs.has(u.id))
+        .map(u => ({
+          id: nextId('i'),
+          event_id: eventId,
+          invited_user_id: u.id,
+          invited_by_user_id: actor.id,
+          status: 'PENDING' as const,
+          sent_at: now(),
+        }));
+      setInvitations(prev => [...prev, ...newInvitations]);
+      newInvitations.forEach(i => db.insertInvitation(i));
       for (const u of usersToInvite) {
         pushNotif({
           user_id: u.id,
@@ -555,7 +517,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     // Keep the remaining Presidents in the loop as approvals come in.
     if (!published) {
-      const stillPending = pendingApproverClubIdsFor({ ...ev, approved_by_club_ids: approvedByClubIds }, allUsers);
+      const stillPending = pendingApproverClubIdsFor({ ...ev, approved_by_club_ids: approvedByClubIds }, users);
       for (const clubId of stillPending) {
         const president = clubs.find(c => c.id === clubId)?.president_id;
         if (!president) continue;
@@ -570,11 +532,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
 
     return { published, remainingApprovals: remaining };
-  }, [events, users, pushNotif]);
+  }, [events, invitations, clubs, users, pushNotif]);
 
   const rejectEvent = useCallback((eventId: string, actor: AppUser, reason?: string) => {
     const reasonText = reason && reason.trim() ? reason.trim() : `Declined by ${actor.full_name}`;
     setEvents(prev => prev.map(e => (e.id === eventId ? { ...e, status: 'CANCELLED', cancellation_reason: reasonText } : e)));
+    db.updateEvent(eventId, { status: 'CANCELLED', cancellation_reason: reasonText });
     const ev = events.find(e => e.id === eventId);
     if (ev) {
       pushNotif({
@@ -586,7 +549,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       });
 
       // One decline settles it for everyone — stop the other Presidents from reviewing.
-      for (const clubId of pendingApproverClubIdsFor(ev, seedUsers.concat(users))) {
+      for (const clubId of pendingApproverClubIdsFor(ev, users)) {
         if (clubId === actor.club_id) continue;
         const president = clubs.find(c => c.id === clubId)?.president_id;
         if (!president) continue;
@@ -609,21 +572,25 @@ export function DataProvider({ children }: { children: ReactNode }) {
     // Accepting an invitation counts as the organizer's pre-approval, so it bypasses
     // the requires_approval join review.
     const needsApproval = !opts?.skipApproval && ev.requires_approval && !isSameClub;
+    const status: EventParticipant['status'] = needsApproval ? 'PENDING' : 'JOINED';
+
+    const existing = participants.find(p => p.event_id === eventId && p.user_id === userId);
+    const row: EventParticipant = existing
+      ? { ...existing, status }
+      : {
+          id: nextId('p'),
+          event_id: eventId,
+          user_id: userId,
+          status,
+          attendance_status: 'NOT_MARKED',
+          joined_at: now(),
+        };
 
     setParticipants(prev => {
-      const existing = prev.find(p => p.event_id === eventId && p.user_id === userId);
-      if (existing) {
-        return prev.map(p => (p.event_id === eventId && p.user_id === userId ? { ...p, status: needsApproval ? 'PENDING' : 'JOINED' } : p));
-      }
-      return [...prev, {
-        id: nextId('p'),
-        event_id: eventId,
-        user_id: userId,
-        status: needsApproval ? 'PENDING' : 'JOINED',
-        attendance_status: 'NOT_MARKED',
-        joined_at: now(),
-      }];
+      if (existing) return prev.map(p => (p.id === existing.id ? row : p));
+      return [...prev, row];
     });
+    db.insertParticipant(row);
 
     if (needsApproval) {
       pushNotif({
@@ -642,14 +609,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
         event_id: ev.id,
       });
     }
-  }, [events, users, pushNotif]);
+  }, [events, users, participants, pushNotif]);
 
   const leaveEvent = useCallback((eventId: string, userId: string) => {
     setParticipants(prev => prev.filter(p => !(p.event_id === eventId && p.user_id === userId)));
+    db.deleteParticipant(eventId, userId);
   }, []);
 
   const approveParticipant = useCallback((participantId: string, actor: AppUser) => {
     setParticipants(prev => prev.map(p => (p.id === participantId ? { ...p, status: 'JOINED' } : p)));
+    db.updateParticipant(participantId, { status: 'JOINED' });
     const p = participants.find(x => x.id === participantId);
     if (p) {
       const ev = events.find(e => e.id === p.event_id);
@@ -666,6 +635,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const declineParticipant = useCallback((participantId: string, actor: AppUser, reason?: string) => {
     const p = participants.find(x => x.id === participantId);
     setParticipants(prev => prev.filter(x => x.id !== participantId));
+    db.deleteParticipantById(participantId);
     if (p) {
       const ev = events.find(e => e.id === p.event_id);
       pushNotif({
@@ -679,24 +649,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, [participants, events, pushNotif]);
 
   const markAttendance = useCallback((participantId: string, status: AttendanceStatus) => {
-    setParticipants(prev =>
-      prev.map(p =>
-        p.id === participantId
-          ? {
-              ...p,
-              attendance_status: status,
-              ...(status !== 'ATTENDED'
-                ? {
-                    checked_in_at: undefined,
-                    check_in_latitude: undefined,
-                    check_in_longitude: undefined,
-                    check_in_distance_m: undefined,
-                  }
-                : {}),
-            }
-          : p,
-      ),
-    );
+    const clears = status !== 'ATTENDED';
+    const updates: Partial<EventParticipant> = {
+      attendance_status: status,
+      ...(clears
+        ? {
+            checked_in_at: undefined,
+            check_in_latitude: undefined,
+            check_in_longitude: undefined,
+            check_in_distance_m: undefined,
+          }
+        : {}),
+    };
+    setParticipants(prev => prev.map(p => (p.id === participantId ? { ...p, ...updates } : p)));
+    db.updateParticipant(participantId, clears
+      ? { attendance_status: status, checked_in_at: null as any, check_in_latitude: null as any, check_in_longitude: null as any, check_in_distance_m: null as any }
+      : { attendance_status: status });
   }, []);
 
   /**
@@ -705,36 +673,32 @@ export function DataProvider({ children }: { children: ReactNode }) {
    * the participant was, so an organizer can audit it later.
    */
   const checkIn = useCallback((participantId: string, at: CheckInRecord) => {
-    setParticipants(prev =>
-      prev.map(p =>
-        p.id === participantId
-          ? {
-              ...p,
-              attendance_status: 'ATTENDED' as AttendanceStatus,
-              checked_in_at: at.checkedInAt,
-              check_in_latitude: at.latitude,
-              check_in_longitude: at.longitude,
-              check_in_distance_m: at.distanceMeters,
-              check_in_method: at.recordedBy ?? 'SELF_GPS',
-            }
-          : p,
-      ),
-    );
+    const updates: Partial<EventParticipant> = {
+      attendance_status: 'ATTENDED',
+      checked_in_at: at.checkedInAt,
+      check_in_latitude: at.latitude,
+      check_in_longitude: at.longitude,
+      check_in_distance_m: at.distanceMeters,
+      check_in_method: at.recordedBy ?? 'SELF_GPS',
+    };
+    setParticipants(prev => prev.map(p => (p.id === participantId ? { ...p, ...updates } : p)));
+    db.updateParticipant(participantId, updates);
   }, []);
 
   const invite = useCallback((eventId: string, invitedUserId: string, byUser: AppUser) => {
-    setInvitations(prev => {
-      const dup = prev.find(i => i.event_id === eventId && i.invited_user_id === invitedUserId && i.status === 'PENDING');
-      if (dup) return prev;
-      return [...prev, {
+    const dup = invitations.find(i => i.event_id === eventId && i.invited_user_id === invitedUserId && i.status === 'PENDING');
+    if (!dup) {
+      const inv: EventInvitation = {
         id: nextId('i'),
         event_id: eventId,
         invited_user_id: invitedUserId,
         invited_by_user_id: byUser.id,
         status: 'PENDING',
         sent_at: now(),
-      }];
-    });
+      };
+      setInvitations(prev => [...prev, inv]);
+      db.insertInvitation(inv);
+    }
     const ev = events.find(e => e.id === eventId);
     pushNotif({
       user_id: invitedUserId,
@@ -743,7 +707,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       message: `${byUser.full_name} invited you to ${ev?.title ?? 'an event'}.`,
       event_id: eventId,
     });
-  }, [events, pushNotif]);
+  }, [events, invitations, pushNotif]);
 
   const respondInvitation = useCallback((invitationId: string, accept: boolean, user: AppUser, reason?: string) => {
     const trimmedReason = reason?.trim() || undefined;
@@ -752,6 +716,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         ? { ...i, status: accept ? 'ACCEPTED' : 'DECLINED', decline_reason: accept ? undefined : trimmedReason }
         : i
     )));
+    db.updateInvitation(invitationId, { status: accept ? 'ACCEPTED' : 'DECLINED', decline_reason: accept ? undefined : trimmedReason });
     const inv = invitations.find(i => i.id === invitationId);
     if (!inv) return;
     if (accept) joinEvent(inv.event_id, user.id, { skipApproval: true });
@@ -782,6 +747,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         last_message_at: now(),
       };
       setConversations(prev => [conv, ...prev]);
+      db.insertConversation(conv);
       return conv;
     }
     return existing;
@@ -791,7 +757,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const ev = events.find(e => e.id === eventId);
     if (!ev) return false;
     if (ev.organizer_user_id === userId) return true;
-    const u = seedUsers.concat(users).find(x => x.id === userId);
+    const u = users.find(x => x.id === userId);
     if (u && u.club_id === ev.organizing_club_id && u.role === 'CLUB_PRESIDENT') return true;
 
     // Participant MUST have status JOINED (excluding unapproved/pending)
@@ -805,7 +771,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     const ev = events.find(e => e.id === eventId);
     const conv: Conversation = {
-      id: `conv_group_${eventId}`,
+      id: nextId('conv'),
       event_id: eventId,
       event_title: ev?.title ?? 'Event Group Chat',
       is_group: true,
@@ -813,12 +779,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // event's JOINED participants (NULL in the database).
       participant_user_id: undefined,
       participant_name: `${ev?.title ?? 'Event'} Group Chat`,
-      organizer_user_id: ev?.organizer_user_id ?? 'u_pres',
+      organizer_user_id: ev?.organizer_user_id ?? '',
       organizer_name: ev?.organizing_club_name ?? 'Club',
       last_message: 'Welcome to the event group chat!',
       last_message_at: now(),
     };
     setConversations(prev => [conv, ...prev]);
+    if (conv.organizer_user_id) db.insertConversation(conv);
     return conv;
   }, [conversations, events]);
 
@@ -835,7 +802,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
       created_at: now(),
     };
     setMessages(prev => [...prev, msg]);
+    db.insertMessage(msg);
     setConversations(prev => prev.map(c => c.id === conversationId ? { ...c, last_message: text, last_message_at: now() } : c));
+    db.updateConversation(conversationId, { last_message: text, last_message_at: now() });
     // Group messages fan out inside the conversation itself — there is no single
     // recipient to notify (and 'ALL_PARTICIPANTS' is not a real user to notify).
     if (receiverId) {
@@ -866,86 +835,88 @@ export function DataProvider({ children }: { children: ReactNode }) {
       const others = prev.filter(i => i.event_id !== impact.event_id);
       return [...others, impact];
     });
+    db.upsertImpact(impact);
     setEvents(prev => prev.map(e => (e.id === impact.event_id ? { ...e, status: 'COMPLETED' } : e)));
+    db.updateEvent(impact.event_id, { status: 'COMPLETED' });
   }, []);
 
   const reviewApplication = useCallback((appId, action, actor, notes = '') => {
-    setApplications(prev => prev.map(a => {
-      if (a.id !== appId) return a;
-      let newStatus: VerificationStatus = a.status;
-      if (action === 'CLUB_VALIDATE') {
-        // Club validation is not final: the App Administrator makes the last call,
-        // matching the pipeline shown to applicants (club → admin → verified).
-        newStatus = 'AWAITING_ADMIN_VERIFICATION';
-      } else if (action === 'DISTRICT_APPROVE' || action === 'ADMIN_APPROVE') {
-        newStatus = 'VERIFIED';
-      } else if (action === 'REQUEST_INFO') {
-        newStatus = 'NEEDS_INFORMATION';
-      } else if (action === 'REJECT') {
-        newStatus = 'REJECTED';
-      }
+    const a = applications.find(x => x.id === appId);
+    if (!a) return;
 
-      // Keep the applicant's user record in step, or an approved member stays
-      // "unverified" everywhere the app checks verification_status.
-      setUsers(usersPrev => usersPrev.map(u => (u.id === a.user_id ? { ...u, verification_status: newStatus } : u)));
-      const seedIdx = seedUsers.findIndex(u => u.id === a.user_id);
-      if (seedIdx !== -1) seedUsers[seedIdx] = { ...seedUsers[seedIdx], verification_status: newStatus };
+    let newStatus: VerificationStatus = a.status;
+    if (action === 'CLUB_VALIDATE') {
+      // Club validation is not final: the App Administrator makes the last call,
+      // matching the pipeline shown to applicants (club → admin → verified).
+      newStatus = 'AWAITING_ADMIN_VERIFICATION';
+    } else if (action === 'DISTRICT_APPROVE' || action === 'ADMIN_APPROVE') {
+      newStatus = 'VERIFIED';
+    } else if (action === 'REQUEST_INFO') {
+      newStatus = 'NEEDS_INFORMATION';
+    } else if (action === 'REJECT') {
+      newStatus = 'REJECTED';
+    }
 
-      setAuditLogs(logs => [{
-        id: nextId('log'),
-        application_id: a.id,
-        action,
-        performed_by_name: actor.full_name,
-        performed_by_role: actor.role,
-        previous_status: a.status,
-        new_status: newStatus,
-        notes,
-        created_at: now(),
-      }, ...logs]);
-      pushNotif({
-        user_id: a.user_id,
-        kind: 'VERIFICATION_UPDATE',
-        title: 'Verification update',
-        message: `Your application is now ${newStatus.replace(/_/g, ' ').toLowerCase()}.`,
-        application_id: a.id,
-      });
-      return { ...a, status: newStatus, notes: notes || a.notes };
-    }));
-  }, [pushNotif]) as DataContextValue['reviewApplication'];
+    setApplications(prev => prev.map(x => (x.id === appId ? { ...x, status: newStatus, notes: notes || x.notes } : x)));
+    db.updateApplication(appId, { status: newStatus, notes: notes || a.notes });
+
+    // Keep the applicant's user record in step, or an approved member stays
+    // "unverified" everywhere the app checks verification_status.
+    setUsers(usersPrev => usersPrev.map(u => (u.id === a.user_id ? { ...u, verification_status: newStatus } : u)));
+    db.updateProfileVerification(a.user_id, newStatus);
+
+    const log: AuditLog = {
+      id: nextId('log'),
+      application_id: a.id,
+      action,
+      performed_by_name: actor.full_name,
+      performed_by_role: actor.role,
+      previous_status: a.status,
+      new_status: newStatus,
+      notes,
+      created_at: now(),
+    };
+    setAuditLogs(logs => [log, ...logs]);
+    db.insertAuditLog(log);
+
+    pushNotif({
+      user_id: a.user_id,
+      kind: 'VERIFICATION_UPDATE',
+      title: 'Verification update',
+      message: `Your application is now ${newStatus.replace(/_/g, ' ').toLowerCase()}.`,
+      application_id: a.id,
+    });
+  }, [applications, pushNotif]) as DataContextValue['reviewApplication'];
 
   const resubmitApplication = useCallback((appId: string, updated: { member_id: string; club_id: string; club_name: string; position: string }) => {
-    setApplications(prev => prev.map(a => {
-      if (a.id !== appId) return a;
-      const isPresident = updated.position.toLowerCase().includes('president');
-      const newStatus: VerificationStatus = isPresident ? 'AWAITING_DISTRICT_VALIDATION' : 'AWAITING_CLUB_VALIDATION';
+    const a = applications.find(x => x.id === appId);
+    if (!a) return;
+    const isPresident = updated.position.toLowerCase().includes('president');
+    const newStatus: VerificationStatus = isPresident ? 'AWAITING_DISTRICT_VALIDATION' : 'AWAITING_CLUB_VALIDATION';
+    const submitted_at = new Date().toISOString();
 
-      pushNotif({
-        user_id: a.user_id,
-        kind: 'VERIFICATION_UPDATE',
-        title: 'Application Resubmitted',
-        message: `Your application has been resubmitted and is now ${newStatus.replace(/_/g, ' ').toLowerCase()}.`,
-        application_id: a.id,
-      });
+    setApplications(prev => prev.map(x => (x.id === appId
+      ? { ...x, member_id: updated.member_id, club_id: updated.club_id, club_name: updated.club_name, position: updated.position, status: newStatus, notes: '', submitted_at }
+      : x)));
+    db.updateApplication(appId, { member_id: updated.member_id, club_id: updated.club_id, position: updated.position, status: newStatus, notes: '', submitted_at });
 
-      return {
-        ...a,
-        member_id: updated.member_id,
-        club_id: updated.club_id,
-        club_name: updated.club_name,
-        position: updated.position,
-        status: newStatus,
-        notes: '',
-        submitted_at: new Date().toISOString(),
-      };
-    }));
-  }, [pushNotif]);
+    pushNotif({
+      user_id: a.user_id,
+      kind: 'VERIFICATION_UPDATE',
+      title: 'Application Resubmitted',
+      message: `Your application has been resubmitted and is now ${newStatus.replace(/_/g, ' ').toLowerCase()}.`,
+      application_id: a.id,
+    });
+  }, [applications, pushNotif]);
 
   const markNotificationsRead = useCallback((userId: string) => {
     setNotifications(prev => prev.map(n => (n.user_id === userId ? { ...n, is_read: true } : n)));
+    db.markNotificationsRead(userId);
   }, []);
 
   const deleteNotification = useCallback((notificationId: string) => {
     setNotifications(prev => prev.filter(n => n.id !== notificationId));
+    db.deleteNotification(notificationId);
   }, []);
 
   const participantsFor = useCallback((eventId: string) => participants.filter(p => p.event_id === eventId), [participants]);
@@ -992,10 +963,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }, 0);
     const clubIds = new Set<string>();
     evs.forEach(e => { clubIds.add(e.organizing_club_id); e.participating_club_ids.forEach(c => clubIds.add(c)); });
-    const me = seedUsers.find(u => u.id === userId);
+    const me = users.find(u => u.id === userId);
     if (me) clubIds.delete(me.club_id);
     return { joined: mine.length, organized: organized.length, hours, clubsCollab: clubIds.size, service, fellowships };
-  }, [participants, events]);
+  }, [participants, events, users]);
 
   // Memoised: a fresh array on every render gives every consumer a new `events`
   // identity, which re-triggers downstream effects (notably the map's

@@ -20,8 +20,6 @@ platform :ios, podfile_properties['ios.deploymentTarget'] || '15.1'
 
 prepare_react_native_project!
 
-inhibit_all_warnings!
-
 target 'rotaractconnect' do
   use_expo_modules!
 
@@ -61,28 +59,5 @@ target 'rotaractconnect' do
       :mac_catalyst_enabled => false,
       :ccache_enabled => ccache_enabled?(podfile_properties),
     )
-
-    installer.pods_project.targets.each do |target|
-      target.build_configurations.each do |config|
-        config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.1'
-      end
-
-      target.shell_script_build_phases.each do |phase|
-        if phase.name == '[CP-User] [Hermes] Replace Hermes for the right configuration, if needed'
-          phase.always_out_of_date = '1'
-        end
-      end
-    end
-
-    # Patch react-native-screens header to include generated EventEmitters.h.
-    # This fixes: unknown type name 'RNSScreenEventEmitter' with RN 0.81 + New Architecture.
-    rnscreens_header = File.join(__dir__, '..', 'node_modules', 'react-native-screens', 'common', 'cpp', 'react', 'renderer', 'components', 'rnscreens', 'RNSScreenShadowNode.h')
-    if File.exist?(rnscreens_header)
-      contents = File.read(rnscreens_header)
-      unless contents.include?('<react/renderer/components/rnscreens/EventEmitters.h>')
-        contents = contents.sub("#include <jsi/jsi.h>\n", "#include <jsi/jsi.h>\n#include <react/renderer/components/rnscreens/EventEmitters.h>\n")
-        File.write(rnscreens_header, contents)
-      end
-    end
   end
 end

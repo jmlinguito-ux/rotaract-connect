@@ -6,21 +6,21 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
-import { clubs, zones } from '../../data/mockData';
+import { zones } from '../../data/mockData';
 import { RootStackParamList } from '../../navigation/types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Analytics'>;
 
 export default function AnalyticsScreen({ navigation }: Props) {
   const { user } = useAuth();
-  const { events, impacts, users, applications } = useData();
+  const { events, impacts, users, applications, clubs } = useData();
   const { colors: themeColors } = useTheme();
   const [selectedZone, setSelectedZone] = useState<string | 'ALL'>('ALL');
 
   const filteredClubs = useMemo(() => {
     if (selectedZone === 'ALL') return clubs;
     return clubs.filter(c => c.zone_id === selectedZone);
-  }, [selectedZone]);
+  }, [clubs, selectedZone]);
 
   const filteredEvents = useMemo(() => {
     if (selectedZone === 'ALL') return events;

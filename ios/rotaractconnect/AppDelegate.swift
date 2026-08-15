@@ -33,7 +33,6 @@ public class AppDelegate: ExpoAppDelegate {
   }
 
   // Linking API
-  @available(iOS, deprecated: 26.0)
   public override func application(
     _ app: UIApplication,
     open url: URL,

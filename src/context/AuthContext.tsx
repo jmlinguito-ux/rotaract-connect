@@ -1,15 +1,17 @@
 import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import { AppUser, UserRole, VerificationStatus } from '../types';
 import { supabase } from '../services/supabase';
-import { clubs } from '../data/mockData';
 
 interface AuthContextValue {
   user: AppUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  signIn: (email: string, password: string) => Promise<{ error?: string }>;
+  /** Accepts either an email address or a username as the identifier. */
+  signIn: (identifier: string, password: string) => Promise<{ error?: string }>;
   signUp: (email: string, password: string, details: SignUpDetails) => Promise<{ error?: string; user?: AppUser }>;
   signOut: () => Promise<void>;
+  /** Verifies the current password, then sets a new one. */
+  changePassword: (currentPassword: string, newPassword: string) => Promise<{ error?: string }>;
   /** Returns the newly signed-in account so callers can file its application. */
   register: (details?: Partial<AppUser>) => AppUser;
   updateAvatar: (avatarUrl: string) => Promise<void>;
@@ -31,15 +33,14 @@ export interface SignUpDetails {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-function profileToAppUser(profile: any): AppUser {
-  const club = clubs.find(c => c.id === profile.club_id);
+function profileToAppUser(profile: any, clubName?: string): AppUser {
   return {
     id: profile.id,
     full_name: profile.full_name,
     email: profile.email,
     username: profile.username,
     club_id: profile.club_id,
-    club_name: club?.club_name ?? profile.club_name ?? '',
+    club_name: clubName ?? profile.clubs?.club_name ?? profile.club_name ?? '',
     position: profile.position,
     role: profile.role as UserRole,
     verification_status: profile.verification_status as VerificationStatus,
@@ -64,7 +65,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    setUser(profileToAppUser(data));
+    // Resolve the club name in a separate query. An embedded `clubs(...)` select
+    // is ambiguous here — profiles↔clubs are linked by both profiles.club_id and
+    // clubs.president_id — and PostgREST errors on the ambiguity, which would
+    // silently fail sign-in.
+    let clubName: string | undefined;
+    if (data.club_id) {
+      const { data: club } = await supabase
+        .from('clubs')
+        .select('club_name')
+        .eq('id', data.club_id)
+        .single();
+      clubName = club?.club_name;
+    }
+
+    setUser(profileToAppUser(data, clubName));
   };
 
   useEffect(() => {
@@ -92,7 +107,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const signIn = async (email: string, password: string) => {
+  const signIn = async (identifier: string, password: string) => {
+    // Supabase auth only accepts an email. If the user typed a username, resolve
+    // it to the account email first via the email_for_username RPC (SECURITY
+    // DEFINER, callable by anon since profiles blocks unauthenticated reads).
+    let email = identifier;
+    if (!identifier.includes('@')) {
+      const { data, error } = await supabase.rpc('email_for_username', {
+        p_username: identifier,
+      });
+      if (error) return { error: error.message };
+      if (!data) return { error: 'Invalid username or password.' };
+      email = data as string;
+    }
+
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return { error: error.message };
     return {};
@@ -136,7 +164,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
     }
 
-    const appUser = profileToAppUser(profile);
+    const appUser = profileToAppUser(profile, details.club_name);
     setUser(appUser);
     return { user: appUser };
   };
@@ -146,17 +174,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   };
 
+  const changePassword = async (currentPassword: string, newPassword: string) => {
+    if (!user?.email) return { error: 'You must be signed in to change your password.' };
+    // Supabase has no "verify current password" call, so re-authenticate with it;
+    // a failure here means the current password was wrong.
+    const { error: verifyError } = await supabase.auth.signInWithPassword({
+      email: user.email,
+      password: currentPassword,
+    });
+    if (verifyError) return { error: 'Your current password is incorrect.' };
+
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) return { error: error.message };
+    return {};
+  };
+
   // Legacy register: kept for compatibility with callers that create a local-only
   // account. In production flows, use signUp instead.
   const register = (details?: Partial<AppUser>) => {
-    const base = clubs[0];
     const created: AppUser = {
       id: `u_${Date.now()}`,
       full_name: details?.full_name ?? 'New User',
       email: details?.email ?? '',
       username: details?.username ?? 'newuser',
-      club_id: details?.club_id ?? base.id,
-      club_name: details?.club_name ?? base.club_name,
+      club_id: details?.club_id ?? '',
+      club_name: details?.club_name ?? '',
       position: details?.position ?? 'Member',
       role: details?.role ?? 'MEMBER',
       verification_status: 'AWAITING_CLUB_VALIDATION',
@@ -192,7 +234,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, isAuthenticated: !!user, isLoading, signIn, signUp, signOut, register, updateAvatar, updateProfile }}
+      value={{ user, isAuthenticated: !!user, isLoading, signIn, signUp, signOut, changePassword, register, updateAvatar, updateProfile }}
     >
       {children}
     </AuthContext.Provider>

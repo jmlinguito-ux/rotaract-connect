@@ -350,6 +350,15 @@ CREATE POLICY "Clubs insertable by district and app admins" ON clubs FOR INSERT 
   EXISTS (SELECT 1 FROM profiles p WHERE p.id = auth.uid() AND p.role IN ('DISTRICT_ADMIN', 'APP_ADMIN'))
 );
 CREATE POLICY "Profiles are viewable by authenticated users" ON profiles FOR SELECT TO authenticated USING (true);
+
+-- Sign-in helper: resolve a username to its account email so users can log in
+-- with either. SECURITY DEFINER because profiles blocks unauthenticated reads;
+-- returns only the email for an exact (case-insensitive) username match.
+CREATE OR REPLACE FUNCTION email_for_username(p_username TEXT)
+RETURNS TEXT LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+  SELECT email FROM profiles WHERE lower(username) = lower(p_username) LIMIT 1;
+$$;
+GRANT EXECUTE ON FUNCTION email_for_username(TEXT) TO anon, authenticated;
 -- Registration: a new auth user creates exactly their own profile row.
 CREATE POLICY "Users can insert their own profile" ON profiles FOR INSERT TO authenticated WITH CHECK (auth.uid() = id);
 CREATE POLICY "Users can update their own profile" ON profiles FOR UPDATE TO authenticated USING (auth.uid() = id);

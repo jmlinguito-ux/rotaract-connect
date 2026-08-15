@@ -8,215 +8,25 @@
 
 /* Begin PBXBuildFile section */
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
-		1834C789E0FD53C3EFDBFB31 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63FDC0AB7D950FFA1C425780 /* ExpoModulesProvider.swift */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
+		5D753C75DA808DFECC987FAE /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8C85DBCF2D4D43555BCE68A /* ExpoModulesProvider.swift */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
-		BF00E9BACE8068C787AA2B68 /* libPods-rotaractconnect.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 08806B732C18E6D473326122 /* libPods-rotaractconnect.a */; };
+		D549A0D76A05FE45B067FD12 /* libPods-rotaractconnect.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 885012F0078A2EE20402D9F1 /* libPods-rotaractconnect.a */; };
+		ED35C79F760AF69DC1194092 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = ABD449A0F8896EDBDD8541E5 /* PrivacyInfo.xcprivacy */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
-		F8B0A219F5E11E41570DDBAA /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = DE6B64CADF7C9A26FB1197F1 /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
 
-/* Begin PBXBuildRule section */
-		1C5AD79230306AFB00332E20 /* PBXBuildRule */ = {
-			isa = PBXBuildRule;
-			compilerSpec = com.apple.compilers.proxy.script;
-			fileType = folder.rkassets;
-			inputFiles = (
-			);
-			isEditable = 1;
-			outputFiles = (
-			);
-			script = "# <com.apple.build-tasks.compile-rk-assets.xcplugin>\n";
-		};
-		1C5AD79330306B0700332E20 /* PBXBuildRule */ = {
-			isa = PBXBuildRule;
-			compilerSpec = com.apple.compilers.proxy.script;
-			fileType = folder.rkassets;
-			inputFiles = (
-			);
-			isEditable = 1;
-			outputFiles = (
-			);
-			script = "# <com.apple.build-tasks.compile-rk-assets.xcplugin>\n";
-		};
-		1C5AD79430306B0A00332E20 /* PBXBuildRule */ = {
-			isa = PBXBuildRule;
-			compilerSpec = com.apple.compilers.proxy.script;
-			fileType = folder.rkassets;
-			inputFiles = (
-			);
-			isEditable = 1;
-			outputFiles = (
-			);
-			script = "# <com.apple.build-tasks.compile-rk-assets.xcplugin>\n";
-		};
-		1C5AD79530306B0E00332E20 /* PBXBuildRule */ = {
-			isa = PBXBuildRule;
-			compilerSpec = com.apple.compilers.proxy.script;
-			fileType = folder.rkassets;
-			inputFiles = (
-			);
-			isEditable = 1;
-			outputFiles = (
-			);
-			script = "# <com.apple.build-tasks.compile-rk-assets.xcplugin>\n";
-		};
-		1C5AD79630306B1D00332E20 /* PBXBuildRule */ = {
-			isa = PBXBuildRule;
-			compilerSpec = com.apple.compilers.proxy.script;
-			fileType = folder.documentationcatalog;
-			inputFiles = (
-			);
-			isEditable = 1;
-			outputFiles = (
-			);
-			script = "# $(DOCC_EXEC)\n";
-		};
-		1C5AD79730306B2100332E20 /* PBXBuildRule */ = {
-			isa = PBXBuildRule;
-			compilerSpec = com.apple.compilers.proxy.script;
-			fileType = folder.rkassets;
-			inputFiles = (
-			);
-			isEditable = 1;
-			outputFiles = (
-			);
-			script = "# <com.apple.build-tasks.compile-rk-assets.xcplugin>\n";
-		};
-		1C5AD79830306B2400332E20 /* PBXBuildRule */ = {
-			isa = PBXBuildRule;
-			compilerSpec = com.apple.compilers.proxy.script;
-			fileType = folder.rkassets;
-			inputFiles = (
-			);
-			isEditable = 1;
-			outputFiles = (
-			);
-			script = "# <com.apple.build-tasks.compile-rk-assets.xcplugin>\n";
-		};
-		1C5AD79930306B2A00332E20 /* PBXBuildRule */ = {
-			isa = PBXBuildRule;
-			compilerSpec = com.apple.compilers.proxy.script;
-			fileType = folder.rkassets;
-			inputFiles = (
-			);
-			isEditable = 1;
-			outputFiles = (
-			);
-			script = "# <com.apple.build-tasks.compile-rk-assets.xcplugin>\n";
-		};
-		1C5AD79A30306B2C00332E20 /* PBXBuildRule */ = {
-			isa = PBXBuildRule;
-			compilerSpec = com.apple.compilers.proxy.script;
-			fileType = folder.rkassets;
-			inputFiles = (
-			);
-			isEditable = 1;
-			outputFiles = (
-			);
-			script = "# <com.apple.build-tasks.compile-rk-assets.xcplugin>\n";
-		};
-		1C5AD79B30306B3000332E20 /* PBXBuildRule */ = {
-			isa = PBXBuildRule;
-			compilerSpec = com.apple.compilers.proxy.script;
-			fileType = folder.rkassets;
-			inputFiles = (
-			);
-			isEditable = 1;
-			outputFiles = (
-			);
-			script = "# <com.apple.build-tasks.compile-rk-assets.xcplugin>\n";
-		};
-		1C5AD79C30306B3900332E20 /* PBXBuildRule */ = {
-			isa = PBXBuildRule;
-			compilerSpec = com.apple.compilers.proxy.script;
-			fileType = text.xml.dae;
-			inputFiles = (
-			);
-			isEditable = 1;
-			outputFiles = (
-			);
-			script = "# <com.apple.compilers.scntool>\n";
-		};
-		1C5AD79D30306B3D00332E20 /* PBXBuildRule */ = {
-			isa = PBXBuildRule;
-			compilerSpec = com.apple.compilers.proxy.script;
-			fileType = folder.rkassets;
-			inputFiles = (
-			);
-			isEditable = 1;
-			outputFiles = (
-			);
-			script = "# <com.apple.build-tasks.compile-rk-assets.xcplugin>\n";
-		};
-		1C5AD79E30306B4400332E20 /* PBXBuildRule */ = {
-			isa = PBXBuildRule;
-			compilerSpec = com.apple.compilers.proxy.script;
-			fileType = wrapper.scnassets;
-			inputFiles = (
-			);
-			isEditable = 1;
-			outputFiles = (
-			);
-			script = "# <com.apple.build-tasks.copy-scenekit-assets>\n";
-		};
-		1C5AD79F30306B4A00332E20 /* PBXBuildRule */ = {
-			isa = PBXBuildRule;
-			compilerSpec = com.apple.compilers.proxy.script;
-			fileType = sourcecode.mig;
-			inputFiles = (
-			);
-			isEditable = 1;
-			outputFiles = (
-			);
-			script = "# <com.apple.compilers.mig>\n";
-		};
-		1C5AD7A030306B4D00332E20 /* PBXBuildRule */ = {
-			isa = PBXBuildRule;
-			compilerSpec = com.apple.compilers.proxy.script;
-			fileType = pattern.proxy;
-			inputFiles = (
-			);
-			isEditable = 1;
-			outputFiles = (
-			);
-			script = "# Type a script or drag a script file from your workspace to insert its path.\n";
-		};
-		1C5AD7A130306B4F00332E20 /* PBXBuildRule */ = {
-			isa = PBXBuildRule;
-			compilerSpec = com.apple.compilers.proxy.script;
-			fileType = pattern.proxy;
-			inputFiles = (
-			);
-			isEditable = 1;
-			outputFiles = (
-			);
-			script = "# Type a script or drag a script file from your workspace to insert its path.\n";
-		};
-		1CA9DC6E30306B8C003CDF93 /* PBXBuildRule */ = {
-			isa = PBXBuildRule;
-			compilerSpec = com.apple.compilers.proxy.script;
-			fileType = folder.documentationcatalog;
-			inputFiles = (
-			);
-			isEditable = 1;
-			outputFiles = (
-			);
-			script = "# $(DOCC_EXEC)\n";
-		};
-/* End PBXBuildRule section */
-
 /* Begin PBXFileReference section */
-		08806B732C18E6D473326122 /* libPods-rotaractconnect.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-rotaractconnect.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07F961A680F5B00A75B9A /* rotaractconnect.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = rotaractconnect.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = rotaractconnect/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = rotaractconnect/Info.plist; sourceTree = "<group>"; };
-		3589B70CBA7EDC959811F9B9 /* Pods-rotaractconnect.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-rotaractconnect.debug.xcconfig"; path = "Target Support Files/Pods-rotaractconnect/Pods-rotaractconnect.debug.xcconfig"; sourceTree = "<group>"; };
-		63FDC0AB7D950FFA1C425780 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-rotaractconnect/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
+		3C49B66144FB62C6654B4992 /* Pods-rotaractconnect.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-rotaractconnect.release.xcconfig"; path = "Target Support Files/Pods-rotaractconnect/Pods-rotaractconnect.release.xcconfig"; sourceTree = "<group>"; };
+		885012F0078A2EE20402D9F1 /* libPods-rotaractconnect.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-rotaractconnect.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = rotaractconnect/SplashScreen.storyboard; sourceTree = "<group>"; };
+		ABD449A0F8896EDBDD8541E5 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = rotaractconnect/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		B8C85DBCF2D4D43555BCE68A /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-rotaractconnect/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
-		C2F4DDAE0535614994D45917 /* Pods-rotaractconnect.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-rotaractconnect.release.xcconfig"; path = "Target Support Files/Pods-rotaractconnect/Pods-rotaractconnect.release.xcconfig"; sourceTree = "<group>"; };
-		DE6B64CADF7C9A26FB1197F1 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xml; name = PrivacyInfo.xcprivacy; path = rotaractconnect/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		C6AE1F6A65FF42D014426F8A /* Pods-rotaractconnect.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-rotaractconnect.debug.xcconfig"; path = "Target Support Files/Pods-rotaractconnect/Pods-rotaractconnect.debug.xcconfig"; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = rotaractconnect/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* rotaractconnect-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "rotaractconnect-Bridging-Header.h"; path = "rotaractconnect/rotaractconnect-Bridging-Header.h"; sourceTree = "<group>"; };
@@ -227,22 +37,13 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				BF00E9BACE8068C787AA2B68 /* libPods-rotaractconnect.a in Frameworks */,
+				D549A0D76A05FE45B067FD12 /* libPods-rotaractconnect.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		07CF8C96B79A9232321081FB /* Pods */ = {
-			isa = PBXGroup;
-			children = (
-				3589B70CBA7EDC959811F9B9 /* Pods-rotaractconnect.debug.xcconfig */,
-				C2F4DDAE0535614994D45917 /* Pods-rotaractconnect.release.xcconfig */,
-			);
-			path = Pods;
-			sourceTree = "<group>";
-		};
 		13B07FAE1A68108700A75B9A /* rotaractconnect */ = {
 			isa = PBXGroup;
 			children = (
@@ -252,7 +53,7 @@
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */,
-				DE6B64CADF7C9A26FB1197F1 /* PrivacyInfo.xcprivacy */,
+				ABD449A0F8896EDBDD8541E5 /* PrivacyInfo.xcprivacy */,
 			);
 			name = rotaractconnect;
 			sourceTree = "<group>";
@@ -261,15 +62,33 @@
 			isa = PBXGroup;
 			children = (
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
-				08806B732C18E6D473326122 /* libPods-rotaractconnect.a */,
+				885012F0078A2EE20402D9F1 /* libPods-rotaractconnect.a */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
 		};
-		3C434531E21B32C0A06A1CB1 /* ExpoModulesProviders */ = {
+		3E6745C4A47616726C0D287C /* Pods */ = {
 			isa = PBXGroup;
 			children = (
-				C7531C471D87A83240032DAE /* rotaractconnect */,
+				C6AE1F6A65FF42D014426F8A /* Pods-rotaractconnect.debug.xcconfig */,
+				3C49B66144FB62C6654B4992 /* Pods-rotaractconnect.release.xcconfig */,
+			);
+			name = Pods;
+			path = Pods;
+			sourceTree = "<group>";
+		};
+		3ED0536E75D9BB8D618E8FC5 /* rotaractconnect */ = {
+			isa = PBXGroup;
+			children = (
+				B8C85DBCF2D4D43555BCE68A /* ExpoModulesProvider.swift */,
+			);
+			name = rotaractconnect;
+			sourceTree = "<group>";
+		};
+		7E330A222EA0BB2E7349B1FE /* ExpoModulesProviders */ = {
+			isa = PBXGroup;
+			children = (
+				3ED0536E75D9BB8D618E8FC5 /* rotaractconnect */,
 			);
 			name = ExpoModulesProviders;
 			sourceTree = "<group>";
@@ -288,8 +107,8 @@
 				832341AE1AAA6A7D00B99B32 /* Libraries */,
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
-				07CF8C96B79A9232321081FB /* Pods */,
-				3C434531E21B32C0A06A1CB1 /* ExpoModulesProviders */,
+				3E6745C4A47616726C0D287C /* Pods */,
+				7E330A222EA0BB2E7349B1FE /* ExpoModulesProviders */,
 			);
 			indentWidth = 2;
 			sourceTree = "<group>";
@@ -313,14 +132,6 @@
 			path = rotaractconnect/Supporting;
 			sourceTree = "<group>";
 		};
-		C7531C471D87A83240032DAE /* rotaractconnect */ = {
-			isa = PBXGroup;
-			children = (
-				63FDC0AB7D950FFA1C425780 /* ExpoModulesProvider.swift */,
-			);
-			name = rotaractconnect;
-			sourceTree = "<group>";
-		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -329,32 +140,15 @@
 			buildConfigurationList = 13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "rotaractconnect" */;
 			buildPhases = (
 				08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */,
-				AEC921A8687F5B46689D1F4B /* [Expo] Configure project */,
+				30704F976A7D5983EDD89060 /* [Expo] Configure project */,
 				13B07F871A680F5B00A75B9A /* Sources */,
 				13B07F8C1A680F5B00A75B9A /* Frameworks */,
 				13B07F8E1A680F5B00A75B9A /* Resources */,
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
 				800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */,
-				FFE016441731FAD9C5B4FA5D /* [CP] Embed Pods Frameworks */,
+				D4DC6ADDF33527B9C046C544 /* [CP] Embed Pods Frameworks */,
 			);
 			buildRules = (
-				1CA9DC6E30306B8C003CDF93 /* PBXBuildRule */,
-				1C5AD7A130306B4F00332E20 /* PBXBuildRule */,
-				1C5AD7A030306B4D00332E20 /* PBXBuildRule */,
-				1C5AD79F30306B4A00332E20 /* PBXBuildRule */,
-				1C5AD79E30306B4400332E20 /* PBXBuildRule */,
-				1C5AD79D30306B3D00332E20 /* PBXBuildRule */,
-				1C5AD79C30306B3900332E20 /* PBXBuildRule */,
-				1C5AD79B30306B3000332E20 /* PBXBuildRule */,
-				1C5AD79A30306B2C00332E20 /* PBXBuildRule */,
-				1C5AD79930306B2A00332E20 /* PBXBuildRule */,
-				1C5AD79830306B2400332E20 /* PBXBuildRule */,
-				1C5AD79730306B2100332E20 /* PBXBuildRule */,
-				1C5AD79630306B1D00332E20 /* PBXBuildRule */,
-				1C5AD79530306B0E00332E20 /* PBXBuildRule */,
-				1C5AD79430306B0A00332E20 /* PBXBuildRule */,
-				1C5AD79330306B0700332E20 /* PBXBuildRule */,
-				1C5AD79230306AFB00332E20 /* PBXBuildRule */,
 			);
 			dependencies = (
 			);
@@ -369,8 +163,7 @@
 		83CBB9F71A601CBA00E9B192 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				BuildIndependentTargetsInParallel = YES;
-				LastUpgradeCheck = 2660;
+				LastUpgradeCheck = 1130;
 				TargetAttributes = {
 					13B07F861A680F5B00A75B9A = {
 						LastSwiftMigration = 1250;
@@ -403,7 +196,7 @@
 				BB2F792D24A3F905000567C9 /* Expo.plist in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */,
-				F8B0A219F5E11E41570DDBAA /* PrivacyInfo.xcprivacy in Resources */,
+				ED35C79F760AF69DC1194092 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -449,6 +242,30 @@
 			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 			showEnvVarsInLog = 0;
 		};
+		30704F976A7D5983EDD89060 /* [Expo] Configure project */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/.xcode.env",
+				"$(SRCROOT)/.xcode.env.local",
+				"$(SRCROOT)/rotaractconnect/rotaractconnect.entitlements",
+				"$(SRCROOT)/Pods/Target Support Files/Pods-rotaractconnect/expo-configure-project.sh",
+			);
+			name = "[Expo] Configure project";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(SRCROOT)/Pods/Target Support Files/Pods-rotaractconnect/ExpoModulesProvider.swift",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-rotaractconnect/expo-configure-project.sh\"\n";
+		};
 		800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -483,31 +300,7 @@
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-rotaractconnect/Pods-rotaractconnect-resources.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
-		AEC921A8687F5B46689D1F4B /* [Expo] Configure project */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"$(SRCROOT)/.xcode.env",
-				"$(SRCROOT)/.xcode.env.local",
-				"$(SRCROOT)/rotaractconnect/rotaractconnect.entitlements",
-				"$(SRCROOT)/Pods/Target Support Files/Pods-rotaractconnect/expo-configure-project.sh",
-			);
-			name = "[Expo] Configure project";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(SRCROOT)/Pods/Target Support Files/Pods-rotaractconnect/ExpoModulesProvider.swift",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "# This script configures Expo modules and generates the modules provider file.\nbash -l -c \"./Pods/Target\\ Support\\ Files/Pods-rotaractconnect/expo-configure-project.sh\"\n";
-		};
-		FFE016441731FAD9C5B4FA5D /* [CP] Embed Pods Frameworks */ = {
+		D4DC6ADDF33527B9C046C544 /* [CP] Embed Pods Frameworks */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -537,7 +330,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */,
-				1834C789E0FD53C3EFDBFB31 /* ExpoModulesProvider.swift in Sources */,
+				5D753C75DA808DFECC987FAE /* ExpoModulesProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -546,22 +339,19 @@
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 3589B70CBA7EDC959811F9B9 /* Pods-rotaractconnect.debug.xcconfig */;
+			baseConfigurationReference = C6AE1F6A65FF42D014426F8A /* Pods-rotaractconnect.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = rotaractconnect/rotaractconnect.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = Y8YF88GVCB;
 				ENABLE_BITCODE = NO;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"$(inherited)",
 					"FB_SONARKIT_ENABLED=1",
 				);
 				INFOPLIST_FILE = rotaractconnect/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Rotaract Connect";
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
-				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -578,24 +368,21 @@
 				SWIFT_OBJC_BRIDGING_HEADER = "rotaractconnect/rotaractconnect-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 				VERSIONING_SYSTEM = "apple-generic";
 			};
 			name = Debug;
 		};
 		13B07F951A680F5B00A75B9A /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = C2F4DDAE0535614994D45917 /* Pods-rotaractconnect.release.xcconfig */;
+			baseConfigurationReference = 3C49B66144FB62C6654B4992 /* Pods-rotaractconnect.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = rotaractconnect/rotaractconnect.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = Y8YF88GVCB;
 				INFOPLIST_FILE = rotaractconnect/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Rotaract Connect";
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.social-networking";
-				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -611,7 +398,7 @@
 				PRODUCT_NAME = rotaractconnect;
 				SWIFT_OBJC_BRIDGING_HEADER = "rotaractconnect/rotaractconnect-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = 1;
+				TARGETED_DEVICE_FAMILY = "1,2";
 				VERSIONING_SYSTEM = "apple-generic";
 			};
 			name = Release;
@@ -620,7 +407,6 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_CXX_LANGUAGE_STANDARD = "c++20";
 				CLANG_CXX_LIBRARY = "libc++";
@@ -640,7 +426,6 @@
 				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
 				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
-				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
 				CLANG_WARN_STRICT_PROTOTYPES = YES;
 				CLANG_WARN_SUSPICIOUS_MOVE = YES;
@@ -650,7 +435,6 @@
 				COPY_PHASE_STRIP = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu99;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -676,7 +460,6 @@
 				ONLY_ACTIVE_ARCH = YES;
 				REACT_NATIVE_PATH = "${PODS_ROOT}/../../node_modules/react-native";
 				SDKROOT = iphoneos;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DEBUG";
 				SWIFT_ENABLE_EXPLICIT_MODULES = NO;
 				USE_HERMES = true;
@@ -687,7 +470,6 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_CXX_LANGUAGE_STANDARD = "c++20";
 				CLANG_CXX_LIBRARY = "libc++";
@@ -707,7 +489,6 @@
 				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
 				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
-				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
 				CLANG_WARN_STRICT_PROTOTYPES = YES;
 				CLANG_WARN_SUSPICIOUS_MOVE = YES;
@@ -717,7 +498,6 @@
 				COPY_PHASE_STRIP = YES;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu99;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -735,8 +515,6 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				REACT_NATIVE_PATH = "${PODS_ROOT}/../../node_modules/react-native";
 				SDKROOT = iphoneos;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_ENABLE_EXPLICIT_MODULES = NO;
 				USE_HERMES = true;
 				VALIDATE_PRODUCT = YES;
