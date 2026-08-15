@@ -86,6 +86,10 @@ interface DataContextValue {
   sendDirectMessage: (conversationId: string, eventId: string | undefined, senderUser: AppUser, receiverId: string | undefined, receiverName: string, text: string, eventTitle?: string, attachmentPath?: string) => void;
   /** Re-sends a message whose persistence failed, without duplicating it. */
   retryMessage: (messageId: string) => void;
+  /** Hides a message from the current user's own view only (others still see it). */
+  deleteMessageForMe: (messageId: string, userId: string) => void;
+  /** Unsends the current user's own message for everyone (leaves a tombstone). */
+  unsendMessage: (messageId: string) => void;
   /** Marks a conversation read up to its latest message (call when it is visible). */
   markConversationRead: (conversationId: string, userId: string) => void;
   /** Read cursors for a conversation — who has read up to when. */
@@ -173,6 +177,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [messages, setMessages] = useState<DirectMessage[]>([]);
   const [readCursors, setReadCursors] = useState<ReadCursor[]>([]);
+  const [deletedMessageIds, setDeletedMessageIds] = useState<string[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
   // Pulls the full dataset from Supabase and replaces local state with it.
@@ -188,6 +193,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setAuditLogs(d.auditLogs); setNotifications(d.notifications);
     setConversations(d.conversations); setMessages(d.messages);
     setReadCursors(d.readCursors);
+    setDeletedMessageIds(d.deletedMessageIds);
   }, []);
 
   // Manual refresh for pull-to-refresh. Serialized behind `refreshing` so a
@@ -250,6 +256,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         created_at: d.created_at,
         attachment_path: d.attachment_path ?? undefined,
         attachment_type: d.attachment_type ?? undefined,
+        deleted_at: d.deleted_at ?? undefined,
       };
     };
 
@@ -331,6 +338,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
       })
       .subscribe(logStatus('reads'));
 
+    // "Delete for me" hides sync across the user's own devices.
+    const deletionsChannel = supabase
+      .channel(`rt-deletions-${uid}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'message_deletions', filter: `user_id=eq.${uid}` }, payload => {
+        const id = (payload.new as any)?.message_id;
+        if (id) setDeletedMessageIds(prev => (prev.includes(id) ? prev : [...prev, id]));
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'message_deletions' }, payload => {
+        const id = (payload.old as any)?.message_id;
+        if (id) setDeletedMessageIds(prev => prev.filter(x => x !== id));
+      })
+      .subscribe(logStatus('deletions'));
+
     // Conversations move fast enough (last_message updates) to merge directly, so
     // the Inbox reorders live; heavier tables just schedule a reload. Each table
     // gets its OWN channel so one table missing from the realtime publication
@@ -350,6 +370,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       supabase.removeChannel(messagesChannel);
       supabase.removeChannel(notifChannel);
       supabase.removeChannel(readsChannel);
+      supabase.removeChannel(deletionsChannel);
       tableReloadChannels.forEach(ch => supabase.removeChannel(ch));
     };
   }, [isAuthenticated, authUser, applySnapshot]);
@@ -1049,10 +1070,29 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const messagesForConversation = useCallback((conversationId: string) => {
+    const hidden = new Set(deletedMessageIds);
     return messages
-      .filter(m => m.conversation_id === conversationId)
+      .filter(m => m.conversation_id === conversationId && !hidden.has(m.id))
       .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-  }, [messages]);
+  }, [messages, deletedMessageIds]);
+
+  // "Delete for me": hides a message from this user's own view only; other
+  // participants still see it (messages are a single shared row, never removed).
+  const deleteMessageForMe = useCallback((messageId: string, userId: string) => {
+    setDeletedMessageIds(prev => (prev.includes(messageId) ? prev : [...prev, messageId]));
+    db.deleteMessageForMe(messageId, userId);
+  }, []);
+
+  // "Delete for everyone" (unsend): clears the shared message and stamps it deleted,
+  // so every participant sees a "message was deleted" tombstone. Sender only
+  // (enforced by the unsend_message RPC).
+  const unsendMessage = useCallback((messageId: string) => {
+    const iso = now();
+    setMessages(prev => prev.map(m => (m.id === messageId
+      ? { ...m, deleted_at: iso, text: '', attachment_path: undefined, attachment_type: undefined }
+      : m)));
+    db.unsendMessage(messageId);
+  }, []);
 
   const readCursorsFor = useCallback((conversationId: string) => {
     return readCursors.filter(c => c.conversation_id === conversationId);
@@ -1220,7 +1260,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       refreshing, refresh,
       createEvent, updateEvent, updateEventStatus, resetEventApprovals, cancelEvent, approveEvent, rejectEvent,
       joinEvent, leaveEvent, approveParticipant, declineParticipant, markAttendance, checkIn, addClub,
-      invite, respondInvitation, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, sendDirectMessage, retryMessage, markConversationRead, readCursorsFor, broadcastToEvent, saveImpact, reviewApplication, resubmitApplication, markNotificationsRead, deleteNotification, updateUserRole, removeUser, addApplication,
+      invite, respondInvitation, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, sendDirectMessage, retryMessage, deleteMessageForMe, unsendMessage, markConversationRead, readCursorsFor, broadcastToEvent, saveImpact, reviewApplication, resubmitApplication, markNotificationsRead, deleteNotification, updateUserRole, removeUser, addApplication,
       participantsFor, invitationFor, participationFor, impactFor, notificationsFor, unreadCountForUser, messagesForConversation, auditFor,
       applicationsForRole, userStats,
     }}>

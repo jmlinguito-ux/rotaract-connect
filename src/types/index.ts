@@ -225,6 +225,8 @@ export interface DirectMessage {
   attachment_path?: string;
   /** Attachment kind — currently only 'image'. */
   attachment_type?: string;
+  /** Set when the message was unsent ("deleted for everyone") — render a tombstone. */
+  deleted_at?: string;
   /** Optimistic-send lifecycle for the composer; not persisted. */
   send_status?: 'sending' | 'sent' | 'failed';
 }

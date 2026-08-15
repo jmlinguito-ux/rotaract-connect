@@ -12,6 +12,8 @@ import { useTheme } from '../../context/ThemeContext';
 import UserAvatar from '../../components/UserAvatar';
 import VerifiedCheck from '../../components/VerifiedCheck';
 import FullImageModal from '../../components/FullImageModal';
+import { SwipeableRow } from '../../components/SwipeableRow';
+import { BottomSheet } from '../../components/BottomSheet';
 import { UserProfileModal } from '../../components/UserProfileModal';
 import { useChatPresence } from '../../hooks/useChatPresence';
 import { useSignedUrl } from '../../hooks/useSignedUrl';
@@ -28,7 +30,7 @@ export default function ChatScreen({ route, navigation }: Props) {
   const { conversationId, eventId, recipientId, recipientName, eventTitle } = route.params;
   const { user } = useAuth();
   const {
-    messagesForConversation, sendDirectMessage, retryMessage, events, users, participantsFor,
+    messagesForConversation, sendDirectMessage, retryMessage, deleteMessageForMe, unsendMessage, events, users, participantsFor,
     getOrCreateConversation, markConversationRead, readCursorsFor,
   } = useData();
   const { colors: themeColors } = useTheme();
@@ -69,6 +71,8 @@ export default function ChatScreen({ route, navigation }: Props) {
   const [uploading, setUploading] = useState(false);
   // Message whose "Seen by …" detail is expanded (tap to toggle, group chats).
   const [expandedSeenId, setExpandedSeenId] = useState<string | null>(null);
+  // Message long-pressed to open the delete menu (delete for me / unsend).
+  const [actionMsg, setActionMsg] = useState<DirectMessage | null>(null);
 
   const messages = messagesForConversation(conversationId);
   const event = eventId ? events.find(e => e.id === eventId) : undefined;
@@ -292,6 +296,7 @@ export default function ChatScreen({ route, navigation }: Props) {
             const readCount = isMe ? (readCountFor(item) ?? 0) : 0;
             const isRead = readCount > 0;
             return (
+              <SwipeableRow onDelete={() => deleteMessageForMe(item.id, user.id)}>
               <View>
                 <View style={[styles.messageWrapper, isMe ? styles.myWrapper : styles.theirWrapper]}>
                   {!isMe && (
@@ -301,13 +306,16 @@ export default function ChatScreen({ route, navigation }: Props) {
                   )}
                   <TouchableOpacity
                     activeOpacity={isGroupChat ? 0.85 : 1}
-                    // In group chats, tapping a message reveals who has seen it.
+                    // Tap (group) reveals who's seen it; long-press opens the delete menu.
                     onPress={isGroupChat ? () => setExpandedSeenId(prev => (prev === item.id ? null : item.id)) : undefined}
+                    onLongPress={() => setActionMsg(item)}
+                    delayLongPress={300}
                     style={[
                       styles.bubble,
                       isMe
                         ? [styles.myBubble, { backgroundColor: themeColors.primary }]
                         : [styles.theirBubble, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }],
+                      item.deleted_at && styles.deletedBubble,
                     ]}
                   >
                     {!isMe && isGroupChat && (
@@ -321,11 +329,22 @@ export default function ChatScreen({ route, navigation }: Props) {
                       </TouchableOpacity>
                     )}
 
-                    {item.attachment_path && item.attachment_type === 'image' && (
-                      <ChatImage path={item.attachment_path} onPress={setFullImageUri} />
-                    )}
-                    {!!item.text && (
-                      <Text style={[styles.messageText, { color: isMe ? '#fff' : themeColors.text }]}>{item.text}</Text>
+                    {item.deleted_at ? (
+                      <View style={styles.tombstoneRow}>
+                        <Ionicons name="ban-outline" size={13} color={isMe ? 'rgba(255,255,255,0.85)' : themeColors.textMuted} />
+                        <Text style={[styles.tombstoneText, { color: isMe ? 'rgba(255,255,255,0.85)' : themeColors.textMuted }]}>
+                          This message was deleted
+                        </Text>
+                      </View>
+                    ) : (
+                      <>
+                        {item.attachment_path && item.attachment_type === 'image' && (
+                          <ChatImage path={item.attachment_path} onPress={setFullImageUri} onLongPress={() => setActionMsg(item)} />
+                        )}
+                        {!!item.text && (
+                          <Text style={[styles.messageText, { color: isMe ? '#fff' : themeColors.text }]}>{item.text}</Text>
+                        )}
+                      </>
                     )}
 
                     {/* The meta row (time + ticks) is also a toggle target for the
@@ -339,8 +358,8 @@ export default function ChatScreen({ route, navigation }: Props) {
                       <Text style={[styles.messageTime, { color: isMe ? 'rgba(255,255,255,0.7)' : themeColors.textMuted }]}>
                         {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </Text>
-                      {isMe && item.send_status === 'sending' && <Ionicons name="time-outline" size={12} color="rgba(255,255,255,0.7)" />}
-                      {isMe && item.send_status === 'failed' && (
+                      {isMe && !item.deleted_at && item.send_status === 'sending' && <Ionicons name="time-outline" size={12} color="rgba(255,255,255,0.7)" />}
+                      {isMe && !item.deleted_at && item.send_status === 'failed' && (
                         <TouchableOpacity onPress={() => retryMessage(item.id)} style={styles.retryBtn}>
                           <Ionicons name="alert-circle" size={13} color="#FFD7D7" />
                           <Text style={styles.retryText}>Retry</Text>
@@ -348,7 +367,7 @@ export default function ChatScreen({ route, navigation }: Props) {
                       )}
                       {/* Delivery/read ticks: ✓ = sent, ✓✓ (colored) = read.
                           Group chats append the number of readers. */}
-                      {isMe && item.send_status !== 'sending' && item.send_status !== 'failed' && (
+                      {isMe && !item.deleted_at && item.send_status !== 'sending' && item.send_status !== 'failed' && (
                         <View style={styles.receiptRow}>
                           <Ionicons
                             name={isRead ? 'checkmark-done' : 'checkmark'}
@@ -387,6 +406,7 @@ export default function ChatScreen({ route, navigation }: Props) {
                   );
                 })()}
               </View>
+              </SwipeableRow>
             );
           }}
           ListEmptyComponent={
@@ -430,6 +450,40 @@ export default function ChatScreen({ route, navigation }: Props) {
         )}
       </View>
 
+      {/* Long-press message menu: Messenger-style delete choices. */}
+      <BottomSheet
+        visible={!!actionMsg}
+        onClose={() => setActionMsg(null)}
+        cardStyle={[styles.menuCard, { backgroundColor: themeColors.cardBg }]}
+      >
+        <Text style={[styles.menuTitle, { color: themeColors.textMuted }]}>Message options</Text>
+        {actionMsg && actionMsg.sender_id === user.id && !actionMsg.deleted_at && (
+          <TouchableOpacity
+            style={styles.menuRow}
+            onPress={() => { const id = actionMsg.id; setActionMsg(null); unsendMessage(id); }}
+          >
+            <Ionicons name="trash" size={20} color={themeColors.danger} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.menuLabel, { color: themeColors.danger }]}>Unsend for everyone</Text>
+              <Text style={[styles.menuSub, { color: themeColors.textMuted }]}>Removes it for all participants, leaving "This message was deleted"</Text>
+            </View>
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity
+          style={styles.menuRow}
+          onPress={() => { if (actionMsg) deleteMessageForMe(actionMsg.id, user.id); setActionMsg(null); }}
+        >
+          <Ionicons name="eye-off-outline" size={20} color={themeColors.text} />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.menuLabel, { color: themeColors.text }]}>Delete for me</Text>
+            <Text style={[styles.menuSub, { color: themeColors.textMuted }]}>Hides it from your view only</Text>
+          </View>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.menuRow, styles.menuCancel]} onPress={() => setActionMsg(null)}>
+          <Text style={[styles.menuLabel, { color: themeColors.textMuted, textAlign: 'center', flex: 1 }]}>Cancel</Text>
+        </TouchableOpacity>
+      </BottomSheet>
+
       <FullImageModal
         visible={!!fullImageUri}
         imageUri={fullImageUri}
@@ -460,7 +514,7 @@ export default function ChatScreen({ route, navigation }: Props) {
 }
 
 /** Renders a chat photo, resolving a signed URL for the private chat-media bucket. */
-function ChatImage({ path, onPress }: { path: string; onPress: (uri: string) => void }) {
+function ChatImage({ path, onPress, onLongPress }: { path: string; onPress: (uri: string) => void; onLongPress?: () => void }) {
   const uri = useSignedUrl('chat-media', path);
   const { colors } = useTheme();
   if (!uri) {
@@ -471,7 +525,7 @@ function ChatImage({ path, onPress }: { path: string; onPress: (uri: string) => 
     );
   }
   return (
-    <TouchableOpacity activeOpacity={0.9} onPress={() => onPress(uri)}>
+    <TouchableOpacity activeOpacity={0.9} onPress={() => onPress(uri)} onLongPress={onLongPress} delayLongPress={300}>
       <Image source={{ uri }} style={styles.chatImage} resizeMode="cover" />
     </TouchableOpacity>
   );
@@ -496,6 +550,9 @@ const styles = StyleSheet.create({
   bubble: { maxWidth: '78%', padding: 12, borderRadius: 16 },
   myBubble: { borderBottomRightRadius: 4 },
   theirBubble: { borderBottomLeftRadius: 4, borderWidth: 1 },
+  deletedBubble: { opacity: 0.85 },
+  tombstoneRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  tombstoneText: { fontSize: 13, fontStyle: 'italic' },
   senderNameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   senderName: { fontSize: 11, fontWeight: '700' },
   messageText: { fontSize: 14, lineHeight: 20 },
@@ -521,4 +578,10 @@ const styles = StyleSheet.create({
   archivedComposer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 16, borderTopWidth: 1 },
   archivedComposerText: { fontSize: 12, fontWeight: '600' },
   empty: { textAlign: 'center', marginTop: 40 },
+  menuCard: { borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 16, gap: 4 },
+  menuTitle: { fontSize: 11, fontWeight: '800', letterSpacing: 1, marginBottom: 8, marginLeft: 4 },
+  menuRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14, paddingHorizontal: 8 },
+  menuLabel: { fontSize: 15, fontWeight: '700' },
+  menuSub: { fontSize: 12, marginTop: 1 },
+  menuCancel: { justifyContent: 'center', marginTop: 4 },
 });

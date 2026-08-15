@@ -352,7 +352,7 @@ export default function InboxScreen() {
         const cursor = readCursorsFor(conv.id).find(c => c.user_id === user.id);
         const unread = !!last && !isMine && (!cursor || new Date(last.created_at).getTime() > new Date(cursor.last_read_at).getTime());
         const previewText = last
-          ? (last.attachment_path && !last.text ? '📷 Photo' : last.text)
+          ? (last.deleted_at ? 'This message was deleted' : (last.attachment_path && !last.text ? '📷 Photo' : last.text))
           : 'Say hi 👋';
         const preview = `${isMine ? 'You: ' : ''}${previewText}`;
         const when = last ? new Date(last.created_at) : undefined;

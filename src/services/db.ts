@@ -28,12 +28,14 @@ export interface LoadedData {
   conversations: Conversation[];
   messages: DirectMessage[];
   readCursors: ReadCursor[];
+  /** Ids of messages the current user has hidden from their own view ("delete for me"). */
+  deletedMessageIds: string[];
 }
 
 export async function loadAll(): Promise<LoadedData> {
   const [
     profilesRes, clubsRes, eventsRes, epcRes, partsRes, invRes, impRes,
-    appsRes, auditRes, notifRes, convRes, msgRes, readsRes,
+    appsRes, auditRes, notifRes, convRes, msgRes, readsRes, delsRes,
   ] = await Promise.all([
     supabase.from('profiles').select('*'),
     supabase.from('clubs').select('*'),
@@ -49,6 +51,9 @@ export async function loadAll(): Promise<LoadedData> {
     supabase.from('direct_messages').select('*').order('created_at', { ascending: true }),
     // message_reads may not exist until migration 0007 is applied — tolerate that.
     supabase.from('message_reads').select('*'),
+    // message_deletions may not exist until migration 0009 — tolerate that. RLS
+    // already scopes this to the current user's own rows.
+    supabase.from('message_deletions').select('message_id'),
   ]);
 
   const profiles = profilesRes.data ?? [];
@@ -229,6 +234,7 @@ export async function loadAll(): Promise<LoadedData> {
     created_at: d.created_at,
     attachment_path: d.attachment_path ?? undefined,
     attachment_type: d.attachment_type ?? undefined,
+    deleted_at: d.deleted_at ?? undefined,
   }));
 
   const readCursors: ReadCursor[] = (readsRes.data ?? []).map((r: any) => ({
@@ -238,9 +244,12 @@ export async function loadAll(): Promise<LoadedData> {
     last_read_message_id: r.last_read_message_id ?? undefined,
   }));
 
+  const deletedMessageIds: string[] = (delsRes.data ?? []).map((r: any) => r.message_id);
+
   return {
     users, clubs: mappedClubs, events: mappedEvents, participants, invitations,
     impacts, applications, auditLogs, notifications, conversations, messages, readCursors,
+    deletedMessageIds,
   };
 }
 
@@ -343,6 +352,15 @@ export const db = {
     const { error } = await supabase.from('direct_messages').insert(row);
     reportError('insertMessage', error);
     return !error;
+  },
+  /** Unsends the caller's own message ("delete for everyone") — leaves a tombstone. */
+  unsendMessage: async (messageId: string) => {
+    reportError('unsendMessage', (await supabase.rpc('unsend_message', { p_message_id: messageId })).error);
+  },
+  /** Hides a message from the caller's own view ("delete for me"); others keep it. */
+  deleteMessageForMe: async (messageId: string, userId: string) => {
+    reportError('deleteMessageForMe', (await supabase.from('message_deletions')
+      .upsert({ message_id: messageId, user_id: userId }, { onConflict: 'message_id,user_id' })).error);
   },
   /** Upserts the caller's read cursor for a conversation (one row per user). */
   upsertReadCursor: async (conversationId: string, userId: string, lastMessageId?: string) => {
