@@ -6,7 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function VerificationPendingScreen() {
-  const { signOut, signInAs } = useAuth();
+  const { signOut } = useAuth();
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -26,12 +26,8 @@ export default function VerificationPendingScreen() {
           <Step label="Verified" last />
         </View>
 
-        <TouchableOpacity style={styles.primaryBtn} onPress={() => signInAs('u_member')}>
-          <Text style={styles.primaryBtnText}>Continue to app (demo)</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.secondaryBtn} onPress={signOut}>
-          <Text style={styles.secondaryBtnText}>Sign out</Text>
+        <TouchableOpacity style={styles.primaryBtn} onPress={signOut}>
+          <Text style={styles.primaryBtnText}>Back to Sign In</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>

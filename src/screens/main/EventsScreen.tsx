@@ -19,7 +19,7 @@ import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { AreaOfFocus, RotaractEvent } from '../../types';
-import { DemoAccountPickerModal } from '../../components/DemoAccountPickerModal';
+
 import { visibleEvents } from '../../utils/eventApproval';
 
 type ParticipationOption = 'JOINED' | 'ATTENDED' | 'INVITED' | 'MY' | 'APPROVALS';
@@ -74,7 +74,6 @@ export default function EventsScreen() {
   const [selectedStatuses, setSelectedStatuses] = useState<StatusOption[]>([]);
   const [selectedAreas, setSelectedAreas] = useState<AreaOfFocus[]>([]);
   const [filterModalVisible, setFilterModalVisible] = useState(false);
-  const [demoPickerVisible, setDemoPickerVisible] = useState(false);
 
   // Search & View Mode
   // Agenda Filter State: 'ALL' | 'MY' | 'JOINED' | 'INVITED'
@@ -390,8 +389,6 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 28, fontWeight: '800' },
   headerSubtitle: { fontSize: 13, marginTop: 2 },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  demoPillBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 14, borderWidth: 1 },
-  demoPillText: { fontSize: 12, fontWeight: '700' },
   viewModeBtn: { width: 44, height: 44, borderRadius: 22, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   fab: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   tabFilterRow: { flexDirection: 'row', gap: 6, paddingHorizontal: 16, marginBottom: 12 },

@@ -16,7 +16,7 @@ import RoleBadgeIcon from '../../components/RoleBadgeIcon';
 import { VerifiedName } from '../../components/VerifiedCheck';
 
 export default function ProfileScreen() {
-  const { user, signInAs, signOut, updateAvatar, demoUsers } = useAuth();
+  const { user, signOut, updateAvatar } = useAuth();
   const { userStats } = useData();
   const { colors: themeColors } = useTheme();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -52,33 +52,6 @@ export default function ProfileScreen() {
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.bg }]} edges={['top']}>
       <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
-        {/* Demo Role Switcher */}
-        <View style={[styles.roleBanner, { backgroundColor: themeColors.cardBg, borderBottomColor: themeColors.border }]}>
-          <Text style={[styles.roleBannerTitle, { color: themeColors.textMuted }]}>SWITCH DEMO ROLE:</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.roleChips}>
-            {demoUsers.map(u => {
-              const active = u.id === user.id;
-              return (
-                <TouchableOpacity
-                  key={u.id}
-                  onPress={() => signInAs(u.id)}
-                  style={[
-                    styles.roleChip,
-                    {
-                      backgroundColor: active ? themeColors.primary : themeColors.surface,
-                      borderColor: active ? themeColors.primary : themeColors.border,
-                    },
-                  ]}
-                >
-                  <Text style={[styles.roleChipText, { color: active ? '#fff' : themeColors.text }]}>
-                    {u.position}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
-
         <View style={styles.header}>
           <View style={styles.avatarWrap}>
             {/* Tapping the photo opens it full resolution; the camera button changes it. */}
@@ -172,11 +145,6 @@ function Row({ icon, label, badgeCount, colors: c, onPress }: { icon: keyof type
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  roleBanner: { padding: 12, borderBottomWidth: 1 },
-  roleBannerTitle: { fontSize: 10, fontWeight: '800', letterSpacing: 1, marginBottom: 6 },
-  roleChips: { gap: 6 },
-  roleChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, borderWidth: 1 },
-  roleChipText: { fontSize: 11, fontWeight: '700' },
   header: { alignItems: 'center', padding: 24, paddingBottom: 16 },
   avatarWrap: { position: 'relative', marginBottom: 12 },
   cameraBadge: { position: 'absolute', right: -2, bottom: -2, width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 2, zIndex: 3 },

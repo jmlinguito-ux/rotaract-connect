@@ -23,7 +23,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { zones } from '../../data/mockData';
 import { distanceMeters, formatDistance } from '../../utils/checkIn';
-import { DemoAccountPickerModal } from '../../components/DemoAccountPickerModal';
+
 import { visibleEvents } from '../../utils/eventApproval';
 import { BottomSheet } from '../../components/BottomSheet';
 
@@ -112,7 +112,6 @@ export default function MapScreen() {
   // Search & Modals
   const [searchQuery, setSearchQuery] = useState('');
   const [filterModalVisible, setFilterModalVisible] = useState(false);
-  const [demoPickerVisible, setDemoPickerVisible] = useState(false);
   const [mapExpanded, setMapExpanded] = useState(false);
   const [userCoords, setUserCoords] = useState<{ latitude: number; longitude: number } | null>(null);
 
@@ -672,8 +671,6 @@ const styles = StyleSheet.create({
   header: { padding: 20, paddingBottom: 10 },
   title: { fontSize: 28, fontWeight: '800' },
   subtitle: { fontSize: 13, marginTop: 2 },
-  demoPillBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14, borderWidth: 1 },
-  demoPillText: { fontSize: 12, fontWeight: '700' },
   searchRowContainer: { paddingHorizontal: 16, marginBottom: 8, gap: 8 },
   searchBox: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8 },
   searchInput: { flex: 1, fontSize: 13, padding: 0 },

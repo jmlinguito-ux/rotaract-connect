@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, Modal, Image, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, Modal, Image, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { AuthStackParamList } from '../../navigation/types';
@@ -16,8 +16,8 @@ type Props = NativeStackScreenProps<AuthStackParamList, 'Register'>;
 const POSITIONS = ['President', 'Officer', 'Member'];
 
 export default function RegisterScreen({ navigation }: Props) {
-  const { register } = useAuth();
-  const { addApplication, clubs } = useData();
+  const { signUp } = useAuth();
+  const { clubs } = useData();
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
@@ -33,6 +33,8 @@ export default function RegisterScreen({ navigation }: Props) {
   const [proofUrl, setProofUrl] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [fullImageUri, setFullImageUri] = useState<{ uri: string; title: string } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const pickImage = async (onPicked: (uri: string) => void, square: boolean) => {
     try {
@@ -243,40 +245,45 @@ export default function RegisterScreen({ navigation }: Props) {
             </Text>
           </View>
 
+          {error ? (
+            <View style={styles.errorBanner}>
+              <Ionicons name="alert-circle" size={16} color={colors.danger} />
+              <Text style={styles.errorBannerText}>{error}</Text>
+            </View>
+          ) : null}
+
           <TouchableOpacity
-            style={[styles.primaryBtn, !canSubmit && styles.primaryBtnDisabled]}
-            disabled={!canSubmit}
-            onPress={() => {
-              const created = register({
+            style={[styles.primaryBtn, (!canSubmit || loading) && styles.primaryBtnDisabled]}
+            disabled={!canSubmit || loading}
+            onPress={async () => {
+              setLoading(true);
+              setError(null);
+              const result = await signUp(email, password, {
                 full_name: fullName,
-                email,
                 username,
                 contact_number: contactNumber,
                 club_id: selectedClubId ?? '',
                 club_name: selectedClub?.club_name ?? '',
                 position,
                 role: position === 'President' ? 'CLUB_PRESIDENT' : 'MEMBER',
-                proof_url: proofUrl || undefined,
                 avatar_url: avatarUrl || undefined,
-              });
-
-              // File the application so the uploaded proof lands in the
-              // reviewer's queue instead of only on the applicant's record.
-              addApplication({
-                user_id: created.id,
-                full_name: created.full_name,
-                email: created.email,
-                club_id: created.club_id,
-                club_name: created.club_name,
                 member_id: memberId,
-                position,
                 proof_url: proofUrl || undefined,
               });
+              setLoading(false);
 
-              navigation.navigate('VerificationPending');
+              if (result.error) {
+                setError(result.error);
+              } else {
+                navigation.navigate('VerificationPending');
+              }
             }}
           >
-            <Text style={styles.primaryBtnText}>Submit Application</Text>
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.primaryBtnText}>Submit Application</Text>
+            )}
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -463,6 +470,16 @@ const styles = StyleSheet.create({
   primaryBtn: { backgroundColor: colors.primary, padding: 16, borderRadius: 12, marginTop: 24, alignItems: 'center' },
   primaryBtnDisabled: { backgroundColor: '#E4B0C6' },
   primaryBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#FEF2F2',
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 16,
+  },
+  errorBannerText: { flex: 1, fontSize: 13, color: colors.danger, fontWeight: '600' },
   linkBtn: { marginTop: 20, alignItems: 'center', paddingVertical: 10 },
   linkText: { color: colors.textMuted, fontSize: 14 },
   linkTextBold: { color: colors.primary, fontWeight: '700' },
