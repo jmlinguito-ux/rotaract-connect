@@ -858,9 +858,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     let newStatus: VerificationStatus = a.status;
     if (action === 'CLUB_VALIDATE') {
-      // Club validation is not final: the App Administrator makes the last call,
-      // matching the pipeline shown to applicants (club → admin → verified).
-      newStatus = 'AWAITING_ADMIN_VERIFICATION';
+      // A Club President's approval is final for their own club's members — they
+      // are verified immediately, no separate App Admin step.
+      newStatus = 'VERIFIED';
     } else if (action === 'DISTRICT_APPROVE' || action === 'ADMIN_APPROVE') {
       newStatus = 'VERIFIED';
     } else if (action === 'REQUEST_INFO') {

@@ -579,7 +579,7 @@ BEGIN
   END IF;
 
   v_new_status := (CASE p_action
-    WHEN 'CLUB_VALIDATE'    THEN 'AWAITING_ADMIN_VERIFICATION'
+    WHEN 'CLUB_VALIDATE'    THEN 'VERIFIED'   -- President approval is final for their club's members
     WHEN 'DISTRICT_APPROVE' THEN 'VERIFIED'
     WHEN 'ADMIN_APPROVE'    THEN 'VERIFIED'
     WHEN 'REQUEST_INFO'     THEN 'NEEDS_INFORMATION'

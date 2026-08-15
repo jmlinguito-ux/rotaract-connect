@@ -92,9 +92,9 @@ export default function ApplicationReviewScreen({ route, navigation }: Props) {
           onPress: () => {
             reviewApplication(app.id, approveAction, user, '');
             Alert.alert(
-              isClubStep ? 'Validated & Forwarded' : 'Application Approved',
+              isClubStep ? 'Member Verified' : 'Application Approved',
               isClubStep
-                ? `${app.full_name}'s application was validated and sent to the App Administrator for final verification.`
+                ? `${app.full_name} is now a verified member of ${app.club_name}.`
                 : `The application for ${app.full_name} was approved.`,
               [
               { text: 'OK', onPress: () => navigation.goBack() },
