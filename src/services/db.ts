@@ -343,4 +343,12 @@ export const db = {
   updateProfileVerification: async (userId: string, status: string) => {
     reportError('updateProfileVerification', (await supabase.from('profiles').update({ verification_status: status }).eq('id', userId)).error);
   },
+  /**
+   * App Admin removal of a user. Deletes the auth account (cascading to their
+   * profile and data) via the admin_delete_user RPC, which enforces the
+   * APP_ADMIN check server-side.
+   */
+  deleteUser: async (userId: string) => {
+    reportError('deleteUser', (await supabase.rpc('admin_delete_user', { p_user_id: userId })).error);
+  },
 };

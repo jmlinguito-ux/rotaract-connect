@@ -600,6 +600,26 @@ END;
 $$;
 GRANT EXECUTE ON FUNCTION review_application(uuid, text, text) TO authenticated;
 
+-- App Admin can permanently remove a user. Deleting from auth.users cascades to
+-- the profile and all their data. SECURITY DEFINER to reach the auth schema;
+-- restricted to callers whose profile role is APP_ADMIN.
+CREATE OR REPLACE FUNCTION admin_delete_user(p_user_id uuid)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  v_role user_role;
+BEGIN
+  SELECT role INTO v_role FROM profiles WHERE id = auth.uid();
+  IF v_role IS DISTINCT FROM 'APP_ADMIN' THEN
+    RAISE EXCEPTION 'Only App Admins can remove users';
+  END IF;
+  IF p_user_id = auth.uid() THEN
+    RAISE EXCEPTION 'You cannot remove your own account';
+  END IF;
+  DELETE FROM auth.users WHERE id = p_user_id;
+END;
+$$;
+GRANT EXECUTE ON FUNCTION admin_delete_user(uuid) TO authenticated;
+
 -- Audit Log Policies
 CREATE POLICY "Audit logs viewable by admins and club presidents" ON audit_logs FOR SELECT TO authenticated USING (
   EXISTS (

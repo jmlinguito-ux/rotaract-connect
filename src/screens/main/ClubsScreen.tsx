@@ -25,6 +25,7 @@ import UserAvatar from '../../components/UserAvatar';
 import RotaryWheel from '../../components/RotaryWheel';
 import ClubLogo from '../../components/ClubLogo';
 import { VerifiedName } from '../../components/VerifiedCheck';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
 
 type SearchTab = 'CLUBS' | 'MEMBERS' | 'REQUESTS';
 
@@ -64,8 +65,11 @@ const CITIES_BY_PROVINCE: Record<string, string[]> = {
 export default function ClubsScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { user } = useAuth();
-  const { clubs, users, getOrCreateConversation, addClub, applicationsForRole } = useData();
+  const { clubs, users, getOrCreateConversation, addClub, applicationsForRole, removeUser } = useData();
   const { colors: themeColors } = useTheme();
+
+  const isAppAdmin = user?.role === 'APP_ADMIN';
+  const [memberToRemove, setMemberToRemove] = useState<AppUser | null>(null);
 
   const [q, setQ] = useState('');
   const [zoneId, setZoneId] = useState<string | 'ALL'>('ALL');
@@ -339,6 +343,14 @@ export default function ClubsScreen() {
                 >
                   <Ionicons name="chatbubble-ellipses-outline" size={18} color={themeColors.primary} />
                 </TouchableOpacity>
+                {isAppAdmin && item.id !== user?.id && (
+                  <TouchableOpacity
+                    style={[styles.chatIconBtn, { backgroundColor: themeColors.danger + '1A', borderColor: themeColors.danger + '3D' }]}
+                    onPress={() => setMemberToRemove(item)}
+                  >
+                    <Ionicons name="trash-outline" size={18} color={themeColors.danger} />
+                  </TouchableOpacity>
+                )}
               </TouchableOpacity>
             );
           }}
@@ -568,6 +580,21 @@ export default function ClubsScreen() {
           </TouchableOpacity>
         </View>
       </BottomSheet>
+
+      <ConfirmDialog
+        visible={!!memberToRemove}
+        title="Remove Member"
+        message={memberToRemove
+          ? `Permanently remove ${memberToRemove.full_name}? This deletes their account and all their data (events they organized, participation, and messages). This cannot be undone.`
+          : undefined}
+        confirmLabel="Remove"
+        destructive
+        onConfirm={() => {
+          if (memberToRemove) removeUser(memberToRemove.id);
+          setMemberToRemove(null);
+        }}
+        onClose={() => setMemberToRemove(null)}
+      />
     </SafeAreaView>
   );
 }

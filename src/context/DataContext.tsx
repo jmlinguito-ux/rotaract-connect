@@ -104,6 +104,8 @@ interface DataContextValue {
    * in the notification sent to the target so the change is never anonymous.
    */
   updateUserRole: (targetUserId: string, newRole: UserRole, actor?: AppUser) => void;
+  /** App Admin only: permanently removes a user and their data. */
+  removeUser: (targetUserId: string) => void;
 
   addApplication: (a: {
     user_id: string;
@@ -250,6 +252,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
         : `Your role was changed to ${label}.`,
     });
   }, [users, pushNotif]);
+
+  const removeUser = useCallback((targetUserId: string) => {
+    // Optimistically drop the user and anything of theirs the UI lists; the
+    // server cascade (admin_delete_user → auth.users) removes the rest, and a
+    // reload reconciles. Their organized events are removed by the cascade too.
+    setUsers(prev => prev.filter(u => u.id !== targetUserId));
+    setApplications(prev => prev.filter(a => a.user_id !== targetUserId));
+    setParticipants(prev => prev.filter(p => p.user_id !== targetUserId));
+    db.deleteUser(targetUserId);
+  }, []);
 
   const addApplication = useCallback((a: {
     user_id: string;
@@ -983,7 +995,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       users, events: resolvedEvents, participants, invitations, impacts, applications, auditLogs, notifications, clubs, conversations, messages,
       createEvent, updateEvent, updateEventStatus, resetEventApprovals, cancelEvent, approveEvent, rejectEvent,
       joinEvent, leaveEvent, approveParticipant, declineParticipant, markAttendance, checkIn, addClub,
-      invite, respondInvitation, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, sendDirectMessage, saveImpact, reviewApplication, resubmitApplication, markNotificationsRead, deleteNotification, updateUserRole, addApplication,
+      invite, respondInvitation, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, sendDirectMessage, saveImpact, reviewApplication, resubmitApplication, markNotificationsRead, deleteNotification, updateUserRole, removeUser, addApplication,
       participantsFor, invitationFor, participationFor, impactFor, notificationsFor, messagesForConversation, auditFor,
       applicationsForRole, userStats,
     }}>
