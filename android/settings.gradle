@@ -1,70 +1,38 @@
 pluginManagement {
-  def findNode = { File rootDir ->
-    def node = System.getenv("NODE_BINARY")
-    if (node && new File(node).exists()) return node
-
-    def localProperties = new Properties()
-    def localPropertiesFile = new File(rootDir, 'local.properties')
-    if (localPropertiesFile.exists()) {
-      localPropertiesFile.withInputStream { localProperties.load(it) }
-    }
-    node = localProperties.getProperty("node.executable")
-    if (node && new File(node).exists()) return node
-
-    def potentialNodes = [
-      "/opt/homebrew/bin/node",
-      "/usr/local/bin/node",
-      "/usr/bin/node"
-    ]
-    for (potentialNode in potentialNodes) {
-      if (potentialNode && new File(potentialNode).exists()) {
-        return potentialNode
-      }
-    }
-    return "node"
-  }
-  def nodeExecutable = findNode(settingsDir)
-
-  // Set the NODE_BINARY property for the current process
-  System.setProperty("NODE_BINARY", nodeExecutable)
-
-  def reactNativeGradlePlugin = new File(
-    providers.exec {
-      workingDir(settingsDir)
-      commandLine(nodeExecutable, "--print", "require.resolve('@react-native/gradle-plugin/package.json', { paths: [require.resolve('react-native/package.json')] })")
-    }.standardOutput.asText.get().trim()
-  ).getParentFile().absolutePath
-  includeBuild(reactNativeGradlePlugin)
-
-  def expoPluginsPath = new File(
-    providers.exec {
-      workingDir(settingsDir)
-      commandLine(nodeExecutable, "--print", "require.resolve('expo-modules-autolinking/package.json', { paths: [require.resolve('expo/package.json')] })")
-    }.standardOutput.asText.get().trim(),
-    "../android/expo-gradle-plugin"
-  ).absolutePath
-  includeBuild(expoPluginsPath)
+    includeBuild(new File(["node", "--print", "require.resolve('@react-native/gradle-plugin/package.json', { paths: [require.resolve('react-native/package.json')] })"].execute(null, rootDir).text.trim()).getParentFile().toString())
 }
-
-plugins {
-  id("com.facebook.react.settings")
-  id("expo-autolinking-settings")
-}
-
-def nodeExecutable = System.getProperty("NODE_BINARY")
+plugins { id("com.facebook.react.settings") }
 
 extensions.configure(com.facebook.react.ReactSettingsExtension) { ex ->
   if (System.getenv('EXPO_USE_COMMUNITY_AUTOLINKING') == '1') {
     ex.autolinkLibrariesFromCommand()
   } else {
-    ex.autolinkLibrariesFromCommand(expoAutolinking.rnConfigCommand)
+    def command = [
+      'node',
+      '--no-warnings',
+      '--eval',
+      'require(require.resolve(\'expo-modules-autolinking\', { paths: [require.resolve(\'expo/package.json\')] }))(process.argv.slice(1))',
+      'react-native-config',
+      '--json',
+      '--platform',
+      'android'
+    ].toList()
+    ex.autolinkLibrariesFromCommand(command)
   }
 }
-expoAutolinking.useExpoModules()
 
 rootProject.name = 'rotaract-connect'
 
-expoAutolinking.useExpoVersionCatalog()
+dependencyResolutionManagement {
+  versionCatalogs {
+    reactAndroidLibs {
+      from(files(new File(["node", "--print", "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim(), "../gradle/libs.versions.toml")))
+    }
+  }
+}
+
+apply from: new File(["node", "--print", "require.resolve('expo/package.json')"].execute(null, rootDir).text.trim(), "../scripts/autolinking.gradle");
+useExpoModules()
 
 include ':app'
-includeBuild(expoAutolinking.reactNativeGradlePlugin)
+includeBuild(new File(["node", "--print", "require.resolve('@react-native/gradle-plugin/package.json', { paths: [require.resolve('react-native/package.json')] })"].execute(null, rootDir).text.trim()).getParentFile())
