@@ -132,9 +132,10 @@ export default function EditEventScreen({ route, navigation }: Props) {
       address: policy.lockedFields.location ? event.address : location.address,
       city: policy.lockedFields.location ? event.city : location.city,
       max_participants: requested,
-      requires_approval: policy.lockedFields.requiresApproval ? event.requires_approval : requiresApproval,
-      allow_participant_invites: allowInvites,
-      visibility,
+      // District events: forced open-to-all, no join approval, no participant invites.
+      requires_approval: type === 'DISTRICT_EVENT' ? false : (policy.lockedFields.requiresApproval ? event.requires_approval : requiresApproval),
+      allow_participant_invites: type === 'DISTRICT_EVENT' ? false : allowInvites,
+      visibility: type === 'DISTRICT_EVENT' ? 'VERIFIED_ROTARACTORS' : visibility,
       cover_photo: coverPhoto,
       contact_number: contactNumber.trim() || undefined,
       contact_email: contactEmail.trim() || undefined,
@@ -372,18 +373,32 @@ export default function EditEventScreen({ route, navigation }: Props) {
           <Field label="Contact Number" value={contactNumber} onChangeText={handleContactNumberChange} keyboardType="phone-pad" placeholder="0917 123 4567" maxLength={13} />
           <Field label="Contact Email" value={contactEmail} onChangeText={setContactEmail} keyboardType="email-address" autoCapitalize="none" placeholder="event@rotaract.org" />
 
-          <Text style={styles.label}>Visibility</Text>
-          <View style={styles.visRow}>
-            {([
-              { key: 'VERIFIED_ROTARACTORS', label: 'Verified' },
-              { key: 'CLUB_ONLY', label: 'Club only' },
-              { key: 'INVITATION_ONLY', label: 'Invite only' },
-            ] as { key: EventVisibility; label: string }[]).map(v => (
-              <TouchableOpacity key={v.key} onPress={() => setVisibility(v.key)} style={[styles.visChip, visibility === v.key && styles.visChipActive]}>
-                <Text style={[styles.visChipText, visibility === v.key && styles.visChipTextActive]}>{v.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          {/* District events are always open to every verified member and invite
+              the whole district — visibility/approval/invite controls are hidden,
+              consistent with the create form. */}
+          {type === 'DISTRICT_EVENT' ? (
+            <View style={styles.districtInfoRow}>
+              <Ionicons name="globe-outline" size={15} color={colors.textMuted} />
+              <Text style={styles.districtInfoText}>
+                Open to all verified members. This district event invites everyone in the district.
+              </Text>
+            </View>
+          ) : (
+            <>
+              <Text style={styles.label}>Visibility</Text>
+              <View style={styles.visRow}>
+                {([
+                  { key: 'VERIFIED_ROTARACTORS', label: 'Verified' },
+                  { key: 'CLUB_ONLY', label: 'Club only' },
+                  { key: 'INVITATION_ONLY', label: 'Invite only' },
+                ] as { key: EventVisibility; label: string }[]).map(v => (
+                  <TouchableOpacity key={v.key} onPress={() => setVisibility(v.key)} style={[styles.visChip, visibility === v.key && styles.visChipActive]}>
+                    <Text style={[styles.visChipText, visibility === v.key && styles.visChipTextActive]}>{v.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </>
+          )}
 
           <Text style={styles.label}>Lock Leave Cutoff (Hours Before Start)</Text>
           <View style={styles.visRow}>
@@ -394,20 +409,24 @@ export default function EditEventScreen({ route, navigation }: Props) {
             ))}
           </View>
 
-          {policy.lockedFields.requiresApproval ? (
-            <View style={styles.fieldLockCard}>
-              <View style={styles.fieldLockHeader}>
-                <Ionicons name="lock-closed" size={14} color={colors.textMuted} />
-                <Text style={styles.fieldLockTitle}>
-                  Join approval: {event.requires_approval ? 'required' : 'not required'}
-                </Text>
-              </View>
-              <Text style={styles.fieldLockText}>{policy.lockedFields.requiresApproval}</Text>
-            </View>
-          ) : (
-            <Toggle label="Requires organizer approval to join" value={requiresApproval} onChange={setRequiresApproval} />
+          {type !== 'DISTRICT_EVENT' && (
+            <>
+              {policy.lockedFields.requiresApproval ? (
+                <View style={styles.fieldLockCard}>
+                  <View style={styles.fieldLockHeader}>
+                    <Ionicons name="lock-closed" size={14} color={colors.textMuted} />
+                    <Text style={styles.fieldLockTitle}>
+                      Join approval: {event.requires_approval ? 'required' : 'not required'}
+                    </Text>
+                  </View>
+                  <Text style={styles.fieldLockText}>{policy.lockedFields.requiresApproval}</Text>
+                </View>
+              ) : (
+                <Toggle label="Requires organizer approval to join" value={requiresApproval} onChange={setRequiresApproval} />
+              )}
+              <Toggle label="Participants can invite others" value={allowInvites} onChange={setAllowInvites} />
+            </>
           )}
-          <Toggle label="Participants can invite others" value={allowInvites} onChange={setAllowInvites} />
           <TouchableOpacity style={styles.submitBtn} onPress={handleSave}>
             <Ionicons name="save" size={20} color="#fff" />
             <Text style={styles.submitText}>Save Changes</Text>
@@ -572,6 +591,8 @@ const styles = StyleSheet.create({
   typeText: { fontSize: 13, fontWeight: '700', color: colors.text },
   typeTextActive: { color: '#fff' },
   visRow: { flexDirection: 'row', gap: 8 },
+  districtInfoRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4, marginBottom: 4 },
+  districtInfoText: { fontSize: 12, color: colors.textMuted, flex: 1, lineHeight: 16 },
   visChip: { flex: 1, padding: 10, borderRadius: 10, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, alignItems: 'center' },
   visChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   visChipText: { fontSize: 12, fontWeight: '700', color: colors.text },

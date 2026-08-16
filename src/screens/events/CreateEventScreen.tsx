@@ -213,9 +213,11 @@ export default function CreateEventScreen({ navigation }: Props) {
       co_organizer_user_ids: selectedCoOrganizers,
       participating_club_ids: [],
       max_participants: parseInt(maxP, 10) || 50,
-      requires_approval: requiresApproval,
-      allow_participant_invites: allowInvites,
-      visibility,
+      // District events: open to all verified members, no join approval, and the
+      // whole district is invited on publish — so these are forced, not user-set.
+      requires_approval: isDistrictEvent ? false : requiresApproval,
+      allow_participant_invites: isDistrictEvent ? false : allowInvites,
+      visibility: isDistrictEvent ? 'VERIFIED_ROTARACTORS' : visibility,
       cover_photo: coverPhoto,
       contact_number: contactNumber.trim() || undefined,
       contact_email: contactEmail.trim() || undefined,
@@ -296,33 +298,25 @@ export default function CreateEventScreen({ navigation }: Props) {
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.typeCard, type === 'DISTRICT_EVENT' && { backgroundColor: '#B45309', borderColor: '#B45309' }]}
+              style={[styles.typeCard, type === 'DISTRICT_EVENT' && { backgroundColor: '#C9A227', borderColor: '#C9A227' }]}
               onPress={() => setType('DISTRICT_EVENT')}
             >
-              <Ionicons name="ribbon" size={18} color={type === 'DISTRICT_EVENT' ? '#fff' : '#B45309'} />
+              <Ionicons name="ribbon" size={18} color={type === 'DISTRICT_EVENT' ? '#fff' : '#C9A227'} />
               <Text style={[styles.typeText, type === 'DISTRICT_EVENT' && styles.typeTextActive]}>District Event</Text>
             </TouchableOpacity>
           </View>
-          {type === 'DISTRICT_EVENT' && (
-            <View style={styles.districtNoticeBanner}>
-              <Ionicons name="trophy-outline" size={16} color="#B45309" />
-              <Text style={styles.districtNoticeText}>
-                🏆 District Event: +200 PTS awarded to all attendees (+10 PTS/hr) & organizers upon completion.
-              </Text>
-            </View>
-          )}
 
           <Field
             label="Event Name"
             value={title}
             onChangeText={setTitle}
-            placeholder={isServiceProject ? 'Community Coastal Cleanup' : 'Rotaract Fellowship Night'}
+            placeholder={isServiceProject ? 'Community Coastal Cleanup' : type === 'DISTRICT_EVENT' ? 'District 3800 Assembly' : 'Rotaract Fellowship Night'}
           />
           <Field
             label="Description"
             value={desc}
             onChangeText={setDesc}
-            placeholder={isServiceProject ? "What's this project about?" : 'Describe your fellowship gathering...'}
+            placeholder={isServiceProject ? "What's this project about?" : type === 'DISTRICT_EVENT' ? 'Describe this district-wide event — agenda, who should attend, and what to expect...' : 'Describe your fellowship gathering...'}
             multiline
             numberOfLines={4}
           />
@@ -525,18 +519,32 @@ export default function CreateEventScreen({ navigation }: Props) {
           <Field label="Contact Number" value={contactNumber} onChangeText={handleContactNumberChange} keyboardType="phone-pad" placeholder="0917 123 4567" maxLength={13} />
           <Field label="Contact Email" value={contactEmail} onChangeText={setContactEmail} keyboardType="email-address" autoCapitalize="none" placeholder="event@rotaract.org" />
 
-          <Text style={styles.label}>Visibility</Text>
-          <View style={styles.visRow}>
-            {([
-              { key: 'VERIFIED_ROTARACTORS', label: 'Verified' },
-              { key: 'CLUB_ONLY', label: 'Club only' },
-              { key: 'INVITATION_ONLY', label: 'Invite only' },
-            ] as { key: EventVisibility; label: string }[]).map(v => (
-              <TouchableOpacity key={v.key} onPress={() => setVisibility(v.key)} style={[styles.visChip, visibility === v.key && styles.visChipActive]}>
-                <Text style={[styles.visChipText, visibility === v.key && styles.visChipTextActive]}>{v.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          {/* District events are always open to every verified member and, on
+              publish, invite the whole district — so visibility/approval/invite
+              controls are hidden for them. */}
+          {type === 'DISTRICT_EVENT' ? (
+            <View style={styles.districtInfoRow}>
+              <Ionicons name="globe-outline" size={15} color={colors.textMuted} />
+              <Text style={styles.districtInfoText}>
+                Open to all verified members. Publishing invites everyone in the district.
+              </Text>
+            </View>
+          ) : (
+            <>
+              <Text style={styles.label}>Visibility</Text>
+              <View style={styles.visRow}>
+                {([
+                  { key: 'VERIFIED_ROTARACTORS', label: 'Verified' },
+                  { key: 'CLUB_ONLY', label: 'Club only' },
+                  { key: 'INVITATION_ONLY', label: 'Invite only' },
+                ] as { key: EventVisibility; label: string }[]).map(v => (
+                  <TouchableOpacity key={v.key} onPress={() => setVisibility(v.key)} style={[styles.visChip, visibility === v.key && styles.visChipActive]}>
+                    <Text style={[styles.visChipText, visibility === v.key && styles.visChipTextActive]}>{v.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </>
+          )}
 
           <Text style={styles.label}>Lock Leave Cutoff (Hours Before Start)</Text>
           <View style={styles.visRow}>
@@ -547,8 +555,12 @@ export default function CreateEventScreen({ navigation }: Props) {
             ))}
           </View>
 
-          <Toggle label="Requires organizer approval to join" value={requiresApproval} onChange={setRequiresApproval} />
-          <Toggle label="Participants can invite others" value={allowInvites} onChange={setAllowInvites} />
+          {type !== 'DISTRICT_EVENT' && (
+            <>
+              <Toggle label="Requires organizer approval to join" value={requiresApproval} onChange={setRequiresApproval} />
+              <Toggle label="Participants can invite others" value={allowInvites} onChange={setAllowInvites} />
+            </>
+          )}
 
           <TouchableOpacity style={styles.submitBtn} onPress={submit}>
             <Ionicons name="add-circle" size={20} color="#fff" />
@@ -625,8 +637,8 @@ const styles = StyleSheet.create({
   typeCardActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   typeText: { fontSize: 11, fontWeight: '700', color: colors.text, textAlign: 'center' },
   typeTextActive: { color: '#fff' },
-  districtNoticeBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#FEF3C7', padding: 10, borderRadius: 10, marginTop: 8 },
-  districtNoticeText: { fontSize: 11, color: '#92400E', fontWeight: '700', flex: 1 },
+  districtInfoRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4, marginBottom: 4 },
+  districtInfoText: { fontSize: 12, color: colors.textMuted, flex: 1, lineHeight: 16 },
   subLabelHint: { fontSize: 11, color: colors.textMuted, marginBottom: 8 },
   pillBoxContainer: {
     flexDirection: 'row',

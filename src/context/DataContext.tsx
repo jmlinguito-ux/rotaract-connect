@@ -566,6 +566,33 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       }
     }
+
+    // A District Event that publishes immediately (created by a District Admin, so
+    // it skips approval) still invites the whole district — mirroring the invite-all
+    // that runs when a submitted district event is later approved.
+    if (ev.status === 'RECRUITING' && ev.event_type === 'DISTRICT_EVENT') {
+      const teamIds = new Set([ev.organizer_user_id, ...(ev.co_organizer_user_ids ?? [])]);
+      const usersToInvite = users.filter(u => !teamIds.has(u.id));
+      const newInvitations: EventInvitation[] = usersToInvite.map(u => ({
+        id: nextId('i'),
+        event_id: ev.id,
+        invited_user_id: u.id,
+        invited_by_user_id: ev.organizer_user_id,
+        status: 'PENDING' as const,
+        sent_at: now(),
+      }));
+      setInvitations(prev => [...prev, ...newInvitations]);
+      newInvitations.forEach(i => db.insertInvitation(i));
+      for (const u of usersToInvite) {
+        pushNotif({
+          user_id: u.id,
+          kind: 'INVITATION_RECEIVED',
+          title: 'District Event Invitation',
+          message: `You've been invited to the district event "${ev.title}".`,
+          event_id: ev.id,
+        });
+      }
+    }
     return ev;
   }, [clubs, users, pushNotif]);
 
