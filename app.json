@@ -53,7 +53,8 @@
         }
       ],
       "@react-native-community/datetimepicker",
-      "./plugins/withDisableScriptSandboxing"
+      "./plugins/withDisableScriptSandboxing",
+      "expo-audio"
     ],
     "extra": {
       "eas": {

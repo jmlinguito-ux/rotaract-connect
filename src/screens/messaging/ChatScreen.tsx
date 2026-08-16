@@ -269,16 +269,16 @@ export default function ChatScreen({ route, navigation }: Props) {
         </View>
       )}
 
-      {!isGroupChat && (eventTitle || event) ? (
+      {eventId && (eventTitle || event) ? (
         <TouchableOpacity
           style={[styles.eventBanner, { backgroundColor: themeColors.primary + '1A', borderColor: themeColors.primary + '3D' }]}
-          onPress={() => { if (eventId) navigation.navigate('EventDetail', { eventId }); }}
+          onPress={() => navigation.navigate('EventDetail', { eventId })}
         >
-          <Ionicons name="pricetag" size={14} color={themeColors.primary} />
+          <Ionicons name={isGroupChat ? 'calendar' : 'pricetag'} size={14} color={themeColors.primary} />
           <Text style={[styles.eventBannerText, { color: themeColors.primary }]} numberOfLines={1}>
-            Inquiry regarding: {eventTitle || event?.title}
+            {isGroupChat ? 'View event details: ' : 'Inquiry regarding: '}{eventTitle || event?.title}
           </Text>
-          {eventId && <Ionicons name="chevron-forward" size={14} color={themeColors.primary} />}
+          <Ionicons name="chevron-forward" size={14} color={themeColors.primary} />
         </TouchableOpacity>
       ) : null}
 

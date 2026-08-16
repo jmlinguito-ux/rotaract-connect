@@ -1,34 +1,64 @@
-// Notification banner sound.
+// Notification banner sounds (chime for ALERT, looping alarm for HIGH).
 //
-// Playing audio in React Native needs a native module (`expo-audio`) plus bundled
-// sound assets and a dev-client rebuild — none of which can be added without a
-// native build. So these are safe no-ops today; VIBRATION already works without
-// them (short buzz for ALERT, long repeating buzz for HIGH until seen).
+// Uses expo-audio. IMPORTANT: expo-audio is a NATIVE module, so it only works in a
+// dev-client / EAS build that was compiled AFTER it was added. On an older build
+// the native module is absent — every call here is wrapped so it safely no-ops
+// (vibration still works) instead of crashing. Rebuild the app to hear sound.
 //
-// TO ENABLE SOUND:
-//   1) npx expo install expo-audio
-//   2) add assets: assets/sounds/chime.mp3 (ALERT) and assets/sounds/alarm.mp3 (HIGH)
-//   3) rebuild the dev client / EAS build
-//   4) implement below, e.g. with createAudioPlayer from 'expo-audio':
-//
-//        import { createAudioPlayer, AudioPlayer } from 'expo-audio';
-//        let player: AudioPlayer | null = null;
-//        export function playAlertSound(priority: 'ALERT' | 'HIGH') {
-//          stopAlertSound();
-//          player = createAudioPlayer(
-//            priority === 'HIGH'
-//              ? require('../../assets/sounds/alarm.mp3')
-//              : require('../../assets/sounds/chime.mp3'),
-//          );
-//          player.loop = priority === 'HIGH';   // HIGH loops until stopAlertSound()
-//          player.play();
-//        }
-//        export function stopAlertSound() { player?.remove(); player = null; }
+//   npx expo run:android   (or)   eas build --profile development --platform android
 
-export function playAlertSound(_priority: 'ALERT' | 'HIGH') {
-  // no-op until expo-audio is added (see notes above)
+import type { AudioPlayer } from 'expo-audio';
+
+// Guarded require: bundles fine (package is installed) but tolerates the native
+// module being missing on an older binary.
+let audio: any = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  audio = require('expo-audio');
+} catch {
+  audio = null;
 }
 
+const CHIME = require('../../assets/sounds/chime.wav');
+const ALARM = require('../../assets/sounds/alarm.wav');
+
+let player: AudioPlayer | null = null;
+let audioModeSet = false;
+
+function ensureAudioMode() {
+  if (!audio || audioModeSet) return;
+  try {
+    // Play even when the iOS ring switch is on silent — alerts should be audible.
+    audio.setAudioModeAsync({ playsInSilentMode: true });
+    audioModeSet = true;
+  } catch {
+    // ignore — older build without the native module
+  }
+}
+
+/** Plays the alert chime (ALERT) or the looping alarm (HIGH). No-op without audio. */
+export function playAlertSound(priority: 'ALERT' | 'HIGH') {
+  if (!audio?.createAudioPlayer) return;
+  try {
+    stopAlertSound();
+    ensureAudioMode();
+    player = audio.createAudioPlayer(priority === 'HIGH' ? ALARM : CHIME);
+    if (player) {
+      player.loop = priority === 'HIGH'; // HIGH keeps sounding until stopAlertSound()
+      player.volume = 1.0;
+      player.play();
+    }
+  } catch {
+    // ignore playback errors (e.g. native module missing)
+  }
+}
+
+/** Stops and releases the current alert sound, if any. */
 export function stopAlertSound() {
-  // no-op until expo-audio is added (see notes above)
+  try {
+    player?.remove();
+  } catch {
+    // ignore
+  }
+  player = null;
 }
