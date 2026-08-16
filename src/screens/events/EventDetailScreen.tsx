@@ -814,6 +814,7 @@ export default function EventDetailScreen({ route, navigation }: Props) {
               icon="location-outline"
               text={event.address}
               onPress={() => openMaps(event.latitude, event.longitude, event.address)}
+              hideOpenIcon
             />
             <InfoRow icon="business-outline" text={event.city} />
           </Section>
@@ -1316,15 +1317,17 @@ export default function EventDetailScreen({ route, navigation }: Props) {
         visible={!!selectedUser}
         targetUser={selectedUser}
         onClose={() => setSelectedUser(null)}
-        onStartChat={(targetUser) => {
+        eventContext={event ? { eventId: event.id, eventTitle: event.title } : undefined}
+        onStartChat={(targetUser, aboutEvent) => {
           if (!user || !event) return;
-          const conv = getOrCreateConversation(eventId, user, targetUser.id, targetUser.full_name, event.title);
+          const ctxEventId = aboutEvent ? event.id : undefined;
+          const conv = getOrCreateConversation(ctxEventId, user, targetUser.id, targetUser.full_name, aboutEvent ? event.title : undefined);
           navigation.navigate('Chat', {
             conversationId: conv.id,
-            eventId: event.id,
+            eventId: ctxEventId,
             recipientId: targetUser.id,
             recipientName: targetUser.full_name,
-            eventTitle: event.title,
+            eventTitle: aboutEvent ? event.title : undefined,
           });
         }}
       />
@@ -1384,13 +1387,13 @@ function Section({ title, children }: any) {
   );
 }
 
-function InfoRow({ icon, text, onPress }: { icon: keyof typeof Ionicons.glyphMap; text: string; onPress?: () => void }) {
+function InfoRow({ icon, text, onPress, hideOpenIcon }: { icon: keyof typeof Ionicons.glyphMap; text: string; onPress?: () => void; hideOpenIcon?: boolean }) {
   if (onPress) {
     return (
       <TouchableOpacity style={styles.infoRow} onPress={onPress} activeOpacity={0.6}>
         <Ionicons name={icon} size={16} color={colors.primary} />
         <Text style={[styles.infoText, { color: colors.primary, flex: 1 }]}>{text}</Text>
-        <Ionicons name="open-outline" size={15} color={colors.primary} />
+        {!hideOpenIcon && <Ionicons name="open-outline" size={15} color={colors.primary} />}
       </TouchableOpacity>
     );
   }

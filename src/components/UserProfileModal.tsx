@@ -15,7 +15,10 @@ interface UserProfileModalProps {
   visible: boolean;
   targetUser: AppUser | null;
   onClose: () => void;
-  onStartChat?: (targetUser: AppUser) => void;
+  /** `aboutEvent` is true when the user chose to message regarding the event. */
+  onStartChat?: (targetUser: AppUser, aboutEvent: boolean) => void;
+  /** When opened from an event, offers a "message about this event" choice. */
+  eventContext?: { eventId: string; eventTitle: string };
 }
 
 export function UserProfileModal({
@@ -23,6 +26,7 @@ export function UserProfileModal({
   targetUser,
   onClose,
   onStartChat,
+  eventContext,
 }: UserProfileModalProps) {
   const { user: currentUser, updateProfile } = useAuth();
   const { users, userStats, updateUserRole } = useData();
@@ -138,18 +142,35 @@ export function UserProfileModal({
               </View>
             </View>
 
-            {/* Direct Action Button: Chat / Message */}
+            {/* Direct Action Button(s): when opened from an event, let the user
+                choose to message about that event or just send a plain message. */}
             {!isMe && onStartChat && (
-              <TouchableOpacity
-                style={[styles.chatBtn, { backgroundColor: colors.primary }]}
-                onPress={() => {
-                  onClose();
-                  onStartChat(targetUser);
-                }}
-              >
-                <Ionicons name="chatbubble-ellipses" size={18} color="#fff" />
-                <Text style={styles.chatBtnText}>Send Direct Message</Text>
-              </TouchableOpacity>
+              eventContext ? (
+                <View style={styles.chatChoiceGroup}>
+                  <TouchableOpacity
+                    style={[styles.chatBtn, { backgroundColor: colors.primary, marginTop: 0 }]}
+                    onPress={() => { onClose(); onStartChat(targetUser, true); }}
+                  >
+                    <Ionicons name="pricetag" size={16} color="#fff" />
+                    <Text style={styles.chatBtnText} numberOfLines={1}>Message about event</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.chatBtnSecondary, { borderColor: colors.primary }]}
+                    onPress={() => { onClose(); onStartChat(targetUser, false); }}
+                  >
+                    <Ionicons name="chatbubble-ellipses" size={16} color={colors.primary} />
+                    <Text style={[styles.chatBtnText, { color: colors.primary }]}>Just send a message</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.chatBtn, { backgroundColor: colors.primary }]}
+                  onPress={() => { onClose(); onStartChat(targetUser, false); }}
+                >
+                  <Ionicons name="chatbubble-ellipses" size={18} color="#fff" />
+                  <Text style={styles.chatBtnText}>Send Direct Message</Text>
+                </TouchableOpacity>
+              )
             )}
           </TouchableOpacity>
         </TouchableOpacity>
@@ -183,6 +204,8 @@ const styles = StyleSheet.create({
   statVal: { fontSize: 18, fontWeight: '800', color: colors.text },
   statLbl: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
   chatBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: colors.primary, width: '100%', paddingVertical: 12, borderRadius: 12, marginTop: 18 },
+  chatBtnSecondary: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%', paddingVertical: 12, borderRadius: 12, borderWidth: 1.5 },
+  chatChoiceGroup: { width: '100%', gap: 8, marginTop: 18 },
   chatBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
   adminRoleSection: { width: '100%', marginTop: 14 },
   adminRoleBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: colors.primary + '3D', backgroundColor: colors.primary + '0D' },

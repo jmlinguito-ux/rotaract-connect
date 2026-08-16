@@ -49,15 +49,16 @@ export default function ParticipantsScreen({ route, navigation }: Props) {
     Alert.alert('Declined', 'Join request declined and reason sent to participant inbox.');
   };
 
-  const handleStartChat = (target: AppUser) => {
+  const handleStartChat = (target: AppUser, aboutEvent: boolean) => {
     if (!user) return;
-    const conv = getOrCreateConversation(eventId, user, target.id, target.full_name, event?.title);
+    const ctxEventId = aboutEvent ? event?.id : undefined;
+    const conv = getOrCreateConversation(ctxEventId, user, target.id, target.full_name, aboutEvent ? event?.title : undefined);
     navigation.navigate('Chat', {
       conversationId: conv.id,
-      eventId: event?.id,
+      eventId: ctxEventId,
       recipientId: target.id,
       recipientName: target.full_name,
-      eventTitle: event?.title,
+      eventTitle: aboutEvent ? event?.title : undefined,
     });
   };
 
@@ -169,6 +170,7 @@ export default function ParticipantsScreen({ route, navigation }: Props) {
         visible={!!selectedUser}
         targetUser={selectedUser}
         onClose={() => setSelectedUser(null)}
+        eventContext={event ? { eventId: event.id, eventTitle: event.title } : undefined}
         onStartChat={handleStartChat}
       />
     </SafeAreaView>

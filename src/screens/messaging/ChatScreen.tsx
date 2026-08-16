@@ -269,14 +269,16 @@ export default function ChatScreen({ route, navigation }: Props) {
         </View>
       )}
 
-      {eventId && (eventTitle || event) ? (
+      {/* Group chats keep a persistent "view event details" header. 1-on-1 event
+          chats show the event link inside the thread instead (see ListHeaderComponent). */}
+      {isGroupChat && eventId && (eventTitle || event) ? (
         <TouchableOpacity
           style={[styles.eventBanner, { backgroundColor: themeColors.primary + '1A', borderColor: themeColors.primary + '3D' }]}
           onPress={() => navigation.navigate('EventDetail', { eventId })}
         >
-          <Ionicons name={isGroupChat ? 'calendar' : 'pricetag'} size={14} color={themeColors.primary} />
+          <Ionicons name="calendar" size={14} color={themeColors.primary} />
           <Text style={[styles.eventBannerText, { color: themeColors.primary }]} numberOfLines={1}>
-            {isGroupChat ? 'View event details: ' : 'Inquiry regarding: '}{eventTitle || event?.title}
+            View event details: {eventTitle || event?.title}
           </Text>
           <Ionicons name="chevron-forward" size={14} color={themeColors.primary} />
         </TouchableOpacity>
@@ -290,11 +292,15 @@ export default function ChatScreen({ route, navigation }: Props) {
           style={{ flex: 1 }}
           contentContainerStyle={styles.messageList}
           onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
-          renderItem={({ item }) => {
+          renderItem={({ item, index }) => {
             const isMe = item.sender_id === user.id;
             const senderUser = users.find(u => u.id === item.sender_id);
             const readCount = isMe ? (readCountFor(item) ?? 0) : 0;
             const isRead = readCount > 0;
+            // Attach the event reference to the FIRST message of a run about that
+            // event (1-on-1 only; group chats have the header banner instead).
+            const msgEvent = !isGroupChat && item.event_id ? events.find(e => e.id === item.event_id) : undefined;
+            const showEventChip = !!msgEvent && (index === 0 || messages[index - 1]?.event_id !== item.event_id);
             return (
               <SwipeableRow onDelete={() => deleteMessageForMe(item.id, user.id)}>
               <View>
@@ -318,6 +324,16 @@ export default function ChatScreen({ route, navigation }: Props) {
                       item.deleted_at && styles.deletedBubble,
                     ]}
                   >
+                    {showEventChip && msgEvent && (
+                      <TouchableOpacity
+                        style={[styles.msgEventChip, { backgroundColor: isMe ? 'rgba(255,255,255,0.18)' : themeColors.primary + '18', borderColor: isMe ? 'rgba(255,255,255,0.35)' : themeColors.primary + '40' }]}
+                        onPress={() => item.event_id && navigation.navigate('EventDetail', { eventId: item.event_id })}
+                      >
+                        <Ionicons name="pricetag" size={11} color={isMe ? '#fff' : themeColors.primary} />
+                        <Text numberOfLines={1} style={[styles.msgEventChipText, { color: isMe ? '#fff' : themeColors.primary }]}>{msgEvent.title}</Text>
+                        <Ionicons name="chevron-forward" size={11} color={isMe ? 'rgba(255,255,255,0.85)' : themeColors.primary} />
+                      </TouchableOpacity>
+                    )}
                     {!isMe && isGroupChat && (
                       <TouchableOpacity onPress={() => senderUser && setSelectedUserModal(senderUser)}>
                         <View style={styles.senderNameRow}>
@@ -382,29 +398,43 @@ export default function ChatScreen({ route, navigation }: Props) {
                     </TouchableOpacity>
                   </TouchableOpacity>
                 </View>
-                {isGroupChat && expandedSeenId === item.id && (() => {
-                  const readers = readersFor(item);
-                  return (
-                    <View style={[styles.seenByRow, isMe ? styles.myWrapper : styles.seenByTheir]}>
-                      {readers.length === 0 ? (
-                        <Text style={[styles.seenByText, { color: themeColors.textMuted }]}>Not seen yet</Text>
-                      ) : (
-                        <>
-                          <Text style={[styles.seenByText, { color: themeColors.textMuted }]}>
-                            Seen by {readers.map(r => r.full_name.split(' ')[0]).join(', ')}
-                          </Text>
-                          <View style={styles.seenByAvatars}>
-                            {readers.slice(0, 6).map(r => (
-                              <View key={r.id} style={styles.seenByAvatar}>
-                                <UserAvatar user={r} size={16} />
-                              </View>
-                            ))}
-                          </View>
-                        </>
-                      )}
-                    </View>
-                  );
-                })()}
+                {isGroupChat && !item.deleted_at && (
+                  expandedSeenId === item.id ? (() => {
+                    const readers = readersFor(item);
+                    return (
+                      <View style={[styles.seenByRow, isMe ? styles.myWrapper : styles.seenByTheir]}>
+                        {readers.length === 0 ? (
+                          <Text style={[styles.seenByText, { color: themeColors.textMuted }]}>Not seen yet</Text>
+                        ) : (
+                          <>
+                            <Text style={[styles.seenByText, { color: themeColors.textMuted }]}>
+                              Seen by {readers.map(r => r.full_name.split(' ')[0]).join(', ')}
+                            </Text>
+                            <View style={styles.seenByAvatars}>
+                              {readers.slice(0, 6).map(r => (
+                                <View key={r.id} style={styles.seenByAvatar}>
+                                  <UserAvatar user={r} size={16} />
+                                </View>
+                              ))}
+                            </View>
+                          </>
+                        )}
+                      </View>
+                    );
+                  })() : (
+                    // Always-on summary under YOUR OWN group messages (incl. broadcasts)
+                    // so read status is visible without tapping. Tap to see who.
+                    isMe && readCount > 0 ? (
+                      <TouchableOpacity
+                        style={[styles.seenByRow, styles.myWrapper]}
+                        onPress={() => setExpandedSeenId(item.id)}
+                      >
+                        <Ionicons name="checkmark-done" size={12} color={READ_TICK_COLOR} />
+                        <Text style={[styles.seenByText, { color: themeColors.textMuted }]}>Seen by {readCount}</Text>
+                      </TouchableOpacity>
+                    ) : null
+                  )
+                )}
               </View>
               </SwipeableRow>
             );
@@ -495,16 +525,18 @@ export default function ChatScreen({ route, navigation }: Props) {
         visible={!!selectedUserModal}
         targetUser={selectedUserModal}
         onClose={() => setSelectedUserModal(null)}
-        onStartChat={(targetUser) => {
+        eventContext={eventId && (eventTitle || event?.title) ? { eventId, eventTitle: eventTitle || event!.title } : undefined}
+        onStartChat={(targetUser, aboutEvent) => {
           setSelectedUserModal(null);
           if (targetUser.id !== recipientId) {
-            const conv = getOrCreateConversation(eventId, user, targetUser.id, targetUser.full_name);
+            const ctxEventId = aboutEvent ? eventId : undefined;
+            const conv = getOrCreateConversation(ctxEventId, user, targetUser.id, targetUser.full_name);
             navigation.push('Chat', {
               conversationId: conv.id,
-              eventId,
+              eventId: ctxEventId,
               recipientId: targetUser.id,
               recipientName: targetUser.full_name,
-              eventTitle,
+              eventTitle: aboutEvent ? (eventTitle || event?.title) : undefined,
             });
           }
         }}
@@ -543,6 +575,8 @@ const styles = StyleSheet.create({
   archivedText: { flex: 1, fontSize: 11, fontWeight: '600' },
   eventBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 8, borderWidth: 1 },
   eventBannerText: { flex: 1, fontSize: 12, fontWeight: '700' },
+  msgEventChip: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', maxWidth: '100%', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10, borderWidth: 1, marginBottom: 6 },
+  msgEventChipText: { fontSize: 11, fontWeight: '800', flexShrink: 1 },
   messageList: { padding: 16, paddingBottom: 24, gap: 12 },
   messageWrapper: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
   myWrapper: { justifyContent: 'flex-end' },
