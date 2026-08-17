@@ -1,16 +1,8 @@
-pluginManagement {
-  def localProperties = new Properties()
-  def localPropertiesFile = new File(rootDir, "local.properties")
-
-  if (localPropertiesFile.exists()) {
-    localPropertiesFile.withInputStream { localProperties.load(it) }
-  }
-
+dpluginManagement {
   def nodeExecutable = [
     settings.hasProperty("NODE_BINARY") ? settings.getProperty("NODE_BINARY") : null,
     System.getenv("NODE_BINARY"),
     System.getProperty("NODE_BINARY"),
-    localProperties.getProperty("node.executable"),
     "/usr/local/bin/node",
     "/opt/homebrew/bin/node",
     "node"
