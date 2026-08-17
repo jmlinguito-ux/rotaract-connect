@@ -4,7 +4,7 @@ apply plugin: "com.facebook.react"
 
 def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
 
-def nodeExecutable = System.getProperty("NODE_BINARY", "node")
+def nodeExecutable = System.getProperty("NODE_BINARY", "/opt/homebrew/bin/node")
 
 /**
  * This is the configuration block to customize your React Native Android app.
