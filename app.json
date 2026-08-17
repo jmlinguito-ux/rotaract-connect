@@ -7,6 +7,7 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
+      "deploymentTarget": "16.4",
       "supportsTablet": true,
       "bundleIdentifier": "com.rotaractconnect.app",
       "infoPlist": {
@@ -51,7 +52,15 @@
       "@react-native-community/datetimepicker",
       "./plugins/withDisableScriptSandboxing",
       "expo-audio",
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "16.4"
+          }
+        }
+      ]
     ],
     "extra": {
       "eas": {
