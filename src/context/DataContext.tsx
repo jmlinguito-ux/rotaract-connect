@@ -168,7 +168,7 @@ interface DataContextValue {
   participationFor: (eventId: string, userId: string) => EventParticipant | undefined;
   impactFor: (eventId: string) => EventImpact | undefined;
   notificationsFor: (userId: string) => AppNotification[];
-  messagesForConversation: (conversationId: string) => DirectMessage[];
+  messagesForConversation: (conversationId: string, forUserId?: string) => DirectMessage[];
   unreadCountForUser: (userId: string) => number;
   auditFor: (appId: string) => AuditLog[];
   applicationsForRole: (role: UserRole, clubId?: string) => VerificationApplication[];
@@ -1187,12 +1187,29 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return db.broadcastToEvent(eventId, title, message, priority);
   }, []);
 
-  const messagesForConversation = useCallback((conversationId: string) => {
+  const messagesForConversation = useCallback((conversationId: string, forUserId?: string) => {
     const hidden = new Set(deletedMessageIds);
+    const targetUserId = forUserId ?? authUser?.id;
+    let cutoffTime: number | null = null;
+    if (targetUserId) {
+      const state = conversationStates.find(s => s.conversation_id === conversationId && s.user_id === targetUserId);
+      if (state?.deleted_at) {
+        cutoffTime = new Date(state.deleted_at).getTime();
+      }
+    }
+
     return messages
-      .filter(m => m.conversation_id === conversationId && !hidden.has(m.id))
+      .filter(m => {
+        if (m.conversation_id !== conversationId) return false;
+        if (hidden.has(m.id)) return false;
+        if (cutoffTime !== null) {
+          const msgTime = new Date(m.created_at).getTime();
+          if (msgTime <= cutoffTime) return false;
+        }
+        return true;
+      })
       .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-  }, [messages, deletedMessageIds]);
+  }, [messages, deletedMessageIds, conversationStates, authUser?.id]);
 
   // "Delete for me": hides a message from this user's own view only; other
   // participants still see it (messages are a single shared row, never removed).

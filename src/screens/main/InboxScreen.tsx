@@ -118,7 +118,7 @@ export default function InboxScreen() {
     return conversations
       .filter(c => !c.is_group && (c.participant_user_id === user.id || c.organizer_user_id === user.id))
       .map(c => {
-        const msgs = messagesForConversation(c.id);
+        const msgs = messagesForConversation(c.id, user.id);
         const last = msgs[msgs.length - 1];
         const state = conversationStateFor(c.id);
         return { conv: c, last, state };
@@ -329,7 +329,7 @@ export default function InboxScreen() {
 
   const renderGroupChat = (ev: RotaractEvent) => {
     const groupConv = conversations.find(c => c.event_id === ev.id && c.is_group);
-    const msgs = groupConv ? messagesForConversation(groupConv.id) : [];
+    const msgs = groupConv ? messagesForConversation(groupConv.id, user?.id) : [];
     const last = msgs[msgs.length - 1];
     const partsCount = participantsFor(ev.id).filter(p => p.status === 'JOINED').length;
     const archived = ev.status === 'COMPLETED' || ev.status === 'CANCELLED';

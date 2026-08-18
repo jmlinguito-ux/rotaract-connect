@@ -74,7 +74,7 @@ export default function ChatScreen({ route, navigation }: Props) {
   // Message long-pressed to open the delete menu (delete for me / unsend).
   const [actionMsg, setActionMsg] = useState<DirectMessage | null>(null);
 
-  const messages = messagesForConversation(conversationId);
+  const messages = messagesForConversation(conversationId, user?.id);
   const event = eventId ? events.find(e => e.id === eventId) : undefined;
   const isGroupChat = recipientId === 'ALL_PARTICIPANTS' || conversationId.includes('conv_group');
   const recipientUser = !isGroupChat ? users.find(u => u.id === recipientId || u.full_name === recipientName) : undefined;
