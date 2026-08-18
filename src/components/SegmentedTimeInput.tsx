@@ -267,7 +267,11 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
   },
   hiddenInput: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     opacity: 0.01,
     zIndex: 10,
   },

@@ -69,6 +69,6 @@ export function BottomSheet({ visible, onClose, children, cardStyle }: BottomShe
 
 const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  backdropPress: { ...StyleSheet.absoluteFillObject },
+  backdropPress: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
   card: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24 },
 });

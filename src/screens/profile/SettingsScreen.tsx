@@ -10,6 +10,7 @@ import { usePreferences } from '../../context/PreferencesContext';
 import RoleBadgeIcon from '../../components/RoleBadgeIcon';
 import { VerifiedName } from '../../components/VerifiedCheck';
 import { ROLE_BADGES } from '../../utils/roles';
+import TermsAndPrivacyModal from '../../components/TermsAndPrivacyModal';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
@@ -17,6 +18,10 @@ export default function SettingsScreen({ navigation }: Props) {
   const { user, changePassword } = useAuth();
   const { isNightMode, setNightMode, colors: themeColors } = useTheme();
   const { inAppBannerEnabled, setInAppBannerEnabled, pushEnabled, setPushEnabled } = usePreferences();
+
+  // Legal modal state
+  const [legalModalVisible, setLegalModalVisible] = useState(false);
+  const [legalModalTab, setLegalModalTab] = useState<'terms' | 'privacy'>('terms');
 
   // Change-password modal state
   const [pwModalVisible, setPwModalVisible] = useState(false);
@@ -399,13 +404,38 @@ export default function SettingsScreen({ navigation }: Props) {
 
             <View style={dividerStyle} />
 
-            <TouchableOpacity style={styles.row} onPress={() => Alert.alert('Rotary International Guidelines', 'Visit rotary.org for official Rotaract policies and codes of conduct.')}>
+            <TouchableOpacity
+              style={styles.row}
+              onPress={() => {
+                setLegalModalTab('terms');
+                setLegalModalVisible(true);
+              }}
+            >
               <View style={[styles.rowIconWrap, { backgroundColor: themeColors.primary + '1A' }]}>
                 <Ionicons name="document-text-outline" size={18} color={themeColors.primary} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={titleStyle}>Rotary International Guidelines</Text>
-                <Text style={subStyle}>Code of conduct and policies</Text>
+                <Text style={titleStyle}>User Agreement & Terms</Text>
+                <Text style={subStyle}>Code of conduct and membership rules</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={themeColors.textMuted} />
+            </TouchableOpacity>
+
+            <View style={dividerStyle} />
+
+            <TouchableOpacity
+              style={styles.row}
+              onPress={() => {
+                setLegalModalTab('privacy');
+                setLegalModalVisible(true);
+              }}
+            >
+              <View style={[styles.rowIconWrap, { backgroundColor: themeColors.primary + '1A' }]}>
+                <Ionicons name="shield-checkmark-outline" size={18} color={themeColors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={titleStyle}>Privacy Policy</Text>
+                <Text style={subStyle}>Data Privacy Act of 2012 compliance</Text>
               </View>
               <Ionicons name="chevron-forward" size={16} color={themeColors.textMuted} />
             </TouchableOpacity>
@@ -419,6 +449,13 @@ export default function SettingsScreen({ navigation }: Props) {
         </TouchableOpacity>
 
       </ScrollView>
+
+      {/* 📜 TERMS & PRIVACY MODAL */}
+      <TermsAndPrivacyModal
+        visible={legalModalVisible}
+        initialTab={legalModalTab}
+        onClose={() => setLegalModalVisible(false)}
+      />
 
       {/* 🔒 CHANGE PASSWORD MODAL */}
       <Modal visible={pwModalVisible} transparent animationType="fade" onRequestClose={closePwModal}>

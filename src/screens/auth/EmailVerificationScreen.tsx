@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView,
-  KeyboardAvoidingView, Platform, ActivityIndicator,
+  View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -9,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { AuthStackParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
 import { useAuth } from '../../context/AuthContext';
+import { KeyboardAwareScrollView, KeyboardAwareScrollHandle, useKeyboardAwareFocus } from '../../components/KeyboardAwareScrollView';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'EmailVerification'>;
 
@@ -24,6 +24,8 @@ export default function EmailVerificationScreen({ navigation, route }: Props) {
   const [notice, setNotice] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(RESEND_COOLDOWN);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const kavRef = useRef<KeyboardAwareScrollHandle>(null);
+  const onInputFocus = useKeyboardAwareFocus(kavRef);
 
   const startCooldown = () => {
     setCooldown(RESEND_COOLDOWN);
@@ -60,8 +62,7 @@ export default function EmailVerificationScreen({ navigation, route }: Props) {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+      <KeyboardAwareScrollView ref={kavRef} contentContainerStyle={styles.container}>
           <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
             <Ionicons name="chevron-back" size={22} color={colors.text} />
             <Text style={styles.backText}>Back</Text>
@@ -102,6 +103,7 @@ export default function EmailVerificationScreen({ navigation, route }: Props) {
             keyboardType="number-pad"
             autoCapitalize="none"
             maxLength={10}
+            onFocus={onInputFocus}
             onSubmitEditing={verify}
           />
 
@@ -119,8 +121,7 @@ export default function EmailVerificationScreen({ navigation, route }: Props) {
               {cooldown > 0 ? `Resend code in ${cooldown}s` : 'Didn\'t get it? Resend code'}
             </Text>
           </TouchableOpacity>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAwareScrollView>
     </SafeAreaView>
   );
 }

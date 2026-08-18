@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView,
-  Keyboard, Platform, ActivityIndicator,
+  View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -10,6 +9,7 @@ import { AuthStackParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
 import { useAuth } from '../../context/AuthContext';
 import RotaryWheel from '../../components/RotaryWheel';
+import { KeyboardAwareScrollView, KeyboardAwareScrollHandle, useKeyboardAwareFocus } from '../../components/KeyboardAwareScrollView';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'ForgotPassword'>;
 
@@ -46,30 +46,9 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(0);
-  const [kbHeight, setKbHeight] = useState(0);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const scrollRef = useRef<ScrollView>(null);
-
-  // Scrolls the focused field into view. Used on field focus (the keyboard-show
-  // listener won't fire again when moving between fields while it's already open).
-  const scrollToInput = () => {
-    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 120);
-  };
-
-  // Reserve bottom padding equal to the real keyboard height so the ScrollView has
-  // room to scroll the focused field above the keyboard. This does NOT rely on the
-  // Android window resizing (adjustResize) — which is a no-op under Android
-  // edge-to-edge — so it works on both platforms.
-  useEffect(() => {
-    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSub = Keyboard.addListener(showEvt, e => {
-      setKbHeight(e.endCoordinates?.height ?? 0);
-      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 60);
-    });
-    const hideSub = Keyboard.addListener(hideEvt, () => setKbHeight(0));
-    return () => { showSub.remove(); hideSub.remove(); };
-  }, []);
+  const kavRef = useRef<KeyboardAwareScrollHandle>(null);
+  const onInputFocus = useKeyboardAwareFocus(kavRef);
 
   useEffect(() => () => { if (timer.current) clearInterval(timer.current); }, []);
 
@@ -118,14 +97,9 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
 
   return (
     <SafeAreaView style={styles.safe}>
-      {/* Bottom padding tracks the live keyboard height (see the Keyboard listener
-          above) so the focused field can scroll above the keyboard. More reliable
-          than KeyboardAvoidingView on Android edge-to-edge, where the window no
-          longer resizes when the keyboard opens. */}
-      <ScrollView
-        ref={scrollRef}
-        contentContainerStyle={[styles.container, { paddingBottom: 40 + kbHeight }]}
-        keyboardShouldPersistTaps="handled"
+      <KeyboardAwareScrollView
+        ref={kavRef}
+        contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
       >
           {phase === 'done' ? (
@@ -222,7 +196,7 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
                 keyboardType="number-pad"
                 autoCapitalize="none"
                 maxLength={10}
-                onFocus={scrollToInput}
+                onFocus={onInputFocus}
               />
 
               <Text style={styles.fieldLabel}>New Password</Text>
@@ -235,7 +209,7 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
                   placeholderTextColor={colors.textMuted}
                   secureTextEntry={!showPw}
                   autoCapitalize="none"
-                  onFocus={scrollToInput}
+                  onFocus={onInputFocus}
                 />
                 <TouchableOpacity style={styles.eyeBtn} onPress={() => setShowPw(v => !v)} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
                   <Ionicons name={showPw ? 'eye-off-outline' : 'eye-outline'} size={20} color={colors.textMuted} />
@@ -252,7 +226,7 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
                 secureTextEntry={!showPw}
                 autoCapitalize="none"
                 onSubmitEditing={submitReset}
-                onFocus={scrollToInput}
+                onFocus={onInputFocus}
               />
 
               <TouchableOpacity
@@ -282,7 +256,7 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
           )}
           </>
           )}
-      </ScrollView>
+      </KeyboardAwareScrollView>
     </SafeAreaView>
   );
 }

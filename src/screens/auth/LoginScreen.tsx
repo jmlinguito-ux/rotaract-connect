@@ -50,91 +50,94 @@ export default function LoginScreen({ navigation }: Props) {
   return (
     <SafeAreaView style={styles.safe}>
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
+        style={styles.keyboardAvoid}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView
           contentContainerStyle={styles.container}
           keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          <View style={styles.logoWrap}>
-            <RotaryWheel size={84} color={colors.primary} style={styles.logo} />
-            <Text style={styles.title}>Rotaract Connect</Text>
-            <Text style={styles.subtitle}>District 3800 • Verified Rotaractor Network</Text>
-          </View>
-
-          {error ? (
-            <View style={styles.errorBanner}>
-              <Ionicons name="alert-circle" size={16} color={colors.danger} />
-              <Text style={styles.errorBannerText}>{error}</Text>
+          <View style={styles.innerContent}>
+            <View style={styles.logoWrap}>
+              <RotaryWheel size={84} color={colors.primary} style={styles.logo} />
+              <Text style={styles.title}>Rotaract Connect</Text>
+              <Text style={styles.subtitle}>District 3800 • Verified Rotaractor Network</Text>
             </View>
-          ) : null}
 
-          <Text style={styles.fieldLabel}>Email or Username</Text>
-          <TextInput
-            style={styles.input}
-            value={email}
-            onChangeText={setEmail}
-            placeholder="you@example.com or username"
-            placeholderTextColor={colors.textMuted}
-            keyboardType="default"
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
+            {error ? (
+              <View style={styles.errorBanner}>
+                <Ionicons name="alert-circle" size={16} color={colors.danger} />
+                <Text style={styles.errorBannerText}>{error}</Text>
+              </View>
+            ) : null}
 
-          <Text style={styles.fieldLabel}>Password</Text>
-          <View style={styles.passwordWrap}>
+            <Text style={styles.fieldLabel}>Email or Username</Text>
             <TextInput
-              style={styles.passwordInput}
-              value={password}
-              onChangeText={setPassword}
-              placeholder="••••••••"
+              style={styles.input}
+              value={email}
+              onChangeText={setEmail}
+              placeholder="you@example.com or username"
               placeholderTextColor={colors.textMuted}
-              secureTextEntry={!showPassword}
+              keyboardType="default"
               autoCapitalize="none"
+              autoCorrect={false}
             />
-            <TouchableOpacity
-              style={styles.eyeBtn}
-              onPress={() => setShowPassword(!showPassword)}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            >
-              <Ionicons
-                name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                size={20}
-                color={colors.textMuted}
+
+            <Text style={styles.fieldLabel}>Password</Text>
+            <View style={styles.passwordWrap}>
+              <TextInput
+                style={styles.passwordInput}
+                value={password}
+                onChangeText={setPassword}
+                placeholder="••••••••"
+                placeholderTextColor={colors.textMuted}
+                secureTextEntry={!showPassword}
+                autoCapitalize="none"
               />
+              <TouchableOpacity
+                style={styles.eyeBtn}
+                onPress={() => setShowPassword(!showPassword)}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              >
+                <Ionicons
+                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={20}
+                  color={colors.textMuted}
+                />
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={styles.forgotBtn}
+              onPress={() => navigation.navigate('ForgotPassword', { username: email.trim() && !email.includes('@') ? email.trim() : undefined })}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={styles.forgotText}>Forgot Password?</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.signInBtn, loading && styles.signInBtnDisabled]}
+              onPress={handleSignIn}
+              activeOpacity={0.8}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="log-in-outline" size={20} color="#fff" />
+                  <Text style={styles.signInBtnText}>Sign In</Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity onPress={() => navigation.navigate('Register')} style={styles.linkBtn}>
+              <Text style={styles.linkText}>
+                New Rotaractor? <Text style={styles.linkTextBold}>Create an account</Text>
+              </Text>
             </TouchableOpacity>
           </View>
-
-          <TouchableOpacity
-            style={styles.forgotBtn}
-            onPress={() => navigation.navigate('ForgotPassword', { username: email.trim() && !email.includes('@') ? email.trim() : undefined })}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Text style={styles.forgotText}>Forgot Password?</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.signInBtn, loading && styles.signInBtnDisabled]}
-            onPress={handleSignIn}
-            activeOpacity={0.8}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <>
-                <Ionicons name="log-in-outline" size={20} color="#fff" />
-                <Text style={styles.signInBtnText}>Sign In</Text>
-              </>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity onPress={() => navigation.navigate('Register')} style={styles.linkBtn}>
-            <Text style={styles.linkText}>
-              New Rotaractor? <Text style={styles.linkTextBold}>Create an account</Text>
-            </Text>
-          </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -143,11 +146,22 @@ export default function LoginScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
-  container: { padding: 20, paddingBottom: 40 },
-  logoWrap: { alignItems: 'center', marginTop: 12, marginBottom: 28 },
+  keyboardAvoid: { flex: 1 },
+  container: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 24,
+  },
+  innerContent: {
+    width: '100%',
+    maxWidth: 420,
+    alignSelf: 'center',
+  },
+  logoWrap: { alignItems: 'center', marginBottom: 24 },
   logo: { marginBottom: 12 },
   title: { fontSize: 24, fontWeight: '800', color: colors.text },
-  subtitle: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  subtitle: { fontSize: 12, color: colors.textMuted, marginTop: 4, textAlign: 'center' },
   errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -189,11 +203,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     paddingVertical: 14,
     borderRadius: 14,
-    marginTop: 16,
+    marginTop: 20,
   },
   signInBtnDisabled: { opacity: 0.7 },
   signInBtnText: { color: '#fff', fontSize: 15, fontWeight: '800' },
-  linkBtn: { marginTop: 20, alignItems: 'center' },
+  linkBtn: { marginTop: 24, alignItems: 'center', paddingVertical: 6 },
   linkText: { color: colors.textMuted, fontSize: 14 },
   linkTextBold: { color: colors.primary, fontWeight: '700' },
 });

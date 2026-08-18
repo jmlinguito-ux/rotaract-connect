@@ -281,10 +281,26 @@ export async function loadAll(signal?: AbortSignal): Promise<LoadedData> {
 // Write helpers — fire-and-forget persistence for the optimistic local state.
 // Each logs (rather than throws) so a persistence hiccup never crashes the UI;
 // the local state already reflects the change. RLS decides what actually lands.
+//
+// Because writes never throw, a failure would otherwise be invisible and the local
+// state would silently diverge from the server. A registered listener lets the UI
+// surface "some changes didn't save" so the user can retry (pull-to-refresh), which
+// reconciles local state with what actually persisted.
 // ---------------------------------------------------------------------------
 
+type WriteErrorListener = (op: string, error: unknown) => void;
+let writeErrorListener: WriteErrorListener | null = null;
+
+/** Registers a UI handler notified whenever a persistence write fails. */
+export function setWriteErrorListener(fn: WriteErrorListener | null) {
+  writeErrorListener = fn;
+}
+
 function reportError(op: string, error: unknown) {
-  if (error) console.warn(`[db] ${op} failed`, error);
+  if (error) {
+    console.warn(`[db] ${op} failed`, error);
+    try { writeErrorListener?.(op, error); } catch { /* never let the notifier break a write */ }
+  }
 }
 
 export const db = {
