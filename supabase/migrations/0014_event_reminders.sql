@@ -23,6 +23,7 @@ RETURNS integer LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE
   v_ev events;
   v_total integer := 0;
+  v_rows integer := 0;
 BEGIN
   -- ---- T-24h reminders: events starting within the next 24h, not yet reminded.
   FOR v_ev IN
@@ -38,7 +39,8 @@ BEGIN
            v_ev.id, 'NORMAL'
     FROM event_participants ep
     WHERE ep.event_id = v_ev.id AND ep.status = 'JOINED';
-    GET DIAGNOSTICS v_total = v_total + ROW_COUNT;
+    GET DIAGNOSTICS v_rows = ROW_COUNT;
+    v_total := v_total + v_rows;
     UPDATE events SET reminder_24h_sent_at = now() WHERE id = v_ev.id;
   END LOOP;
 
@@ -56,7 +58,8 @@ BEGIN
            v_ev.id, 'ALERT'
     FROM event_participants ep
     WHERE ep.event_id = v_ev.id AND ep.status = 'JOINED';
-    GET DIAGNOSTICS v_total = v_total + ROW_COUNT;
+    GET DIAGNOSTICS v_rows = ROW_COUNT;
+    v_total := v_total + v_rows;
     UPDATE events SET reminder_1h_sent_at = now() WHERE id = v_ev.id;
   END LOOP;
 

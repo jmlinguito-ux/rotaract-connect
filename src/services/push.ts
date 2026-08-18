@@ -44,22 +44,33 @@ if (Platform.OS !== 'web') {
  */
 export async function configurePushNotifications() {
   if (Platform.OS === 'android') {
+    // Delete existing channels to force Android SystemUI to flush its cached icon
+    await Notifications.deleteNotificationChannelAsync('messages').catch(() => {});
+    await Notifications.deleteNotificationChannelAsync('default').catch(() => {});
+    await Notifications.deleteNotificationChannelAsync('high').catch(() => {});
+
     await Notifications.setNotificationChannelAsync('default', {
       name: 'General',
       importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#D41367',
+      showBadge: true,
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
     });
     await Notifications.setNotificationChannelAsync('messages', {
       name: 'Messages & Group Chats',
       importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#D41367',
+      showBadge: true,
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
     });
     await Notifications.setNotificationChannelAsync('high', {
       name: 'Important Alerts',
       importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#D41367',
+      showBadge: true,
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
     });
   }
