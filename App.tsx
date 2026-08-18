@@ -4,14 +4,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as SplashScreen from 'expo-splash-screen';
+import './src/services/push';
 import { ThemeProvider } from './src/context/ThemeContext';
 import { PreferencesProvider } from './src/context/PreferencesContext';
 import { AuthProvider } from './src/context/AuthContext';
 import { DataProvider } from './src/context/DataContext';
 import RootNavigator from './src/navigation/RootNavigator';
 
-// Keep the splash screen visible while we fetch resources and restore auth session
-SplashScreen.preventAutoHideAsync().catch(() => {});
+// Immediately hide native splash screen on app boot
+SplashScreen.hideAsync().catch(() => {});
 
 export default function App() {
   return (

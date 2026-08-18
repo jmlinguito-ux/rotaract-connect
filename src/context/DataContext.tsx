@@ -131,6 +131,7 @@ interface DataContextValue {
   ) => void;
 
   markNotificationsRead: (userId: string) => void;
+  markNotificationRead: (notificationId: string) => void;
   deleteNotification: (notificationId: string) => void;
   /**
    * App Admin only: promotes or demotes any user in the app. `actor` is recorded
@@ -170,6 +171,7 @@ interface DataContextValue {
   notificationsFor: (userId: string) => AppNotification[];
   messagesForConversation: (conversationId: string, forUserId?: string) => DirectMessage[];
   unreadCountForUser: (userId: string) => number;
+  unreadInboxCountForUser: (userId: string) => number;
   auditFor: (appId: string) => AuditLog[];
   applicationsForRole: (role: UserRole, clubId?: string) => VerificationApplication[];
   userStats: (userId: string) => { joined: number; organized: number; hours: number; clubsCollab: number; service: number; fellowships: number };
@@ -1372,6 +1374,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
     db.markNotificationsRead(userId);
   }, []);
 
+  const markNotificationRead = useCallback((notificationId: string) => {
+    setNotifications(prev => prev.map(n => (n.id === notificationId ? { ...n, is_read: true } : n)));
+    db.markNotificationRead(notificationId);
+  }, []);
+
   const deleteNotification = useCallback((notificationId: string) => {
     setNotifications(prev => prev.filter(n => n.id !== notificationId));
     db.deleteNotification(notificationId);
@@ -1383,6 +1390,44 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const impactFor = useCallback((eventId: string) => impacts.find(i => i.event_id === eventId), [impacts]);
   const notificationsFor = useCallback((userId: string) => notifications.filter(n => n.user_id === userId), [notifications]);
   const unreadCountForUser = useCallback((userId: string) => notifications.filter(n => n.user_id === userId && !n.is_read).length, [notifications]);
+
+  const unreadInboxCountForUser = useCallback((userId: string) => {
+    // 1. Unread notifications
+    const unreadNotifs = notifications.filter(n => n.user_id === userId && !n.is_read && n.kind !== 'INQUIRY_RECEIVED').length;
+
+    // 2. Unread DMs
+    const unreadDMs = conversations
+      .filter(c => !c.is_group && (c.participant_user_id === userId || c.organizer_user_id === userId))
+      .filter(c => {
+        const msgs = messages.filter(m => m.conversation_id === c.id);
+        const last = msgs[msgs.length - 1];
+        if (!last || last.sender_id === userId) return false;
+        const cursor = readCursors.find(cur => cur.conversation_id === c.id && cur.user_id === userId);
+        return !cursor || new Date(last.created_at).getTime() > new Date(cursor.last_read_at).getTime();
+      }).length;
+
+    // 3. Unread Group Chats
+    const myEvents = events.filter(e => {
+      if (e.organizer_user_id === userId) return true;
+      const p = participants.find(part => part.event_id === e.id && part.user_id === userId);
+      return p?.status === 'JOINED';
+    });
+
+    const unreadGroups = myEvents.filter(e => {
+      const groupConv = conversations.find(c => c.event_id === e.id && c.is_group);
+      if (!groupConv) return false;
+      const msgs = messages.filter(m => m.conversation_id === groupConv.id);
+      if (msgs.length === 0) return false;
+      const last = msgs[msgs.length - 1];
+      if (!last || last.sender_id === userId) return false;
+      const cursor = readCursors.find(cur => cur.conversation_id === groupConv.id && cur.user_id === userId);
+      const cursorTime = cursor ? new Date(cursor.last_read_at).getTime() : 0;
+      return msgs.some(m => m.sender_id !== userId && new Date(m.created_at).getTime() > cursorTime);
+    }).length;
+
+    return unreadNotifs + unreadDMs + unreadGroups;
+  }, [notifications, conversations, messages, readCursors, events, participants]);
+
   const auditFor = useCallback((appId: string) => auditLogs.filter(l => l.application_id === appId), [auditLogs]);
 
   const applicationsForRole = useCallback((role: UserRole, clubId?: string) => {
@@ -1441,8 +1486,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       refresh,
       createEvent, updateEvent, updateEventStatus, resetEventApprovals, cancelEvent, approveEvent, rejectEvent,
       joinEvent, leaveEvent, approveParticipant, declineParticipant, markAttendance, checkIn, addClub,
-      invite, respondInvitation, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, sendDirectMessage, retryMessage, deleteMessageForMe, unsendMessage, markConversationRead, readCursorsFor, conversationStateFor, setConversationPinned, setConversationArchived, deleteConversationForMe, broadcastToEvent, saveImpact, reviewApplication, resubmitApplication, markNotificationsRead, deleteNotification, updateUserRole, removeUser, addApplication,
-      participantsFor, invitationFor, participationFor, impactFor, notificationsFor, unreadCountForUser, messagesForConversation, auditFor,
+      invite, respondInvitation, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, sendDirectMessage, retryMessage, deleteMessageForMe, unsendMessage, markConversationRead, readCursorsFor, conversationStateFor, setConversationPinned, setConversationArchived, deleteConversationForMe, broadcastToEvent, saveImpact, reviewApplication, resubmitApplication, markNotificationsRead, markNotificationRead, deleteNotification, updateUserRole, removeUser, addApplication,
+      participantsFor, invitationFor, participationFor, impactFor, notificationsFor, unreadCountForUser, unreadInboxCountForUser, messagesForConversation, auditFor,
       applicationsForRole, userStats,
     }}>
       {children}

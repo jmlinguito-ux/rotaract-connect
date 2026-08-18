@@ -89,14 +89,18 @@ Deno.serve(async (req) => {
     conversation_id: n.conversation_id ?? undefined,
   };
 
+  const channelId = n.conversation_id ? 'messages' : (highPriority ? 'high' : 'default');
+
   const messages = tokens.map(({ token }) => ({
     to: token,
     sound: 'default',
     title: n.title,
+    subtitle: n.conversation_id ? 'Sent a message' : undefined,
     body: n.message,
+    categoryId: n.conversation_id ? 'message_actions' : 'general_actions',
     data,
-    priority: highPriority ? 'high' : 'default',
-    channelId: highPriority ? 'high' : 'default',
+    priority: 'high',
+    channelId,
     // A stable key so multiple pushes for one conversation collapse on Android.
     ...(n.conversation_id ? { collapseId: n.conversation_id } : {}),
   }));

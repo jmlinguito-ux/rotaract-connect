@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { View, Text, FlatList, StyleSheet, TextInput, TouchableOpacity, Platform, Image, Alert, ActivityIndicator, Keyboard } from 'react-native';
+import { View, Text, FlatList, StyleSheet, TextInput, TouchableOpacity, Platform, Image, Alert, ActivityIndicator, Keyboard, KeyboardAvoidingView } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useIsFocused } from '@react-navigation/native';
+import { useHeaderHeight } from '@react-navigation/elements';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { RootStackParamList } from '../../navigation/types';
@@ -36,36 +37,18 @@ export default function ChatScreen({ route, navigation }: Props) {
   } = useData();
   const { colors: themeColors } = useTheme();
   const insets = useSafeAreaInsets();
+  const headerHeight = useHeaderHeight();
   const isFocused = useIsFocused();
   const listRef = useRef<FlatList>(null);
-  // Track the keyboard height ourselves instead of relying on KeyboardAvoidingView:
-  // this app is edge-to-edge on Android, where windowSoftInputMode=adjustResize
-  // does not resize the window, so KAV either overshot (gap) or did nothing
-  // (keyboard covered the composer). Padding by the measured keyboard height
-  // (minus the bottom safe-area inset the SafeAreaView already adds) is reliable
-  // on both platforms and every device size.
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
   useEffect(() => {
     const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSub = Keyboard.addListener(showEvt, e => {
-      setKeyboardHeight(e.endCoordinates?.height ?? 0);
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
+    const showSub = Keyboard.addListener(showEvt, () => {
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
     });
-    const hideSub = Keyboard.addListener(hideEvt, () => setKeyboardHeight(0));
-    return () => { showSub.remove(); hideSub.remove(); };
+    return () => { showSub.remove(); };
   }, []);
-  // Bottom spacing for the composer, split by platform because the two OSes handle
-  // the keyboard differently:
-  //  • Android (edge-to-edge) already resizes the window above the keyboard, so
-  //    adding the keyboard height here would double-count and leave a gap — we only
-  //    clear the nav bar when the keyboard is down.
-  //  • iOS does NOT resize, so we lift the composer by the keyboard height ourselves.
-  // The SafeAreaView below does not claim the bottom edge, so this is the only
-  // bottom spacing (no double-count from safe-area padding).
-  const bottomPad = Platform.OS === 'ios'
-    ? Math.max(insets.bottom, keyboardHeight)
-    : (keyboardHeight > 0 ? 0 : insets.bottom);
+
   const [text, setText] = useState('');
   const [selectedUserModal, setSelectedUserModal] = useState<any>(null);
   const [fullImageUri, setFullImageUri] = useState<string | null>(null);
@@ -224,7 +207,7 @@ export default function ChatScreen({ route, navigation }: Props) {
     : `${typingUsers.length} people are typing…`;
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.bg }]} edges={[]}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.bg }]} edges={['bottom']}>
       {/* Header Card */}
       <View style={[styles.userHeaderCard, { backgroundColor: themeColors.cardBg, borderBottomColor: themeColors.border }]}>
         {isGroupChat ? (
@@ -285,7 +268,11 @@ export default function ChatScreen({ route, navigation }: Props) {
         </TouchableOpacity>
       ) : null}
 
-      <View style={{ flex: 1, paddingBottom: bottomPad }}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? headerHeight + 10 : headerHeight}
+      >
         <FlatList
           ref={listRef}
           data={messages}
@@ -479,7 +466,7 @@ export default function ChatScreen({ route, navigation }: Props) {
             </TouchableOpacity>
           </View>
         )}
-      </View>
+      </KeyboardAvoidingView>
 
       {/* Long-press message menu: Messenger-style delete choices. */}
       <BottomSheet

@@ -34,22 +34,12 @@ import OrganizerBroadcastScreen from '../screens/events/OrganizerBroadcastScreen
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function RootNavigator() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated } = useAuth();
   const { isNightMode, colors: themeColors } = useTheme();
 
   useEffect(() => {
-    if (!isLoading) {
-      SplashScreen.hideAsync().catch(() => {});
-    }
-  }, [isLoading]);
-
-  if (isLoading) {
-    return (
-      <View style={{ flex: 1, backgroundColor: themeColors.bg }}>
-        <StatusBar style={isNightMode ? 'light' : 'dark'} />
-      </View>
-    );
-  }
+    SplashScreen.hideAsync().catch(() => {});
+  }, []);
 
   const navTheme = {
     ...DefaultTheme,

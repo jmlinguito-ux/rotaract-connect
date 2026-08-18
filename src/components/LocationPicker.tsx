@@ -84,6 +84,7 @@ export function LocationPicker({ value, onChange }: LocationPickerProps) {
           }}
         >
           <Marker
+            key={`picker_marker_${value.latitude}_${value.longitude}`}
             coordinate={{ latitude: value.latitude, longitude: value.longitude }}
             pinColor={colors.primary}
             draggable

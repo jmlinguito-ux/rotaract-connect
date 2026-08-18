@@ -62,6 +62,7 @@
       [
         "expo-notifications",
         {
+          "icon": "./assets/rotary-wheel.png",
           "color": "#D41367",
           "defaultChannel": "default"
         }

@@ -1,6 +1,8 @@
-import React, { useEffect, useMemo, useRef } from 'react';
-import { StyleProp, StyleSheet, ViewStyle } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Platform, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
 import MapView, { Marker, Circle, Region } from 'react-native-maps';
+import { useIsFocused } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import { RotaractEvent } from '../types';
 import { statusColor } from '../theme/statusColor';
 
@@ -84,6 +86,7 @@ function sameRegion(a: Region | null, b: Region): boolean {
 
 export function EventMap({ events, userCoords, style, interactive = false, showAreas = true, areaRadiusM = 400, onMarkerPress }: EventMapProps) {
   const { isNightMode } = useTheme();
+  const isFocused = useIsFocused();
   const mapRef = useRef<MapView>(null);
   const isMapReady = useRef(false);
   const hasSize = useRef(false);
@@ -93,12 +96,25 @@ export function EventMap({ events, userCoords, style, interactive = false, showA
   const userInteracted = useRef(false);
   const region = useMemo(() => regionFor(events, userCoords), [events, userCoords]);
 
+  const [tracksView, setTracksView] = useState(true);
+
+  const validEvents = useMemo(() => {
+    return (events || []).filter(
+      e => e && typeof e.latitude === 'number' && !isNaN(e.latitude) && typeof e.longitude === 'number' && !isNaN(e.longitude)
+    );
+  }, [events]);
+
+  // Enable tracksViewChanges on mount or focus, then freeze after 800ms to guarantee stable rendering and zero CPU drain
+  useEffect(() => {
+    if (!isFocused) return;
+    setTracksView(true);
+    const t = setTimeout(() => setTracksView(false), 800);
+    return () => clearTimeout(t);
+  }, [isFocused, validEvents.length]);
+
   /**
    * Re-frame only on a real region change, and only once the map is both ready and
-   * laid out with a non-zero frame. MKMapView raises an uncatchable NSException from
-   * setRegion: when its bounds are empty — and because the command is dispatched to
-   * the native main queue, a JS try/catch cannot intercept it. Prevention is the
-   * only option.
+   * laid out with a non-zero frame.
    */
   useEffect(() => {
     if (!isMapReady.current || !hasSize.current || !mapRef.current) return;
@@ -106,7 +122,14 @@ export function EventMap({ events, userCoords, style, interactive = false, showA
     if (sameRegion(lastAnimated.current, region)) return;
     lastAnimated.current = region;
     mapRef.current.animateToRegion(region, 400);
-  }, [region]);
+  }, [region, isFocused]);
+
+  // On Android, unmounting when out of focus and remounting on focus guarantees that
+  // the native Google Maps surface and all child markers are freshly created,
+  // preventing the native marker drop bug when switching back to this screen.
+  if (Platform.OS === 'android' && !isFocused) {
+    return <View style={[styles.map, style, { backgroundColor: isNightMode ? '#1E293B' : '#E2E8F0' }]} />;
+  }
 
   return (
     <MapView
@@ -129,63 +152,68 @@ export function EventMap({ events, userCoords, style, interactive = false, showA
       }}
       onMapReady={() => {
         isMapReady.current = true;
-        // initialRegion already framed this; don't animate to it again.
         lastAnimated.current = region;
       }}
       onRegionChangeComplete={(_r, details) => {
-        // `details.isGesture` is true only for user-driven changes (iOS/newer
-        // Android); treat any user movement as opting out of auto-reframing.
         if (details?.isGesture) userInteracted.current = true;
       }}
     >
-      {userCoords && (
-        <Marker
-          key="user_location_pin"
-          coordinate={userCoords}
-          pinColor="#007AFF"
-          title="Your Current Location"
-          description="You are currently located here"
-        />
-      )}
-
-      {events
-        .filter(e => e && typeof e.latitude === 'number' && !isNaN(e.latitude) && typeof e.longitude === 'number' && !isNaN(e.longitude))
-        .map(event => {
-          let distText = '';
-          if (userCoords) {
-            const d = distanceMeters(userCoords, { latitude: event.latitude, longitude: event.longitude });
-            distText = `${formatDistance(d)} away • `;
-          }
-
+      {showAreas &&
+        validEvents.map(event => {
           const color = statusColor(event.status);
           return (
-            <React.Fragment key={`event_group_${event.id}`}>
-              {showAreas && (
-                // Communicates an approximate area rather than a precise pinpoint.
-                <Circle
-                  key={`circle_${event.id}`}
-                  center={{ latitude: event.latitude, longitude: event.longitude }}
-                  radius={areaRadiusM}
-                  strokeWidth={1}
-                  strokeColor={color + '99'}
-                  fillColor={color + '26'}
-                />
-              )}
-              <Marker
-                key={`marker_${event.id}`}
-                coordinate={{ latitude: event.latitude, longitude: event.longitude }}
-                pinColor={color}
-                title={event.title}
-                description={`${distText}${event.address}, ${event.city}`}
-                onPress={() => onMarkerPress?.(event.id)}
-              />
-            </React.Fragment>
+            <Circle
+              key={`circle_${event.id}`}
+              center={{ latitude: event.latitude, longitude: event.longitude }}
+              radius={areaRadiusM}
+              strokeWidth={1}
+              strokeColor={color + '99'}
+              fillColor={color + '26'}
+            />
           );
         })}
+
+      {validEvents.map(event => {
+        let distText = '';
+        if (userCoords) {
+          const d = distanceMeters(userCoords, { latitude: event.latitude, longitude: event.longitude });
+          distText = `${formatDistance(d)} away • `;
+        }
+
+        const color = statusColor(event.status);
+        return (
+          <Marker
+            key={`marker_${event.id}`}
+            coordinate={{ latitude: event.latitude, longitude: event.longitude }}
+            title={event.title}
+            description={`${distText}${event.address}, ${event.city}`}
+            onPress={() => onMarkerPress?.(event.id)}
+            tracksViewChanges={tracksView}
+          >
+            <View style={[styles.markerPin, { backgroundColor: color }]}>
+              <Ionicons name="location" size={16} color="#fff" />
+            </View>
+          </Marker>
+        );
+      })}
     </MapView>
   );
 }
 
 const styles = StyleSheet.create({
   map: { flex: 1 },
+  markerPin: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+  },
 });

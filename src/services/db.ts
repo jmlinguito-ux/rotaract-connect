@@ -375,6 +375,9 @@ export const db = {
   markNotificationsRead: async (userId: string) => {
     reportError('markNotificationsRead', (await supabase.from('notifications').update({ is_read: true }).eq('user_id', userId)).error);
   },
+  markNotificationRead: async (id: string) => {
+    reportError('markNotificationRead', (await supabase.from('notifications').update({ is_read: true }).eq('id', id)).error);
+  },
   deleteNotification: async (id: string) => {
     reportError('deleteNotification', (await supabase.from('notifications').delete().eq('id', id)).error);
   },

@@ -315,7 +315,7 @@ export default function EditEventScreen({ route, navigation }: Props) {
                   setIsCoOrgFocused(false);
                 }}
               />
-              <View style={[styles.coOrgDropdown, { zIndex: 2 }]}>
+              <View style={[styles.coOrgDropdown, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border, zIndex: 2 }]}>
                 {users
                   .filter(u => {
                     if (u.id === user?.id) return false;
@@ -329,7 +329,7 @@ export default function EditEventScreen({ route, navigation }: Props) {
                     return (
                       <TouchableOpacity
                         key={u.id}
-                        style={styles.coOrgDropdownItem}
+                        style={[styles.coOrgDropdownItem, { borderBottomColor: themeColors.border }]}
                         onPress={() => {
                           setSelectedCoOrganizers(prev => [...prev, u.id]);
                           setCoOrgQuery('');
@@ -337,19 +337,19 @@ export default function EditEventScreen({ route, navigation }: Props) {
                           setIsCoOrgFocused(false);
                         }}
                       >
-                        <View style={styles.coOrgItemAvatar}>
+                        <View style={[styles.coOrgItemAvatar, { backgroundColor: themeColors.primary }]}>
                           <Text style={styles.coOrgItemAvatarText}>{u.full_name[0]}</Text>
                         </View>
                         <View style={{ flex: 1 }}>
-                          <Text style={styles.coOrgItemName}>{u.full_name}</Text>
-                          <Text style={styles.coOrgItemSub}>{u.position || 'Member'} • {shortClub}</Text>
+                          <Text style={[styles.coOrgItemName, { color: themeColors.text }]}>{u.full_name}</Text>
+                          <Text style={[styles.coOrgItemSub, { color: themeColors.textMuted }]}>{u.position || 'Member'} • {shortClub}</Text>
                         </View>
-                        <Ionicons name="add-circle" size={18} color={colors.primary} />
+                        <Ionicons name="add-circle" size={18} color={themeColors.primary} />
                       </TouchableOpacity>
                     );
                   })}
                 {users.filter(u => u.id !== user?.id && !selectedCoOrganizers.includes(u.id) && (u.full_name.toLowerCase().includes(coOrgQuery.toLowerCase()) || u.club_name.toLowerCase().includes(coOrgQuery.toLowerCase()))).length === 0 && (
-                  <Text style={styles.noMatchText}>No members found matching "{coOrgQuery}"</Text>
+                  <Text style={[styles.noMatchText, { color: themeColors.textMuted }]}>No members found matching "{coOrgQuery}"</Text>
                 )}
               </View>
             </View>

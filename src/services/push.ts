@@ -25,26 +25,35 @@ function resolveProjectId(): string | undefined {
   );
 }
 
-/**
- * Sets the foreground presentation policy and Android channels. In the foreground
- * the in-app banner already handles the alert, so we suppress the OS banner/sound
- * to avoid a double notification; background/terminated pushes are shown by the OS
- * directly (this handler isn't consulted then). Call once at startup.
- */
-export async function configurePushNotifications() {
+// Unconditionally register the foreground notification handler at module load time
+// so the OS banner is ALWAYS suppressed while the app is in the foreground.
+if (Platform.OS !== 'web') {
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
+      shouldShowAlert: false,
       shouldShowBanner: false,
       shouldShowList: true,
       shouldPlaySound: false,
       shouldSetBadge: true,
     }),
   });
+}
 
+/**
+ * Sets Android notification channels. Call once at startup.
+ */
+export async function configurePushNotifications() {
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync('default', {
       name: 'General',
-      importance: Notifications.AndroidImportance.DEFAULT,
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+    });
+    await Notifications.setNotificationChannelAsync('messages', {
+      name: 'Messages & Group Chats',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
     });
     await Notifications.setNotificationChannelAsync('high', {
@@ -54,6 +63,43 @@ export async function configurePushNotifications() {
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
     });
   }
+
+  // Register interactive native action buttons (matching in-app banner buttons)
+  await Notifications.setNotificationCategoryAsync('message_actions', [
+    {
+      identifier: 'reply',
+      buttonTitle: 'REPLY',
+      options: {
+        opensAppToForeground: true,
+      },
+    },
+    {
+      identifier: 'dismiss',
+      buttonTitle: 'DISMISS',
+      options: {
+        isDestructive: true,
+        opensAppToForeground: false,
+      },
+    },
+  ]);
+
+  await Notifications.setNotificationCategoryAsync('general_actions', [
+    {
+      identifier: 'view',
+      buttonTitle: 'VIEW',
+      options: {
+        opensAppToForeground: true,
+      },
+    },
+    {
+      identifier: 'dismiss',
+      buttonTitle: 'DISMISS',
+      options: {
+        isDestructive: true,
+        opensAppToForeground: false,
+      },
+    },
+  ]);
 }
 
 /**

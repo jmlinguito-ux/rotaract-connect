@@ -61,6 +61,7 @@ export default function InboxScreen() {
   const {
     notificationsFor,
     markNotificationsRead,
+    markNotificationRead,
     invitations,
     respondInvitation,
     events,
@@ -147,6 +148,21 @@ export default function InboxScreen() {
     }).length;
   }, [user, messagesList, readCursorsFor]);
 
+  const groupChatUnreadCount = useMemo(() => {
+    if (!user) return 0;
+    return myGroupEvents.filter(ev => {
+      const groupConv = conversations.find(c => c.event_id === ev.id && c.is_group);
+      if (!groupConv) return false;
+      const msgs = messagesForConversation(groupConv.id, user.id);
+      if (msgs.length === 0) return false;
+      const last = msgs[msgs.length - 1];
+      if (!last || last.sender_id === user.id) return false;
+      const cursor = readCursorsFor(groupConv.id).find(c => c.user_id === user.id);
+      const cursorTime = cursor ? new Date(cursor.last_read_at).getTime() : 0;
+      return msgs.some(m => m.sender_id !== user.id && new Date(m.created_at).getTime() > cursorTime);
+    }).length;
+  }, [user, myGroupEvents, conversations, messagesForConversation, readCursorsFor]);
+
   const notifUnreadCount = notifications.filter(n => !n.is_read).length;
 
   const openDM = (conversationId: string) => {
@@ -177,7 +193,7 @@ export default function InboxScreen() {
   };
 
   const handleNotificationPress = (item: AppNotification) => {
-    if (user) markNotificationsRead(user.id);
+    if (user && !item.is_read) markNotificationRead(item.id);
     if (item.conversation_id) {
       const conv = conversations.find(c => c.id === item.conversation_id);
       if (conv?.is_group) {
@@ -455,9 +471,9 @@ export default function InboxScreen() {
   }
 
   const tabs: { key: Tab; label: string; count?: number }[] = [
-    { key: 'notifications', label: 'Notifications', count: notifUnreadCount || undefined },
-    { key: 'messages', label: 'Messages', count: dmUnreadCount || undefined },
-    { key: 'chats', label: 'Group Chats', count: myGroupEvents.length || undefined },
+    { key: 'notifications', label: 'Notifications', count: notifUnreadCount > 0 ? notifUnreadCount : undefined },
+    { key: 'messages', label: 'Messages', count: dmUnreadCount > 0 ? dmUnreadCount : undefined },
+    { key: 'chats', label: 'Group Chats', count: groupChatUnreadCount > 0 ? groupChatUnreadCount : undefined },
   ];
 
   return (

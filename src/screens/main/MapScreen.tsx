@@ -8,6 +8,7 @@ import {
   FlatList,
   Modal,
   TextInput,
+  Platform,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, initialWindowMetrics } from 'react-native-safe-area-context';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
@@ -688,8 +689,8 @@ const styles = StyleSheet.create({
   activePillText: { color: '#fff', fontSize: 11, fontWeight: '700' },
   clearLink: { paddingHorizontal: 8, paddingVertical: 4 },
   clearLinkText: { fontSize: 12, fontWeight: '700' },
-  mapContainer: { height: 180, marginHorizontal: 16, borderRadius: 16, overflow: 'hidden', marginBottom: 12 },
-  mapCanvas: { width: '100%', height: '100%' },
+  mapContainer: { height: 180, marginHorizontal: 16, borderRadius: 16, overflow: Platform.OS === 'ios' ? 'hidden' : undefined, marginBottom: 12 },
+  mapCanvas: { width: '100%', height: '100%', borderRadius: 16 },
   expandMapBtn: { position: 'absolute', bottom: 10, right: 10, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, borderWidth: 1 },
   expandMapText: { fontSize: 11, fontWeight: '700' },
   listHeader: { paddingHorizontal: 20, marginBottom: 8 },

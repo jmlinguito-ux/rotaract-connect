@@ -16,10 +16,10 @@ const Tab = createBottomTabNavigator<MainTabParamList>();
 
 export default function MainTabs() {
   const { user } = useAuth();
-  const { notificationsFor } = useData();
+  const { unreadInboxCountForUser } = useData();
   const { colors: themeColors } = useTheme();
 
-  const unreadCount = user ? notificationsFor(user.id).filter(n => !n.is_read).length : 0;
+  const unreadCount = user ? unreadInboxCountForUser(user.id) : 0;
 
   return (
     <Tab.Navigator
