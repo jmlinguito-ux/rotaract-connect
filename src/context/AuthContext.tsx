@@ -1,18 +1,43 @@
-import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useEffect, useRef } from 'react';
 import { AppUser, UserRole, VerificationStatus } from '../types';
 import { supabase } from '../services/supabase';
 import { PickedImage, uploadPublicImage, uploadImageAsset } from '../services/storage';
+import { unregisterPushTokenAsync } from '../services/push';
 
 interface AuthContextValue {
   user: AppUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   /** Accepts either an email address or a username as the identifier. */
-  signIn: (identifier: string, password: string) => Promise<{ error?: string }>;
-  signUp: (email: string, password: string, details: SignUpDetails) => Promise<{ error?: string; user?: AppUser }>;
+  signIn: (identifier: string, password: string) => Promise<{ error?: string; needsVerification?: boolean; email?: string }>;
+  /**
+   * Starts registration. When the Supabase project requires email confirmation,
+   * this returns `{ needsVerification: true }` and the account is NOT created in
+   * `profiles` until the emailed code is verified (see `confirmEmailVerification`).
+   * When confirmation is disabled, the profile is created immediately (as before).
+   */
+  signUp: (email: string, password: string, details: SignUpDetails) => Promise<{ error?: string; user?: AppUser; needsVerification?: boolean; email?: string }>;
+  /** Verifies the emailed 6-digit signup code, then finalizes the account. */
+  confirmEmailVerification: (code: string) => Promise<{ error?: string }>;
+  /** Re-sends the signup verification email. Supabase applies its own rate limiting. */
+  resendVerificationEmail: () => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
   /** Verifies the current password, then sets a new one. */
   changePassword: (currentPassword: string, newPassword: string) => Promise<{ error?: string }>;
+  /**
+   * Looks up the account by USERNAME, then sends a password-reset code to that
+   * account's email. Returns the resolved email so the caller can complete the
+   * reset (and show a masked hint). If no account has that username, returns an
+   * error — this flow intentionally confirms account existence by username.
+   * Supabase applies its own server-side rate limiting on the email send.
+   */
+  requestPasswordReset: (username: string) => Promise<{ error?: string; email?: string }>;
+  /**
+   * Verifies the emailed recovery code and sets the new password, then signs out
+   * so the user re-authenticates with it. The transient recovery session is not
+   * promoted to a logged-in state.
+   */
+  confirmPasswordReset: (email: string, code: string, newPassword: string) => Promise<{ error?: string }>;
   /** Returns the newly signed-in account so callers can file its application. */
   register: (details?: Partial<AppUser>) => AppUser;
   updateAvatar: (avatarUrl: string) => Promise<void>;
@@ -55,6 +80,14 @@ function profileToAppUser(profile: any, clubName?: string): AppUser {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AppUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  // While a password reset is in flight, the recovery session Supabase creates
+  // must NOT be promoted to a signed-in user (which would navigate into the app
+  // mid-reset). Guarded in the auth listener below.
+  const recoveringRef = useRef(false);
+  // Details captured at sign-up, applied only once the emailed code is verified.
+  // Held in memory for the common verify-immediately flow; user_metadata is the
+  // durable fallback if the app restarts mid-flow (see confirmEmailVerification).
+  const pendingSignUpRef = useRef<{ email: string; details: SignUpDetails } | null>(null);
 
   const fetchProfile = async (userId: string) => {
     const { data, error } = await supabase
@@ -98,6 +131,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Listen for auth state changes
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
+        // Don't sign the user in from a password-recovery session — the reset
+        // flow drives that itself and signs out when done.
+        if (recoveringRef.current) { setIsLoading(false); return; }
         fetchProfile(session.user.id);
       } else {
         setUser(null);
@@ -125,39 +161,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) return { error: error.message };
+    if (error) {
+      // Unconfirmed email: route to verification instead of a dead-end error. We
+      // don't have the original registration details here, so the finalize step
+      // reconstructs them from user_metadata after the code is verified.
+      if (/email not confirmed|not confirmed/i.test(error.message)) {
+        pendingSignUpRef.current = { email, details: null as any };
+        return { error: 'Please verify your email address to finish signing in.', needsVerification: true, email };
+      }
+      return { error: error.message };
+    }
     return {};
   };
 
-  const signUp = async (email: string, password: string, details: SignUpDetails) => {
-    const { data, error } = await supabase.auth.signUp({ email, password });
-    if (error || !data.user) {
-      return { error: error?.message ?? 'Sign up failed' };
-    }
-
-    // The account (and its session) now exists, so Storage uploads authorize
-    // under the new user's id. Do them BEFORE inserting the rows so the persisted
-    // values are real Supabase URLs/paths, never dead local file:// uris.
+  /**
+   * Creates the applicant's profile (and club-verification application) once an
+   * authenticated session exists. Shared by the immediate path (email confirmation
+   * off) and the post-code path (email confirmation on). Idempotent via upsert.
+   */
+  const finalizeSignUp = async (userId: string, email: string, details: SignUpDetails) => {
     let avatarUrl: string | undefined;
     let proofPath: string | undefined;
     try {
-      if (details.avatar_asset) {
-        avatarUrl = await uploadPublicImage('avatars', data.user.id, details.avatar_asset);
-      }
-    } catch (e) {
-      console.warn('[auth] avatar upload failed', e);
-    }
+      if (details.avatar_asset) avatarUrl = await uploadPublicImage('avatars', userId, details.avatar_asset);
+    } catch (e) { console.warn('[auth] avatar upload failed', e); }
     try {
-      if (details.proof_asset) {
-        // Private bucket: store the object path, resolve a signed URL when viewed.
-        proofPath = await uploadImageAsset('verification-proofs', data.user.id, details.proof_asset);
-      }
-    } catch (e) {
-      console.warn('[auth] proof upload failed', e);
-    }
+      if (details.proof_asset) proofPath = await uploadImageAsset('verification-proofs', userId, details.proof_asset);
+    } catch (e) { console.warn('[auth] proof upload failed', e); }
 
     const profile = {
-      id: data.user.id,
+      id: userId,
       full_name: details.full_name,
       email,
       username: details.username,
@@ -169,15 +202,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       contact_number: details.contact_number,
     };
 
-    const { error: profileError } = await supabase.from('profiles').insert(profile);
-    if (profileError) {
-      return { error: profileError.message };
-    }
+    const { error: profileError } = await supabase.from('profiles').upsert(profile, { onConflict: 'id' });
+    if (profileError) return { error: profileError.message };
 
-    // Create the verification application for club review
     if (details.member_id) {
       await supabase.from('verification_applications').insert({
-        user_id: data.user.id,
+        user_id: userId,
         full_name: details.full_name,
         email,
         club_id: details.club_id,
@@ -188,12 +218,94 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
     }
 
-    const appUser = profileToAppUser(profile, details.club_name);
-    setUser(appUser);
-    return { user: appUser };
+    // Load the canonical profile (resolves club_name, etc.) into app state.
+    await fetchProfile(userId);
+    return {};
+  };
+
+  const signUp = async (email: string, password: string, details: SignUpDetails) => {
+    // Carry the profile fields in user_metadata so the account can still be
+    // finalized after an app restart mid-verification (images excepted).
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: details.full_name,
+          username: details.username,
+          club_id: details.club_id,
+          position: details.position,
+          role: details.role ?? 'MEMBER',
+          contact_number: details.contact_number ?? null,
+          member_id: details.member_id ?? null,
+        },
+      },
+    });
+    if (error || !data.user) {
+      return { error: error?.message ?? 'Sign up failed' };
+    }
+
+    // No session means the project requires email confirmation. Defer creating the
+    // profile until the emailed code is verified (there's no session to authorize
+    // Storage uploads or the profile insert yet).
+    if (!data.session) {
+      pendingSignUpRef.current = { email, details };
+      return { needsVerification: true, email };
+    }
+
+    // Confirmation disabled: a session exists now, so finalize immediately.
+    const result = await finalizeSignUp(data.user.id, email, details);
+    if (result.error) return { error: result.error };
+    return {};
+  };
+
+  const confirmEmailVerification = async (code: string) => {
+    const pending = pendingSignUpRef.current;
+    if (!pending) return { error: 'Your verification session expired. Please register or sign in again.' };
+
+    const { data, error } = await supabase.auth.verifyOtp({
+      email: pending.email,
+      token: code.trim(),
+      type: 'signup',
+    });
+    if (error || !data.user) {
+      return { error: 'That verification code is invalid or has expired. Request a new one and try again.' };
+    }
+
+    // Reconstruct the registration details from user_metadata when they weren't
+    // held in memory (e.g. verifying from the login path after a restart).
+    const meta = (data.user.user_metadata ?? {}) as Record<string, any>;
+    const details: SignUpDetails = pending.details ?? {
+      full_name: meta.full_name ?? '',
+      username: meta.username ?? '',
+      contact_number: meta.contact_number ?? undefined,
+      club_id: meta.club_id ?? '',
+      club_name: '',
+      position: meta.position ?? 'Member',
+      role: meta.role ?? 'MEMBER',
+      member_id: meta.member_id ?? undefined,
+    };
+
+    const result = await finalizeSignUp(data.user.id, pending.email, details);
+    if (result.error) return { error: result.error };
+    pendingSignUpRef.current = null;
+    return {};
+  };
+
+  const resendVerificationEmail = async () => {
+    const pending = pendingSignUpRef.current;
+    if (!pending) return { error: 'Nothing to resend. Please register again.' };
+    const { error } = await supabase.auth.resend({ type: 'signup', email: pending.email });
+    if (error) return { error: error.message };
+    return {};
   };
 
   const signOut = async () => {
+    // Remove THIS device's push token FIRST, while the session still authorizes the
+    // RLS-scoped delete (policy: user_id = auth.uid()). If we cleared the session
+    // first, the delete would match zero rows and the server would keep pushing this
+    // account's notifications to the device after sign-out.
+    try { await unregisterPushTokenAsync(); } catch (e) { console.warn('[auth] push unregister on sign-out failed', e); }
     await supabase.auth.signOut();
     setUser(null);
   };
@@ -211,6 +323,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { error } = await supabase.auth.updateUser({ password: newPassword });
     if (error) return { error: error.message };
     return {};
+  };
+
+  const requestPasswordReset = async (username: string) => {
+    const trimmed = username.trim();
+    if (!trimmed) {
+      return { error: 'Please enter your username.' };
+    }
+    // Resolve the username to its account email (SECURITY DEFINER RPC, callable by
+    // anon and case-insensitive). A null result means no account has that username.
+    const { data, error } = await supabase.rpc('email_for_username', { p_username: trimmed });
+    if (error) return { error: error.message };
+    if (!data) return { error: 'We couldn\'t find an account with that username.' };
+
+    const email = data as string;
+    // Send the 6-digit recovery code to the account's email. The email is returned
+    // to the caller (never shown in full — the screen masks it) so it can complete
+    // verifyOtp in confirmPasswordReset.
+    const { error: sendError } = await supabase.auth.resetPasswordForEmail(email);
+    if (sendError) return { error: sendError.message };
+    return { email };
+  };
+
+  const confirmPasswordReset = async (email: string, code: string, newPassword: string) => {
+    recoveringRef.current = true;
+    try {
+      const { error: verifyError } = await supabase.auth.verifyOtp({
+        email: email.trim(),
+        token: code.trim(),
+        type: 'recovery',
+      });
+      if (verifyError) {
+        return { error: 'That reset code is invalid or has expired. Request a new one and try again.' };
+      }
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) return { error: error.message };
+      // Sign out so the user signs in fresh with the new password.
+      await supabase.auth.signOut();
+      setUser(null);
+      return {};
+    } finally {
+      recoveringRef.current = false;
+    }
   };
 
   // Legacy register: kept for compatibility with callers that create a local-only
@@ -258,7 +412,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, isAuthenticated: !!user, isLoading, signIn, signUp, signOut, changePassword, register, updateAvatar, updateProfile }}
+      value={{ user, isAuthenticated: !!user, isLoading, signIn, signUp, confirmEmailVerification, resendVerificationEmail, signOut, changePassword, requestPasswordReset, confirmPasswordReset, register, updateAvatar, updateProfile }}
     >
       {children}
     </AuthContext.Provider>

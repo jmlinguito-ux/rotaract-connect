@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { View, Text, FlatList, StyleSheet, TouchableOpacity, TextInput, Image, Modal } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { RootStackParamList } from '../../navigation/types';
@@ -31,6 +31,9 @@ export default function ScoreboardScreen({ navigation }: Props) {
   const [search, setSearch] = useState('');
   const [selectedUser, setSelectedUser] = useState<AppUser | null>(null);
   const [showFormulaInfo, setShowFormulaInfo] = useState(false);
+  // Absolutely positioned children ignore their parent's padding in RN, so the
+  // rank bar below needs the bottom inset applied directly to clear the Android nav bar.
+  const insets = useSafeAreaInsets();
 
   // Calculate scores and stats for individual members. Points are released only
   // once the organizer marks the event complete by recording its impact — not
@@ -519,7 +522,7 @@ export default function ScoreboardScreen({ navigation }: Props) {
 
       {/* Floating Bottom Bar for Current User Rank */}
       {currentUserRank && viewMode === 'INDIVIDUAL' && (
-        <View style={[styles.userRankBar, { backgroundColor: themeColors.cardBg, borderTopColor: themeColors.border }]}>
+        <View style={[styles.userRankBar, { backgroundColor: themeColors.cardBg, borderTopColor: themeColors.border, paddingBottom: 12 + insets.bottom }]}>
           <Ionicons name="trophy" size={18} color={themeColors.primary} />
           <Text style={[styles.userRankText, { color: themeColors.text }]}>
             Your Rank: <Text style={{ fontWeight: '800', color: themeColors.primary }}>#{currentUserRank.rank}</Text> with{' '}

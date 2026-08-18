@@ -37,6 +37,11 @@ export default function LoginScreen({ navigation }: Props) {
     setError(null);
     const result = await signIn(email.trim(), password);
     setLoading(false);
+    if (result.needsVerification && result.email) {
+      // Account exists but the email isn't confirmed yet — send them to verify.
+      navigation.navigate('EmailVerification', { email: result.email });
+      return;
+    }
     if (result.error) {
       setError(result.error);
     }
@@ -100,6 +105,14 @@ export default function LoginScreen({ navigation }: Props) {
               />
             </TouchableOpacity>
           </View>
+
+          <TouchableOpacity
+            style={styles.forgotBtn}
+            onPress={() => navigation.navigate('ForgotPassword', { username: email.trim() && !email.includes('@') ? email.trim() : undefined })}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={styles.forgotText}>Forgot Password?</Text>
+          </TouchableOpacity>
 
           <TouchableOpacity
             style={[styles.signInBtn, loading && styles.signInBtnDisabled]}
@@ -166,6 +179,8 @@ const styles = StyleSheet.create({
   },
   passwordInput: { flex: 1, padding: 14, fontSize: 16, color: colors.text },
   eyeBtn: { padding: 4 },
+  forgotBtn: { alignSelf: 'flex-end', marginTop: 12 },
+  forgotText: { color: colors.primary, fontSize: 13, fontWeight: '700' },
   signInBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -174,7 +189,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     paddingVertical: 14,
     borderRadius: 14,
-    marginTop: 24,
+    marginTop: 16,
   },
   signInBtnDisabled: { opacity: 0.7 },
   signInBtnText: { color: '#fff', fontSize: 15, fontWeight: '800' },

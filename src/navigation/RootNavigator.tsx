@@ -2,6 +2,7 @@ import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { navigationRef } from './navigationRef';
 import { InAppNotificationBanner } from '../components/InAppNotificationBanner';
+import { PushNotifications } from '../components/PushNotifications';
 import { StatusBar } from 'expo-status-bar';
 import { RootStackParamList } from './types';
 import { useAuth } from '../context/AuthContext';
@@ -82,6 +83,7 @@ export default function RootNavigator() {
         )}
       </Stack.Navigator>
       {isAuthenticated && <InAppNotificationBanner />}
+      <PushNotifications />
     </NavigationContainer>
   );
 }

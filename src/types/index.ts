@@ -239,6 +239,19 @@ export interface ReadCursor {
   last_read_message_id?: string;
 }
 
+/**
+ * Per-user inbox state for a conversation (pin / archive / delete-for-me). These
+ * are the current user's own view only and never affect the other party — see
+ * migration 0011. `deleted_at` soft-hides the thread; a newer message un-hides it.
+ */
+export interface ConversationState {
+  conversation_id: string;
+  user_id: string;
+  pinned: boolean;
+  archived: boolean;
+  deleted_at?: string;
+}
+
 export interface Conversation {
   id: string;
   event_id?: string;

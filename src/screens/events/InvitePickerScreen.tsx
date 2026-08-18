@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, FlatList, StyleSheet, TouchableOpacity, TextInput, Alert } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../../theme/colors';
@@ -19,6 +19,9 @@ export default function InvitePickerScreen({ route, navigation }: Props) {
   const { user } = useAuth();
   const [q, setQ] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // Absolutely positioned children ignore their parent's padding in RN, so the
+  // footer below needs the bottom inset applied directly to clear the Android nav bar.
+  const insets = useSafeAreaInsets();
 
   const event = events.find(e => e.id === eventId);
 
@@ -89,7 +92,7 @@ export default function InvitePickerScreen({ route, navigation }: Props) {
         }}
         ListEmptyComponent={<Text style={styles.empty}>No Rotaractors match.</Text>}
       />
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: 16 + insets.bottom }]}>
         <TouchableOpacity style={[styles.sendBtn, selected.size === 0 && styles.sendBtnDisabled]} disabled={selected.size === 0} onPress={submit}>
           <Ionicons name="send" size={16} color="#fff" />
           <Text style={styles.sendText}>Send {selected.size > 0 ? `(${selected.size})` : ''} Invitation{selected.size === 1 ? '' : 's'}</Text>

@@ -3,7 +3,7 @@ import {
   RotaractEvent, EventParticipant, EventInvitation, EventImpact,
   VerificationApplication, AuditLog, AppNotification,
   VerificationStatus, AttendanceStatus, AppUser, UserRole, Club,
-  Conversation, DirectMessage, ReadCursor, NotificationPriority,
+  Conversation, DirectMessage, ReadCursor, NotificationPriority, ConversationState,
 } from '../types';
 import { loadAll, db } from '../services/db';
 import { supabase } from '../services/supabase';
@@ -56,10 +56,15 @@ interface DataContextValue {
   conversations: Conversation[];
   messages: DirectMessage[];
   readCursors: ReadCursor[];
+  conversationStates: ConversationState[];
 
-  /** True while a manual pull-to-refresh fetch is in flight. */
-  refreshing: boolean;
-  /** Re-pulls the full dataset from Supabase (pull-to-refresh). */
+  /**
+   * Re-pulls the full dataset from Supabase (pull-to-refresh). Concurrent callers
+   * share a single in-flight fetch; the per-screen spinner state lives in
+   * `useAppRefreshControl`, not here, so one screen's pull never lights up
+   * another screen's RefreshControl (an iOS UIRefreshControl gets visually stuck
+   * when its `refreshing` prop transitions from a value it inherited on mount).
+   */
   refresh: () => Promise<void>;
 
   createEvent: (e: Omit<RotaractEvent, 'id'>) => RotaractEvent;
@@ -94,6 +99,14 @@ interface DataContextValue {
   markConversationRead: (conversationId: string, userId: string) => void;
   /** Read cursors for a conversation — who has read up to when. */
   readCursorsFor: (conversationId: string) => ReadCursor[];
+  /** The current user's own state for a conversation (pin/archive/delete), if any. */
+  conversationStateFor: (conversationId: string) => ConversationState | undefined;
+  /** Pins/unpins a conversation for the current user only. */
+  setConversationPinned: (conversationId: string, userId: string, pinned: boolean) => void;
+  /** Archives/unarchives a conversation for the current user only. */
+  setConversationArchived: (conversationId: string, userId: string, archived: boolean) => void;
+  /** Removes a conversation from the current user's inbox only (a newer message un-hides it). */
+  deleteConversationForMe: (conversationId: string, userId: string) => void;
   /** Organizer-only: fan a banner notification out to every JOINED participant. */
   broadcastToEvent: (eventId: string, title: string, message: string, priority: NotificationPriority) => Promise<{ ok: boolean; error?: string }>;
 
@@ -178,14 +191,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [messages, setMessages] = useState<DirectMessage[]>([]);
   const [readCursors, setReadCursors] = useState<ReadCursor[]>([]);
   const [deletedMessageIds, setDeletedMessageIds] = useState<string[]>([]);
-  const [refreshing, setRefreshing] = useState(false);
+  const [conversationStates, setConversationStates] = useState<ConversationState[]>([]);
 
   // Pulls the full dataset from Supabase and replaces local state with it.
   // Supabase is the source of truth, so this both hydrates on load and reconciles
   // any optimistic writes with what actually persisted. `cancelledRef` guards
-  // against a resolve arriving after the provider unmounted.
-  const applySnapshot = useCallback(async (cancelledRef?: { current: boolean }) => {
-    const d = await loadAll();
+  // against a resolve arriving after the provider unmounted; `signal` lets the
+  // caller actually cancel the underlying HTTP requests (see `refresh` below).
+  const applySnapshot = useCallback(async (cancelledRef?: { current: boolean }, signal?: AbortSignal) => {
+    const d = await loadAll(signal);
     if (cancelledRef?.current) return;
     setUsers(d.users); setClubs(d.clubs); setEvents(d.events);
     setParticipants(d.participants); setInvitations(d.invitations);
@@ -194,19 +208,37 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setConversations(d.conversations); setMessages(d.messages);
     setReadCursors(d.readCursors);
     setDeletedMessageIds(d.deletedMessageIds);
+    setConversationStates(d.conversationStates);
   }, []);
 
-  // Manual refresh for pull-to-refresh. Serialized behind `refreshing` so a
-  // second pull mid-fetch is ignored rather than racing the first.
+  // Concurrent pulls (e.g. two screens fire refresh at once, or a user pulls
+  // again while one is already in flight) share a single underlying fetch so we
+  // don't hammer Supabase or leave stale requests dangling. Both callers await
+  // the same promise and clear their local spinner when it resolves.
+  //
+  // Two safeguards on that single fetch, since a JS-side "give up" alone leaves
+  // the real request running in the background to resolve at some later time:
+  //   1. An AbortController genuinely cancels the underlying HTTP requests after
+  //      10s, not merely ignoring their eventual result.
+  //   2. The in-flight promise is cleared in `finally`, so a subsequent pull
+  //      always starts a fresh fetch.
+  const refreshPromiseRef = useRef<Promise<void> | null>(null);
   const refresh = useCallback(async () => {
-    setRefreshing(true);
-    try {
-      await applySnapshot();
-    } catch (e) {
-      console.warn('Failed to refresh data from Supabase', e);
-    } finally {
-      setRefreshing(false);
-    }
+    if (refreshPromiseRef.current) return refreshPromiseRef.current;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    const p = (async () => {
+      try {
+        await applySnapshot(undefined, controller.signal);
+      } catch (e) {
+        console.warn('[refresh] failed or timed out — aborting in-flight requests', e);
+      } finally {
+        clearTimeout(timeoutId);
+        refreshPromiseRef.current = null;
+      }
+    })();
+    refreshPromiseRef.current = p;
+    return p;
   }, [applySnapshot]);
 
   // Supabase is the source of truth. Reload whenever auth changes: clubs and
@@ -351,6 +383,31 @@ export function DataProvider({ children }: { children: ReactNode }) {
       })
       .subscribe(logStatus('deletions'));
 
+    // Pin/archive/delete-for-me state syncs across the user's own devices. Scoped
+    // to the signed-in user; merged directly so the inbox reorders/hides live.
+    const convStateChannel = supabase
+      .channel(`rt-conv-states-${uid}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'conversation_states', filter: `user_id=eq.${uid}` }, payload => {
+        if (payload.eventType === 'DELETE') {
+          const r = payload.old as any;
+          if (r?.conversation_id) {
+            setConversationStates(prev => prev.filter(s => !(s.conversation_id === r.conversation_id && s.user_id === r.user_id)));
+          }
+          return;
+        }
+        const r = payload.new as any;
+        if (!r?.conversation_id) return;
+        const state: ConversationState = {
+          conversation_id: r.conversation_id, user_id: r.user_id,
+          pinned: !!r.pinned, archived: !!r.archived, deleted_at: r.deleted_at ?? undefined,
+        };
+        setConversationStates(prev => {
+          const others = prev.filter(s => !(s.conversation_id === state.conversation_id && s.user_id === state.user_id));
+          return [...others, state];
+        });
+      })
+      .subscribe(logStatus('conv-states'));
+
     // Conversations move fast enough (last_message updates) to merge directly, so
     // the Inbox reorders live; heavier tables just schedule a reload. Each table
     // gets its OWN channel so one table missing from the realtime publication
@@ -371,6 +428,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       supabase.removeChannel(notifChannel);
       supabase.removeChannel(readsChannel);
       supabase.removeChannel(deletionsChannel);
+      supabase.removeChannel(convStateChannel);
       tableReloadChannels.forEach(ch => supabase.removeChannel(ch));
     };
   }, [isAuthenticated, authUser, applySnapshot]);
@@ -1125,6 +1183,52 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return readCursors.filter(c => c.conversation_id === conversationId);
   }, [readCursors]);
 
+  // ------------------------------------------------------------------
+  // Per-user conversation inbox state (pin / archive / delete-for-me).
+  // Optimistic local merge + upsert of the caller's OWN row only. RLS makes it
+  // impossible to touch the other party's view, so these are always one-sided.
+  // ------------------------------------------------------------------
+  const conversationStateFor = useCallback((conversationId: string) => {
+    return conversationStates.find(s => s.conversation_id === conversationId);
+  }, [conversationStates]);
+
+  const mergeConversationState = useCallback((conversationId: string, userId: string, updates: Partial<ConversationState>) => {
+    setConversationStates(prev => {
+      const existing = prev.find(s => s.conversation_id === conversationId && s.user_id === userId);
+      const merged: ConversationState = {
+        conversation_id: conversationId,
+        user_id: userId,
+        pinned: existing?.pinned ?? false,
+        archived: existing?.archived ?? false,
+        deleted_at: existing?.deleted_at,
+        ...updates,
+      };
+      const others = prev.filter(s => !(s.conversation_id === conversationId && s.user_id === userId));
+      return [...others, merged];
+    });
+  }, []);
+
+  const setConversationPinned = useCallback((conversationId: string, userId: string, pinned: boolean) => {
+    mergeConversationState(conversationId, userId, { pinned });
+    db.upsertConversationState(conversationId, userId, { pinned });
+  }, [mergeConversationState]);
+
+  const setConversationArchived = useCallback((conversationId: string, userId: string, archived: boolean) => {
+    // Archiving a pinned thread also clears its pin — a hidden thread shouldn't
+    // also claim a pinned slot at the top when later unarchived.
+    const updates = archived ? { archived: true, pinned: false } : { archived: false };
+    mergeConversationState(conversationId, userId, updates);
+    db.upsertConversationState(conversationId, userId, updates);
+  }, [mergeConversationState]);
+
+  const deleteConversationForMe = useCallback((conversationId: string, userId: string) => {
+    const iso = now();
+    // Deleting also drops pin/archive so a re-surfaced thread starts clean.
+    const updates = { deleted_at: iso, pinned: false, archived: false };
+    mergeConversationState(conversationId, userId, updates);
+    db.upsertConversationState(conversationId, userId, updates);
+  }, [mergeConversationState]);
+
   const sendMessageToOrganizer = useCallback((eventId: string, senderUser: AppUser, text: string) => {
     const ev = events.find(e => e.id === eventId);
     if (!ev) return;
@@ -1283,11 +1387,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   return (
     <DataContext.Provider value={{
-      users, events: resolvedEvents, participants, invitations, impacts, applications, auditLogs, notifications, clubs, conversations, messages, readCursors,
-      refreshing, refresh,
+      users, events: resolvedEvents, participants, invitations, impacts, applications, auditLogs, notifications, clubs, conversations, messages, readCursors, conversationStates,
+      refresh,
       createEvent, updateEvent, updateEventStatus, resetEventApprovals, cancelEvent, approveEvent, rejectEvent,
       joinEvent, leaveEvent, approveParticipant, declineParticipant, markAttendance, checkIn, addClub,
-      invite, respondInvitation, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, sendDirectMessage, retryMessage, deleteMessageForMe, unsendMessage, markConversationRead, readCursorsFor, broadcastToEvent, saveImpact, reviewApplication, resubmitApplication, markNotificationsRead, deleteNotification, updateUserRole, removeUser, addApplication,
+      invite, respondInvitation, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, sendDirectMessage, retryMessage, deleteMessageForMe, unsendMessage, markConversationRead, readCursorsFor, conversationStateFor, setConversationPinned, setConversationArchived, deleteConversationForMe, broadcastToEvent, saveImpact, reviewApplication, resubmitApplication, markNotificationsRead, deleteNotification, updateUserRole, removeUser, addApplication,
       participantsFor, invitationFor, participationFor, impactFor, notificationsFor, unreadCountForUser, messagesForConversation, auditFor,
       applicationsForRole, userStats,
     }}>

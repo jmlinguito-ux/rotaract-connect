@@ -16,7 +16,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 export default function SettingsScreen({ navigation }: Props) {
   const { user, changePassword } = useAuth();
   const { isNightMode, setNightMode, colors: themeColors } = useTheme();
-  const { inAppBannerEnabled, setInAppBannerEnabled } = usePreferences();
+  const { inAppBannerEnabled, setInAppBannerEnabled, pushEnabled, setPushEnabled } = usePreferences();
 
   // Change-password modal state
   const [pwModalVisible, setPwModalVisible] = useState(false);
@@ -179,6 +179,24 @@ export default function SettingsScreen({ navigation }: Props) {
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: themeColors.primary }]}>NOTIFICATION PREFERENCES</Text>
           <View style={cardStyle}>
+            <View style={styles.row}>
+              <View style={[styles.rowIconWrap, { backgroundColor: themeColors.primary + '1A' }]}>
+                <Ionicons name="phone-portrait-outline" size={18} color={themeColors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={titleStyle}>Push Notifications</Text>
+                <Text style={subStyle}>Get alerts even when the app is closed. Your notification history stays available in your Inbox.</Text>
+              </View>
+              <Switch
+                value={pushEnabled}
+                onValueChange={setPushEnabled}
+                trackColor={{ false: themeColors.border, true: themeColors.primary }}
+                thumbColor="#fff"
+              />
+            </View>
+
+            <View style={dividerStyle} />
+
             <View style={styles.row}>
               <View style={[styles.rowIconWrap, { backgroundColor: themeColors.primary + '1A' }]}>
                 <Ionicons name="notifications-outline" size={18} color={themeColors.primary} />

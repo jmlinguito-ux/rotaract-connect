@@ -2,6 +2,7 @@ import { supabase } from './supabase';
 import {
   AppUser, Club, RotaractEvent, EventParticipant, EventInvitation, EventImpact,
   VerificationApplication, AuditLog, AppNotification, Conversation, DirectMessage, ReadCursor,
+  ConversationState,
 } from '../types';
 
 /**
@@ -30,30 +31,45 @@ export interface LoadedData {
   readCursors: ReadCursor[];
   /** Ids of messages the current user has hidden from their own view ("delete for me"). */
   deletedMessageIds: string[];
+  /** The current user's per-conversation inbox state (pin/archive/delete). */
+  conversationStates: ConversationState[];
 }
 
-export async function loadAll(): Promise<LoadedData> {
+/**
+ * `signal` lets a caller actually cancel the in-flight HTTP requests (not just
+ * give up on them JS-side) — used by DataContext's refresh timeout so a hung
+ * request on a flaky connection is genuinely torn down instead of left running
+ * in the background to resolve at some arbitrary later time.
+ */
+export async function loadAll(signal?: AbortSignal): Promise<LoadedData> {
+  const withSignal = <T extends { abortSignal(s: AbortSignal): T }>(q: T): T =>
+    signal ? q.abortSignal(signal) : q;
+
   const [
     profilesRes, clubsRes, eventsRes, epcRes, partsRes, invRes, impRes,
-    appsRes, auditRes, notifRes, convRes, msgRes, readsRes, delsRes,
+    appsRes, auditRes, notifRes, convRes, msgRes, readsRes, delsRes, convStatesRes,
   ] = await Promise.all([
-    supabase.from('profiles').select('*'),
-    supabase.from('clubs').select('*'),
-    supabase.from('events').select('*'),
-    supabase.from('event_participating_clubs').select('*'),
-    supabase.from('event_participants').select('*'),
-    supabase.from('event_invitations').select('*'),
-    supabase.from('event_impacts').select('*'),
-    supabase.from('verification_applications').select('*'),
-    supabase.from('audit_logs').select('*'),
-    supabase.from('notifications').select('*'),
-    supabase.from('conversations').select('*'),
-    supabase.from('direct_messages').select('*').order('created_at', { ascending: true }),
+    withSignal(supabase.from('profiles').select('*')),
+    withSignal(supabase.from('clubs').select('*')),
+    withSignal(supabase.from('events').select('*')),
+    withSignal(supabase.from('event_participating_clubs').select('*')),
+    withSignal(supabase.from('event_participants').select('*')),
+    withSignal(supabase.from('event_invitations').select('*')),
+    withSignal(supabase.from('event_impacts').select('*')),
+    withSignal(supabase.from('verification_applications').select('*')),
+    withSignal(supabase.from('audit_logs').select('*')),
+    withSignal(supabase.from('notifications').select('*')),
+    withSignal(supabase.from('conversations').select('*')),
+    withSignal(supabase.from('direct_messages').select('*').order('created_at', { ascending: true })),
     // message_reads may not exist until migration 0007 is applied — tolerate that.
-    supabase.from('message_reads').select('*'),
+    withSignal(supabase.from('message_reads').select('*')),
     // message_deletions may not exist until migration 0009 — tolerate that. RLS
     // already scopes this to the current user's own rows.
-    supabase.from('message_deletions').select('message_id'),
+    withSignal(supabase.from('message_deletions').select('message_id')),
+    // conversation_states may not exist until migration 0011 — tolerate that. RLS
+    // scopes it to the caller's own rows. Kept in the parallel batch so it can't
+    // add a serial round-trip that stalls the whole load.
+    withSignal(supabase.from('conversation_states').select('*')),
   ]);
 
   const profiles = profilesRes.data ?? [];
@@ -246,10 +262,18 @@ export async function loadAll(): Promise<LoadedData> {
 
   const deletedMessageIds: string[] = (delsRes.data ?? []).map((r: any) => r.message_id);
 
+  const conversationStates: ConversationState[] = (convStatesRes.data ?? []).map((s: any) => ({
+    conversation_id: s.conversation_id,
+    user_id: s.user_id,
+    pinned: !!s.pinned,
+    archived: !!s.archived,
+    deleted_at: s.deleted_at ?? undefined,
+  }));
+
   return {
     users, clubs: mappedClubs, events: mappedEvents, participants, invitations,
     impacts, applications, auditLogs, notifications, conversations, messages, readCursors,
-    deletedMessageIds,
+    deletedMessageIds, conversationStates,
   };
 }
 
@@ -361,6 +385,23 @@ export const db = {
   deleteMessageForMe: async (messageId: string, userId: string) => {
     reportError('deleteMessageForMe', (await supabase.from('message_deletions')
       .upsert({ message_id: messageId, user_id: userId }, { onConflict: 'message_id,user_id' })).error);
+  },
+  /**
+   * Upserts the caller's own inbox state for a conversation (pin/archive/delete).
+   * RLS scopes this to the caller's own row, so it can never change the other
+   * party's view of the conversation.
+   */
+  upsertConversationState: async (
+    conversationId: string,
+    userId: string,
+    updates: { pinned?: boolean; archived?: boolean; deleted_at?: string | null },
+  ) => {
+    reportError('upsertConversationState', (await supabase.from('conversation_states').upsert({
+      conversation_id: conversationId,
+      user_id: userId,
+      ...updates,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'conversation_id,user_id' })).error);
   },
   /** Upserts the caller's read cursor for a conversation (one row per user). */
   upsertReadCursor: async (conversationId: string, userId: string, lastMessageId?: string) => {

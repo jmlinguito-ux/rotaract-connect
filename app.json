@@ -4,6 +4,7 @@
     "slug": "rotaract-connect",
     "version": "1.0.0",
     "orientation": "portrait",
+    "scheme": "rotaractconnect",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
@@ -54,13 +55,21 @@
       "expo-audio",
       "expo-asset",
       [
+        "expo-notifications",
+        {
+          "color": "#D41367",
+          "defaultChannel": "default"
+        }
+      ],
+      [
         "expo-build-properties",
         {
           "ios": {
             "deploymentTarget": "16.4"
           }
         }
-      ]
+      ],
+      "expo-splash-screen"
     ],
     "extra": {
       "eas": {

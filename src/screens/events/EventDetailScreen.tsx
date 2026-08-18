@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert, Image, Modal, TextInput, KeyboardAvoidingView, Platform, Keyboard } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { RootStackParamList } from '../../navigation/types';
@@ -35,6 +35,11 @@ type Props = NativeStackScreenProps<RootStackParamList, 'EventDetail'>;
 export default function EventDetailScreen({ route, navigation }: Props) {
   const { eventId } = route.params;
   const { user } = useAuth();
+  // The action footer below is a sibling of the SafeAreaView's scroll content, not
+  // a child laid out inside its padding — so SafeAreaView's own edges={['bottom']}
+  // padding never reaches it. Read the inset directly and pad the footer with it,
+  // so its buttons clear the Android gesture/nav bar instead of sitting under it.
+  const insets = useSafeAreaInsets();
   const { events, clubs, users, notifications, participantsFor, participationFor, joinEvent, leaveEvent, checkIn, impactFor, approveEvent, rejectEvent, cancelEvent, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, approveParticipant, declineParticipant, invitationFor, respondInvitation } = useData();
 
   const [messageModalVisible, setMessageModalVisible] = useState(false);
@@ -999,7 +1004,7 @@ export default function EventDetailScreen({ route, navigation }: Props) {
       {/* A cancelled or completed event is read-only: details stay visible to
           everyone, but joining, checking in and leaving are no longer meaningful. */}
       {event.status === 'CANCELLED' || event.status === 'COMPLETED' ? (
-        <View style={styles.footer}>
+        <View style={[styles.footer, { paddingBottom: 16 + insets.bottom }]}>
           <View style={styles.cancelledFooterBtn}>
             <Ionicons name={event.status === 'COMPLETED' ? 'checkmark-done-circle' : 'close-circle'} size={18} color={colors.textMuted} />
             <Text style={styles.cancelledFooterText}>
@@ -1008,7 +1013,7 @@ export default function EventDetailScreen({ route, navigation }: Props) {
           </View>
         </View>
       ) : (
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: 16 + insets.bottom }]}>
         <View style={styles.actionBtnGroup}>
           <TouchableOpacity
             style={[

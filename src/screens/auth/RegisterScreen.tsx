@@ -282,6 +282,10 @@ export default function RegisterScreen({ navigation }: Props) {
 
               if (result.error) {
                 setError(result.error);
+              } else if (result.needsVerification) {
+                // Email confirmation required — verify the emailed code before the
+                // account is activated.
+                navigation.navigate('EmailVerification', { email: result.email ?? email });
               } else {
                 navigation.navigate('VerificationPending');
               }

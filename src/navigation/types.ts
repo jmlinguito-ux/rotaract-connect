@@ -3,6 +3,8 @@ import { NavigatorScreenParams } from '@react-navigation/native';
 export type AuthStackParamList = {
   Login: undefined;
   Register: undefined;
+  EmailVerification: { email: string };
+  ForgotPassword: { username?: string } | undefined;
   ClubSelect: { onSelect?: (clubId: string) => void } | undefined;
   VerificationPending: undefined;
 };

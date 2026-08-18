@@ -9,6 +9,7 @@ import { usePreferences } from '../context/PreferencesContext';
 import { AppNotification } from '../types';
 import { navigate } from '../navigation/navigationRef';
 import { playAlertSound, stopAlertSound } from '../services/sound';
+import { relativeTime } from '../utils/relativeTime';
 
 /**
  * Foreground, in-app banner for realtime notifications. When a new notification
@@ -142,7 +143,12 @@ export function InAppNotificationBanner() {
           />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={[styles.title, { color: colors.text }]} numberOfLines={1}>{banner.title}</Text>
+          {/* Top row: source/title left, relative time upper-right. */}
+          <View style={styles.topRow}>
+            <Text style={[styles.title, { color: colors.text }]} numberOfLines={1}>{banner.title}</Text>
+            <Text style={[styles.time, { color: colors.textMuted }]}>{relativeTime(banner.created_at)}</Text>
+          </View>
+          {/* Bottom row: content preview. */}
           <Text style={[styles.message, { color: colors.textMuted }]} numberOfLines={2}>{banner.message}</Text>
         </View>
         <TouchableOpacity onPress={dismiss} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
@@ -160,6 +166,8 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.18, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 6,
   },
   iconWrap: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 14, fontWeight: '800' },
+  topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  title: { fontSize: 14, fontWeight: '800', flexShrink: 1 },
+  time: { fontSize: 11, fontWeight: '600' },
   message: { fontSize: 12, marginTop: 1 },
 });

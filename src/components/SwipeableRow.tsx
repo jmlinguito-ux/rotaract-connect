@@ -2,77 +2,103 @@ import React, { useRef } from 'react';
 import { View, Animated, PanResponder, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-interface SwipeableRowProps {
-  children: React.ReactNode;
-  onDelete: () => void;
+export interface SwipeAction {
+  key: string;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  /** Background color of the action button. */
+  color: string;
+  onPress: () => void;
+  /** When true, the row animates off-screen before firing (used for destructive actions). */
+  destructive?: boolean;
 }
 
-export function SwipeableRow({ children, onDelete }: SwipeableRowProps) {
+interface SwipeableRowProps {
+  children: React.ReactNode;
+  /** Back-compat shorthand: a single red Delete action. Ignored when `actions` is set. */
+  onDelete?: () => void;
+  /** Ordered right-side actions revealed on swipe (left = first). */
+  actions?: SwipeAction[];
+}
+
+const ACTION_WIDTH = 76;
+
+/**
+ * Horizontal swipe-to-reveal row actions, built on PanResponder (no reanimated
+ * dependency). Supports one or more right-side actions; opening snaps to fit them
+ * and only horizontal gestures are captured, so vertical scrolling and taps on the
+ * row content are unaffected.
+ */
+export function SwipeableRow({ children, onDelete, actions }: SwipeableRowProps) {
+  const resolvedActions: SwipeAction[] = actions && actions.length
+    ? actions
+    : onDelete
+      ? [{ key: 'delete', label: 'Delete', icon: 'trash-outline', color: '#EF4444', onPress: onDelete, destructive: true }]
+      : [];
+
+  const openWidth = resolvedActions.length * ACTION_WIDTH;
   const pan = useRef(new Animated.ValueXY()).current;
   const isOpen = useRef(false);
+
+  const close = () => {
+    isOpen.current = false;
+    Animated.spring(pan, { toValue: { x: 0, y: 0 }, useNativeDriver: false, bounciness: 4 }).start();
+  };
 
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (_, gestureState) => {
-        // Only capture horizontal gestures
-        return Math.abs(gestureState.dx) > 8 && Math.abs(gestureState.dy) < 12;
+      onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 8 && Math.abs(g.dy) < 12,
+      onPanResponderMove: (_, g) => {
+        const startX = isOpen.current ? -openWidth : 0;
+        const newX = startX + g.dx;
+        pan.setValue({ x: Math.min(0, Math.max(-openWidth - 40, newX)), y: 0 });
       },
-      onPanResponderMove: (_, gestureState) => {
-        const startX = isOpen.current ? -80 : 0;
-        const newX = startX + gestureState.dx;
-        // Restrict drag bounds between -120 and 0
-        pan.setValue({ x: Math.min(0, Math.max(-120, newX)), y: 0 });
-      },
-      onPanResponderRelease: (_, gestureState) => {
-        if (gestureState.dx < -40 || (isOpen.current && gestureState.dx < 20)) {
-          // Snap open
+      onPanResponderRelease: (_, g) => {
+        if (g.dx < -40 || (isOpen.current && g.dx < 20)) {
           isOpen.current = true;
-          Animated.spring(pan, {
-            toValue: { x: -80, y: 0 },
-            useNativeDriver: false,
-            bounciness: 4,
-          }).start();
+          Animated.spring(pan, { toValue: { x: -openWidth, y: 0 }, useNativeDriver: false, bounciness: 4 }).start();
         } else {
-          // Snap closed
-          isOpen.current = false;
-          Animated.spring(pan, {
-            toValue: { x: 0, y: 0 },
-            useNativeDriver: false,
-            bounciness: 4,
-          }).start();
+          close();
         }
       },
     })
   ).current;
 
-  const handleDelete = () => {
-    Animated.timing(pan, {
-      toValue: { x: -400, y: 0 },
-      duration: 200,
-      useNativeDriver: false,
-    }).start(() => {
-      onDelete();
-    });
+  const runAction = (action: SwipeAction) => {
+    if (action.destructive) {
+      Animated.timing(pan, { toValue: { x: -500, y: 0 }, duration: 200, useNativeDriver: false })
+        .start(() => action.onPress());
+    } else {
+      close();
+      action.onPress();
+    }
   };
 
-  const deleteOpacity = pan.x.interpolate({
-    inputRange: [-75, -10, 0],
+  const actionsOpacity = pan.x.interpolate({
+    inputRange: [-openWidth * 0.6, -12, 0],
     outputRange: [1, 0.2, 0],
     extrapolate: 'clamp',
   });
 
+  if (resolvedActions.length === 0) return <>{children}</>;
+
   return (
     <View style={styles.container}>
-      {/* Background Delete Action Button */}
-      <Animated.View style={[styles.deleteBackground, { opacity: deleteOpacity }]}>
-        <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete} activeOpacity={0.85}>
-          <Ionicons name="trash-outline" size={18} color="#fff" />
-          <Text style={styles.deleteText}>Delete</Text>
-        </TouchableOpacity>
+      <Animated.View style={[styles.actionsBackground, { width: openWidth, opacity: actionsOpacity }]}>
+        {resolvedActions.map(action => (
+          <TouchableOpacity
+            key={action.key}
+            style={[styles.actionBtn, { backgroundColor: action.color, width: ACTION_WIDTH }]}
+            onPress={() => runAction(action)}
+            activeOpacity={0.85}
+          >
+            <Ionicons name={action.icon} size={18} color="#fff" />
+            <Text style={styles.actionText}>{action.label}</Text>
+          </TouchableOpacity>
+        ))}
       </Animated.View>
 
-      {/* Foreground Swipeable Item */}
       <Animated.View
         style={[{ transform: pan.getTranslateTransform(), zIndex: 1, backgroundColor: 'transparent' }]}
         {...panResponder.panHandlers}
@@ -84,34 +110,19 @@ export function SwipeableRow({ children, onDelete }: SwipeableRowProps) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    position: 'relative',
-    marginBottom: 6,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  deleteBackground: {
+  // Owns the inter-row spacing so the swiped child card carries no bottom margin
+  // of its own — that keeps the revealed action buttons exactly the card's height.
+  container: { position: 'relative', marginBottom: 8, borderRadius: 12, overflow: 'hidden' },
+  actionsBackground: {
     position: 'absolute',
     right: 0,
     top: 0,
     bottom: 0,
-    width: 75,
-    backgroundColor: '#EF4444',
-    justifyContent: 'center',
-    alignItems: 'center',
+    flexDirection: 'row',
     borderRadius: 12,
+    overflow: 'hidden',
     zIndex: 0,
   },
-  deleteBtn: {
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 2,
-  },
-  deleteText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '700',
-  },
+  actionBtn: { height: '100%', justifyContent: 'center', alignItems: 'center', gap: 2 },
+  actionText: { color: '#fff', fontSize: 11, fontWeight: '700' },
 });
