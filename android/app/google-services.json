@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "563099767255",
-    "project_id": "rotaract-connect-d0aa3",
-    "storage_bucket": "rotaract-connect-d0aa3.firebasestorage.app"
+    "project_number": "1003845488685",
+    "project_id": "rotaract-connect-52eae",
+    "storage_bucket": "rotaract-connect-52eae.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:563099767255:android:8c6a1faacc94661dcdfb92",
+        "mobilesdk_app_id": "1:1003845488685:android:7450b9e3de66081569e8a4",
         "android_client_info": {
           "package_name": "com.rotaractconnect.app"
         }
@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyAXi9tG1-LSOp1Xu-v78nHaPFC24PI4Ecg"
+          "current_key": "AIzaSyBP554xHvXAdjJrbo9A1RXPd_y7dpkBtQo"
         }
       ],
       "services": {
