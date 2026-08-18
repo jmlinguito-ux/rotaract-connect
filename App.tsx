@@ -10,18 +10,10 @@ import { AuthProvider } from './src/context/AuthContext';
 import { DataProvider } from './src/context/DataContext';
 import RootNavigator from './src/navigation/RootNavigator';
 
-// Keep the splash screen visible while we fetch resources
-SplashScreen.preventAutoHideAsync();
+// Keep the splash screen visible while we fetch resources and restore auth session
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 export default function App() {
-  useEffect(() => {
-    // Hide splash screen after a short delay or once app is ready
-    const timer = setTimeout(async () => {
-      await SplashScreen.hideAsync();
-    }, 2000);
-    return () => clearTimeout(timer);
-  }, []);
-
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>

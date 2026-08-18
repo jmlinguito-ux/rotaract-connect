@@ -120,7 +120,13 @@ export default function MapScreen() {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status === 'granted') {
-          const loc = await Location.getCurrentPositionAsync({});
+          // 1. Instantly get last known location from OS cache (0ms)
+          const lastLoc = await Location.getLastKnownPositionAsync();
+          if (lastLoc) {
+            setUserCoords({ latitude: lastLoc.coords.latitude, longitude: lastLoc.coords.longitude });
+          }
+          // 2. Fetch fresh position with balanced accuracy in background without blocking
+          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
           setUserCoords({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
         } else {
           setUserCoords({ latitude: 14.5266, longitude: 121.1553 });

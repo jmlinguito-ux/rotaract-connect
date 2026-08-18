@@ -7,6 +7,11 @@
     "scheme": "rotaractconnect",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FFFFFF"
+    },
     "ios": {
       "deploymentTarget": "16.4",
       "supportsTablet": true,

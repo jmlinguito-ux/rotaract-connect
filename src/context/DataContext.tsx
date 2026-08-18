@@ -8,6 +8,7 @@ import {
 import { loadAll, db } from '../services/db';
 import { supabase } from '../services/supabase';
 import { useAuth } from './AuthContext';
+import { getCachedData, setCachedData, clearCachedData } from '../services/cache';
 import { getEffectiveEventStatus } from '../utils/eventUtils';
 import { approverClubIdsFor, pendingApproverClubIdsFor } from '../utils/eventApproval';
 import { ROLE_LABELS } from '../utils/roles';
@@ -193,6 +194,35 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [deletedMessageIds, setDeletedMessageIds] = useState<string[]>([]);
   const [conversationStates, setConversationStates] = useState<ConversationState[]>([]);
 
+  // 1. Immediately hydrate local state from persistent cache on boot (0ms instant startup)
+  useEffect(() => {
+    getCachedData().then(cached => {
+      if (cached) {
+        setUsers(cached.users ?? []);
+        setClubs(cached.clubs ?? []);
+        setEvents(cached.events ?? []);
+        setParticipants(cached.participants ?? []);
+        setInvitations(cached.invitations ?? []);
+        setImpacts(cached.impacts ?? []);
+        setApplications(cached.applications ?? []);
+        setAuditLogs(cached.auditLogs ?? []);
+        setNotifications(cached.notifications ?? []);
+        setConversations(cached.conversations ?? []);
+        setMessages(cached.messages ?? []);
+        setReadCursors(cached.readCursors ?? []);
+        setDeletedMessageIds(cached.deletedMessageIds ?? []);
+        setConversationStates(cached.conversationStates ?? []);
+      }
+    });
+  }, []);
+
+  // Clear data cache on sign out
+  useEffect(() => {
+    if (!isAuthenticated) {
+      clearCachedData();
+    }
+  }, [isAuthenticated]);
+
   // Pulls the full dataset from Supabase and replaces local state with it.
   // Supabase is the source of truth, so this both hydrates on load and reconciles
   // any optimistic writes with what actually persisted. `cancelledRef` guards
@@ -209,6 +239,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setReadCursors(d.readCursors);
     setDeletedMessageIds(d.deletedMessageIds);
     setConversationStates(d.conversationStates);
+
+    // Save snapshot to local persistent cache for instant future launches
+    setCachedData(d);
   }, []);
 
   // Concurrent pulls (e.g. two screens fire refresh at once, or a user pulls

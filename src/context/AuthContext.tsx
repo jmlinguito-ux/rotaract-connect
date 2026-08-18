@@ -3,6 +3,7 @@ import { AppUser, UserRole, VerificationStatus } from '../types';
 import { supabase } from '../services/supabase';
 import { PickedImage, uploadPublicImage, uploadImageAsset } from '../services/storage';
 import { unregisterPushTokenAsync } from '../services/push';
+import { getCachedUser, setCachedUser, clearCachedUser } from '../services/cache';
 
 interface AuthContextValue {
   user: AppUser | null;
@@ -98,6 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (error || !data) {
       setUser(null);
+      await clearCachedUser();
       return;
     }
 
@@ -115,17 +117,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clubName = club?.club_name;
     }
 
-    setUser(profileToAppUser(data, clubName));
+    const appUser = profileToAppUser(data, clubName);
+    setUser(appUser);
+    setCachedUser(appUser);
   };
 
   useEffect(() => {
+    // 1. Instantly restore user profile from local cache for 0ms startup
+    getCachedUser().then(cached => {
+      if (cached) {
+        setUser(cached);
+        setIsLoading(false);
+      }
+    });
+
+    // Safety guard: Ensure isLoading does not hang indefinitely on slow/offline starts
+    const safetyTimer = setTimeout(() => {
+      setIsLoading(false);
+    }, 4000);
+
     // Check for existing session on mount
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
-        fetchProfile(session.user.id).finally(() => setIsLoading(false));
+        fetchProfile(session.user.id).finally(() => {
+          clearTimeout(safetyTimer);
+          setIsLoading(false);
+        });
       } else {
+        clearTimeout(safetyTimer);
         setIsLoading(false);
       }
+    }).catch(() => {
+      clearTimeout(safetyTimer);
+      setIsLoading(false);
     });
 
     // Listen for auth state changes
@@ -134,14 +158,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Don't sign the user in from a password-recovery session — the reset
         // flow drives that itself and signs out when done.
         if (recoveringRef.current) { setIsLoading(false); return; }
-        fetchProfile(session.user.id);
+        fetchProfile(session.user.id).finally(() => {
+          clearTimeout(safetyTimer);
+          setIsLoading(false);
+        });
       } else {
         setUser(null);
+        clearCachedUser();
+        clearTimeout(safetyTimer);
         setIsLoading(false);
       }
     });
 
     return () => {
+      clearTimeout(safetyTimer);
       authListener.subscription.unsubscribe();
     };
   }, []);
@@ -307,6 +337,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // account's notifications to the device after sign-out.
     try { await unregisterPushTokenAsync(); } catch (e) { console.warn('[auth] push unregister on sign-out failed', e); }
     await supabase.auth.signOut();
+    await clearCachedUser();
     setUser(null);
   };
 

@@ -1,5 +1,8 @@
+import React, { useEffect } from 'react';
+import { View } from 'react-native';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import * as SplashScreen from 'expo-splash-screen';
 import { navigationRef } from './navigationRef';
 import { InAppNotificationBanner } from '../components/InAppNotificationBanner';
 import { PushNotifications } from '../components/PushNotifications';
@@ -31,8 +34,22 @@ import OrganizerBroadcastScreen from '../screens/events/OrganizerBroadcastScreen
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function RootNavigator() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
   const { isNightMode, colors: themeColors } = useTheme();
+
+  useEffect(() => {
+    if (!isLoading) {
+      SplashScreen.hideAsync().catch(() => {});
+    }
+  }, [isLoading]);
+
+  if (isLoading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: themeColors.bg }}>
+        <StatusBar style={isNightMode ? 'light' : 'dark'} />
+      </View>
+    );
+  }
 
   const navTheme = {
     ...DefaultTheme,

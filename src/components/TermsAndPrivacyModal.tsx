@@ -800,15 +800,13 @@ const styles = StyleSheet.create({
   safeContainer: {
     width: '100%',
     maxWidth: 580,
-    maxHeight: '92%',
+    height: '88%',
   },
   modalCard: {
+    flex: 1,
     backgroundColor: '#fff',
     borderRadius: 20,
     overflow: 'hidden',
-    display: 'flex',
-    flexDirection: 'column',
-    maxHeight: '100%',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.25,
