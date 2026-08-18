@@ -7,6 +7,7 @@ import { colors } from '../../theme/colors';
 import { RootStackParamList } from '../../navigation/types';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
 import { formatDistance } from '../../utils/checkIn';
 import { DeclineReasonModal } from '../../components/DeclineReasonModal';
 import { UserProfileModal } from '../../components/UserProfileModal';
@@ -19,6 +20,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Participants'>;
 export default function ParticipantsScreen({ route, navigation }: Props) {
   const { eventId } = route.params;
   const { user } = useAuth();
+  const { colors: themeColors, isNightMode } = useTheme();
   const { events, users, participantsFor, approveParticipant, declineParticipant, getOrCreateConversation } = useData();
   const event = events.find(e => e.id === eventId);
   const all = participantsFor(eventId);
@@ -63,7 +65,7 @@ export default function ParticipantsScreen({ route, navigation }: Props) {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.bg }]} edges={['bottom']}>
       <FlatList
         data={sections.flatMap(s => [
           { type: 'header', title: s.title, key: s.key + 'h' } as any,
@@ -72,29 +74,32 @@ export default function ParticipantsScreen({ route, navigation }: Props) {
         keyExtractor={i => i.key}
         contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
         renderItem={({ item }) => {
-          if (item.type === 'header') return <Text style={styles.sectionTitle}>{item.title}</Text>;
+          if (item.type === 'header') return <Text style={[styles.sectionTitle, { color: themeColors.primary }]}>{item.title}</Text>;
 
           if (item.data.isOrganizerCard) {
             const org = item.data.user;
             return (
               <TouchableOpacity
-                style={[styles.row, styles.organizerRow]}
+                style={[
+                  styles.row,
+                  { backgroundColor: isNightMode ? themeColors.cardBg : '#FFFDF0', borderColor: '#FCD34D' },
+                ]}
                 onPress={() => setSelectedUser(org)}
                 activeOpacity={0.8}
               >
                 <UserAvatar user={org} size={40} />
                 <View style={{ flex: 1 }}>
                   <View style={styles.nameBadgeRow}>
-                    <Text style={styles.name}>{org.full_name}</Text>
+                    <Text style={[styles.name, { color: themeColors.text }]}>{org.full_name}</Text>
                     <VerifiedCheck user={org} size={13} />
-                    <View style={styles.orgBadgePill}>
-                      <Ionicons name="star" size={10} color="#B45309" />
-                      <Text style={styles.orgBadgeText}>Organizer</Text>
+                    <View style={[styles.orgBadgePill, { backgroundColor: isNightMode ? themeColors.surface : '#FEF3C7', borderColor: isNightMode ? themeColors.border : '#FCD34D' }]}>
+                      <Ionicons name="star" size={10} color={isNightMode ? themeColors.warning : '#B45309'} />
+                      <Text style={[styles.orgBadgeText, { color: isNightMode ? themeColors.warning : '#B45309' }]}>Organizer</Text>
                     </View>
                   </View>
-                  <Text style={styles.meta}>{org.club_name} • {org.position}</Text>
+                  <Text style={[styles.meta, { color: themeColors.textMuted }]}>{org.club_name} • {org.position}</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+                <Ionicons name="chevron-forward" size={16} color={themeColors.textMuted} />
               </TouchableOpacity>
             );
           }
@@ -105,7 +110,7 @@ export default function ParticipantsScreen({ route, navigation }: Props) {
 
           return (
             <TouchableOpacity
-              style={styles.row}
+              style={[styles.row, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}
               onPress={() => u && setSelectedUser(u)}
               activeOpacity={0.8}
             >
@@ -117,8 +122,8 @@ export default function ParticipantsScreen({ route, navigation }: Props) {
                 </View>
               )}
               <View style={{ flex: 1 }}>
-                <VerifiedName user={u} textStyle={styles.name} numberOfLines={1} checkSize={13} />
-                <Text style={styles.meta}>{u?.club_name} • {u?.position}</Text>
+                <VerifiedName user={u} textStyle={[styles.name, { color: themeColors.text }]} numberOfLines={1} checkSize={13} />
+                <Text style={[styles.meta, { color: themeColors.textMuted }]}>{u?.club_name} • {u?.position}</Text>
                 {isCheckedIn ? (
                   <View style={styles.checkInBadge}>
                     <Ionicons name="checkmark-circle" size={12} color={colors.success} />
@@ -150,12 +155,12 @@ export default function ParticipantsScreen({ route, navigation }: Props) {
                   </TouchableOpacity>
                 </View>
               ) : (
-                <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+                <Ionicons name="chevron-forward" size={16} color={themeColors.textMuted} />
               )}
             </TouchableOpacity>
           );
         }}
-        ListEmptyComponent={<Text style={styles.empty}>No participants yet.</Text>}
+        ListEmptyComponent={<Text style={[styles.empty, { color: themeColors.textMuted }]}>No participants yet.</Text>}
       />
 
       <DeclineReasonModal

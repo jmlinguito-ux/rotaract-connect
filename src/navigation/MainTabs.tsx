@@ -52,7 +52,7 @@ export default function MainTabs() {
         options={{
           title: 'Inbox',
           tabBarBadge: unreadCount > 0 ? unreadCount : undefined,
-          tabBarBadgeStyle: { backgroundColor: colors.primary, color: '#fff', fontSize: 11, fontWeight: '800' },
+          tabBarBadgeStyle: { backgroundColor: themeColors.primary, color: '#fff', fontSize: 11, fontWeight: '800' },
         }}
       />
       <Tab.Screen name="ProfileTab" component={ProfileScreen} options={{ title: 'Profile' }} />

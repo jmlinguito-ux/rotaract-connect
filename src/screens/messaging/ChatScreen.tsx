@@ -18,6 +18,7 @@ import { UserProfileModal } from '../../components/UserProfileModal';
 import { useChatPresence } from '../../hooks/useChatPresence';
 import { useSignedUrl } from '../../hooks/useSignedUrl';
 import { uploadImageAsset } from '../../services/storage';
+import { formatTime } from '../../utils/timeFormat';
 import { DirectMessage } from '../../types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Chat'>;
@@ -372,7 +373,7 @@ export default function ChatScreen({ route, navigation }: Props) {
                       onPress={isGroupChat ? () => setExpandedSeenId(prev => (prev === item.id ? null : item.id)) : undefined}
                     >
                       <Text style={[styles.messageTime, { color: isMe ? 'rgba(255,255,255,0.7)' : themeColors.textMuted }]}>
-                        {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        {formatTime(item.created_at)}
                       </Text>
                       {isMe && !item.deleted_at && item.send_status === 'sending' && <Ionicons name="time-outline" size={12} color="rgba(255,255,255,0.7)" />}
                       {isMe && !item.deleted_at && item.send_status === 'failed' && (

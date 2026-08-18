@@ -8,6 +8,7 @@ import { colors } from '../../theme/colors';
 import { AreaOfFocus, EventType, EventVisibility } from '../../types';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
 import { RootStackParamList } from '../../navigation/types';
 import { LocationPicker } from '../../components/LocationPicker';
 import { DEFAULT_LOCATION, LocationValue } from '../../components/location/shared';
@@ -30,6 +31,7 @@ defaultEnd.setHours(13, 0, 0, 0);
 export default function CreateEventScreen({ navigation }: Props) {
   const { user } = useAuth();
   const { createEvent, users } = useData();
+  const { colors: themeColors, isNightMode } = useTheme();
 
   const [title, setTitle] = useState('');
   const [desc, setDesc] = useState('');
@@ -252,7 +254,7 @@ export default function CreateEventScreen({ navigation }: Props) {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['bottom', 'left', 'right']}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.bg }]} edges={['bottom', 'left', 'right']}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -279,30 +281,30 @@ export default function CreateEventScreen({ navigation }: Props) {
           >
           <CoverPhotoPicker value={coverPhoto} onChange={setCoverPhoto} />
 
-          <Text style={styles.label}>Event Type</Text>
+          <Text style={[styles.label, { color: themeColors.text }]}>Event Type</Text>
           <View style={styles.typeRow}>
             <TouchableOpacity
-              style={[styles.typeCard, type === 'SERVICE_PROJECT' && styles.typeCardActive]}
+              style={[styles.typeCard, { backgroundColor: themeColors.surface, borderColor: themeColors.border }, type === 'SERVICE_PROJECT' && styles.typeCardActive]}
               onPress={() => setType('SERVICE_PROJECT')}
             >
-              <FontAwesome5 name="hands-helping" size={16} color={type === 'SERVICE_PROJECT' ? '#fff' : colors.primary} />
-              <Text style={[styles.typeText, type === 'SERVICE_PROJECT' && styles.typeTextActive]}>Service Project</Text>
+              <FontAwesome5 name="hands-helping" size={16} color={type === 'SERVICE_PROJECT' ? '#fff' : themeColors.primary} />
+              <Text style={[styles.typeText, { color: themeColors.text }, type === 'SERVICE_PROJECT' && styles.typeTextActive]}>Service Project</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.typeCard, type === 'FELLOWSHIP' && styles.typeCardActive]}
+              style={[styles.typeCard, { backgroundColor: themeColors.surface, borderColor: themeColors.border }, type === 'FELLOWSHIP' && styles.typeCardActive]}
               onPress={() => setType('FELLOWSHIP')}
             >
-              <Ionicons name="people" size={18} color={type === 'FELLOWSHIP' ? '#fff' : colors.primary} />
-              <Text style={[styles.typeText, type === 'FELLOWSHIP' && styles.typeTextActive]}>Fellowship</Text>
+              <Ionicons name="people" size={18} color={type === 'FELLOWSHIP' ? '#fff' : themeColors.primary} />
+              <Text style={[styles.typeText, { color: themeColors.text }, type === 'FELLOWSHIP' && styles.typeTextActive]}>Fellowship</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.typeCard, type === 'DISTRICT_EVENT' && { backgroundColor: '#C9A227', borderColor: '#C9A227' }]}
+              style={[styles.typeCard, { backgroundColor: themeColors.surface, borderColor: themeColors.border }, type === 'DISTRICT_EVENT' && { backgroundColor: '#C9A227', borderColor: '#C9A227' }]}
               onPress={() => setType('DISTRICT_EVENT')}
             >
               <Ionicons name="ribbon" size={18} color={type === 'DISTRICT_EVENT' ? '#fff' : '#C9A227'} />
-              <Text style={[styles.typeText, type === 'DISTRICT_EVENT' && styles.typeTextActive]}>District Event</Text>
+              <Text style={[styles.typeText, { color: themeColors.text }, type === 'DISTRICT_EVENT' && styles.typeTextActive]}>District Event</Text>
             </TouchableOpacity>
           </View>
 
@@ -585,14 +587,16 @@ export default function CreateEventScreen({ navigation }: Props) {
 }
 
 function Field({ label, ...rest }: any) {
+  const { colors: themeColors } = useTheme();
   const [focused, setFocused] = useState(false);
   return (
     <>
-      <Text style={styles.label}>{label}</Text>
+      <Text style={[styles.label, { color: themeColors.text }]}>{label}</Text>
       <TextInput
         style={[
           styles.input,
-          focused && styles.inputFocused,
+          { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text },
+          focused && [styles.inputFocused, { borderColor: themeColors.primary }],
           rest.multiline && { minHeight: 90, textAlignVertical: 'top' },
         ]}
         onFocus={(e: any) => {
@@ -608,7 +612,7 @@ function Field({ label, ...rest }: any) {
           setFocused(false);
           rest.onBlur?.(e);
         }}
-        placeholderTextColor={colors.textMuted}
+        placeholderTextColor={themeColors.textMuted}
         {...rest}
       />
     </>
@@ -616,10 +620,11 @@ function Field({ label, ...rest }: any) {
 }
 
 function Toggle({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
+  const { colors: themeColors } = useTheme();
   return (
-    <TouchableOpacity style={styles.toggleRow} onPress={() => onChange(!value)}>
-      <Text style={styles.toggleLabel}>{label}</Text>
-      <View style={[styles.toggle, value && styles.toggleOn]}>
+    <TouchableOpacity style={[styles.toggleRow, { borderBottomColor: themeColors.border }]} onPress={() => onChange(!value)}>
+      <Text style={[styles.toggleLabel, { color: themeColors.text }]}>{label}</Text>
+      <View style={[styles.toggle, { backgroundColor: themeColors.border }, value && [styles.toggleOn, { backgroundColor: themeColors.primary }]]}>
         <View style={[styles.toggleKnob, value && styles.toggleKnobOn]} />
       </View>
     </TouchableOpacity>

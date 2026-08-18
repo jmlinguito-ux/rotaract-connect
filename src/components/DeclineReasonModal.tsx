@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, Modal, StyleSheet, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, ScrollView, Keyboard } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
+import { useTheme } from '../context/ThemeContext';
 
 interface DeclineReasonModalProps {
   visible: boolean;
@@ -23,6 +24,7 @@ export function DeclineReasonModal({
   onConfirm,
   onCancel,
 }: DeclineReasonModalProps) {
+  const { colors: themeColors, isNightMode } = useTheme();
   const [remarks, setRemarks] = useState<string>('');
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
 
@@ -68,25 +70,25 @@ export function DeclineReasonModal({
           keyboardShouldPersistTaps="handled"
           bounces={false}
         >
-          <View style={styles.card}>
+          <View style={[styles.card, { backgroundColor: themeColors.cardBg }]}>
             <View style={styles.header}>
               <View style={styles.iconCircle}>
                 <Ionicons name="alert-circle" size={22} color={colors.danger} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.title}>{title ?? 'Decline Join Request'}</Text>
-                <Text style={styles.sub}>
+                <Text style={[styles.title, { color: themeColors.text }]}>{title ?? 'Decline Join Request'}</Text>
+                <Text style={[styles.sub, { color: themeColors.textMuted }]}>
                   {description ??
                     `Enter remarks for ${applicantName} explaining why their request for ${eventTitle ? `"${eventTitle}"` : 'the event'} was declined.`}
                 </Text>
               </View>
             </View>
 
-            <Text style={styles.sectionLabel}>Enter Reason</Text>
+            <Text style={[styles.sectionLabel, { color: themeColors.primary }]}>Enter Reason</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text }]}
               placeholder="Type your reason here (optional)..."
-              placeholderTextColor={colors.textMuted}
+              placeholderTextColor={themeColors.textMuted}
               value={remarks}
               onChangeText={setRemarks}
               multiline
@@ -95,7 +97,7 @@ export function DeclineReasonModal({
 
             <View style={styles.actions}>
               <TouchableOpacity style={styles.cancelBtn} onPress={onCancel}>
-                <Text style={styles.cancelText}>Cancel</Text>
+                <Text style={[styles.cancelText, { color: themeColors.textMuted }]}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.confirmBtn} onPress={handleConfirm}>
                 <Ionicons name="send" size={14} color="#fff" />

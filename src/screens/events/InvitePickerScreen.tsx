@@ -7,6 +7,7 @@ import { colors } from '../../theme/colors';
 import { RootStackParamList } from '../../navigation/types';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
 import UserAvatar from '../../components/UserAvatar';
 import { VerifiedName } from '../../components/VerifiedCheck';
 import { isOnOrganizingTeam } from '../../utils/eventApproval';
@@ -17,6 +18,7 @@ export default function InvitePickerScreen({ route, navigation }: Props) {
   const { eventId } = route.params;
   const { users, events, invitations, participants, invite } = useData();
   const { user } = useAuth();
+  const { colors: themeColors, isNightMode } = useTheme();
   const [q, setQ] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   // Absolutely positioned children ignore their parent's padding in RN, so the
@@ -28,8 +30,8 @@ export default function InvitePickerScreen({ route, navigation }: Props) {
   // Deep links must honor the event's invite policy too, not just the Invite button.
   if (event && user && !isOnOrganizingTeam(event, user) && !event.allow_participant_invites) {
     return (
-      <SafeAreaView style={styles.safe} edges={['bottom']}>
-        <Text style={styles.empty}>Only the organizing team can send invitations for this event.</Text>
+      <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.bg }]} edges={['bottom']}>
+        <Text style={[styles.empty, { color: themeColors.textMuted }]}>Only the organizing team can send invitations for this event.</Text>
       </SafeAreaView>
     );
   }
@@ -65,35 +67,42 @@ export default function InvitePickerScreen({ route, navigation }: Props) {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
-      <View style={styles.searchWrap}>
-        <Ionicons name="search" size={18} color={colors.textMuted} />
-        <TextInput style={styles.search} placeholder="Search verified Rotaractors" placeholderTextColor={colors.textMuted} value={q} onChangeText={setQ} autoFocus />
+    <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.bg }]} edges={['bottom']}>
+      <View style={[styles.searchWrap, { backgroundColor: themeColors.surface, borderBottomColor: themeColors.border }]}>
+        <Ionicons name="search" size={18} color={themeColors.textMuted} />
+        <TextInput
+          style={[styles.search, { color: themeColors.text }]}
+          placeholder="Search verified Rotaractors"
+          placeholderTextColor={themeColors.textMuted}
+          value={q}
+          onChangeText={setQ}
+          autoFocus
+        />
       </View>
       <FlatList
         data={inviteableUsers}
         keyExtractor={i => i.id}
         contentContainerStyle={{ paddingBottom: 100 }}
-        ItemSeparatorComponent={() => <View style={styles.sep} />}
+        ItemSeparatorComponent={() => <View style={[styles.sep, { backgroundColor: themeColors.border }]} />}
         renderItem={({ item }) => {
           const isSelected = selected.has(item.id);
           return (
             <TouchableOpacity style={styles.row} onPress={() => toggle(item.id)}>
               <UserAvatar user={item} size={40} />
               <View style={{ flex: 1 }}>
-                <VerifiedName user={item} textStyle={styles.name} numberOfLines={1} />
-                <Text style={styles.meta}>{item.club_name}</Text>
+                <VerifiedName user={item} textStyle={[styles.name, { color: themeColors.text }]} numberOfLines={1} />
+                <Text style={[styles.meta, { color: themeColors.textMuted }]}>{item.club_name}</Text>
               </View>
-              <View style={[styles.check, isSelected && styles.checkActive]}>
+              <View style={[styles.check, { borderColor: themeColors.border }, isSelected && [styles.checkActive, { backgroundColor: themeColors.primary, borderColor: themeColors.primary }]]}>
                 {isSelected && <Ionicons name="checkmark" size={16} color="#fff" />}
               </View>
             </TouchableOpacity>
           );
         }}
-        ListEmptyComponent={<Text style={styles.empty}>No Rotaractors match.</Text>}
+        ListEmptyComponent={<Text style={[styles.empty, { color: themeColors.textMuted }]}>No Rotaractors match.</Text>}
       />
-      <View style={[styles.footer, { paddingBottom: 16 + insets.bottom }]}>
-        <TouchableOpacity style={[styles.sendBtn, selected.size === 0 && styles.sendBtnDisabled]} disabled={selected.size === 0} onPress={submit}>
+      <View style={[styles.footer, { backgroundColor: themeColors.cardBg, borderTopColor: themeColors.border, paddingBottom: 16 + insets.bottom }]}>
+        <TouchableOpacity style={[styles.sendBtn, { backgroundColor: themeColors.primary }, selected.size === 0 && styles.sendBtnDisabled]} disabled={selected.size === 0} onPress={submit}>
           <Ionicons name="send" size={16} color="#fff" />
           <Text style={styles.sendText}>Send {selected.size > 0 ? `(${selected.size})` : ''} Invitation{selected.size === 1 ? '' : 's'}</Text>
         </TouchableOpacity>

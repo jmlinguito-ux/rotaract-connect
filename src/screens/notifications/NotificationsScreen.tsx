@@ -6,6 +6,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { colors } from '../../theme/colors';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
+import { useTheme } from '../../context/ThemeContext';
 import { RootStackParamList } from '../../navigation/types';
 import { AppNotification, NotificationKind, EventParticipant, AppUser, RotaractEvent } from '../../types';
 import { DeclineReasonModal } from '../../components/DeclineReasonModal';
@@ -47,6 +48,7 @@ const ICON_COLOR: Record<NotificationKind, string> = {
 
 export default function NotificationsScreen({ navigation }: Props) {
   const { user } = useAuth();
+  const { colors: themeColors, isNightMode } = useTheme();
   const {
     notificationsFor, markNotificationsRead, deleteNotification, participantsFor, invitationFor,
     approveParticipant, declineParticipant, respondInvitation, users, events,
@@ -118,7 +120,7 @@ export default function NotificationsScreen({ navigation }: Props) {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.bg }]} edges={['bottom']}>
       <FlatList
         data={notifs}
         keyExtractor={i => i.id}
@@ -131,7 +133,11 @@ export default function NotificationsScreen({ navigation }: Props) {
           return (
             <SwipeableRow onDelete={() => deleteNotification(item.id)}>
               <TouchableOpacity
-                style={[styles.notifRow, !item.is_read && styles.unread]}
+                style={[
+                  styles.notifRow,
+                  { backgroundColor: themeColors.cardBg, borderColor: themeColors.border },
+                  !item.is_read && [styles.unread, { backgroundColor: isNightMode ? themeColors.cardBg : '#FDF2F7', borderColor: isNightMode ? themeColors.primary : '#F9D6E5' }],
+                ]}
                 onPress={() => handleRowPress(item)}
                 activeOpacity={0.8}
               >
@@ -140,15 +146,15 @@ export default function NotificationsScreen({ navigation }: Props) {
                 </View>
                 <View style={{ flex: 1 }}>
                   <View style={styles.rowHeader}>
-                    <Text style={styles.title}>{item.title}</Text>
+                    <Text style={[styles.title, { color: themeColors.text }]}>{item.title}</Text>
                     {item.kind === 'JOIN_REQUEST' && (
                       <View style={styles.badgePill}>
                         <Text style={styles.badgeText}>Review Needed</Text>
                       </View>
                     )}
                   </View>
-                  <Text style={styles.msg}>{item.message}</Text>
-                  <Text style={styles.time}>{new Date(item.created_at).toLocaleString()}</Text>
+                  <Text style={[styles.msg, { color: themeColors.textMuted }]}>{item.message}</Text>
+                  <Text style={[styles.time, { color: themeColors.textMuted }]}>{new Date(item.created_at).toLocaleString()}</Text>
 
                   {/* Direct Inline Quick Action Buttons for Join Requests in Inbox */}
                   {item.kind === 'JOIN_REQUEST' && pendingParticipants.length > 0 && (
@@ -246,27 +252,27 @@ export default function NotificationsScreen({ navigation }: Props) {
         {reviewModalData && (
           <View style={styles.reviewContent}>
             {/* Event Context Header */}
-            <View style={styles.eventContextCard}>
-              <Text style={styles.eventContextLabel}>Event</Text>
-              <Text style={styles.eventContextTitle}>{reviewModalData.event?.title}</Text>
-              <Text style={styles.eventContextSub}>
+            <View style={[styles.eventContextCard, { backgroundColor: themeColors.surface, borderColor: themeColors.border }]}>
+              <Text style={[styles.eventContextLabel, { color: themeColors.primary }]}>Event</Text>
+              <Text style={[styles.eventContextTitle, { color: themeColors.text }]}>{reviewModalData.event?.title}</Text>
+              <Text style={[styles.eventContextSub, { color: themeColors.textMuted }]}>
                 {reviewModalData.event?.city} • {new Date(reviewModalData.event?.start_datetime ?? '').toLocaleDateString()}
               </Text>
             </View>
 
             {/* Applicant Profile Details */}
-            <View style={styles.applicantCard}>
+            <View style={[styles.applicantCard, { backgroundColor: isNightMode ? themeColors.cardBg : '#FDF2F7', borderColor: isNightMode ? themeColors.border : '#F9D6E5' }]}>
               <UserAvatar
                 user={{ full_name: reviewModalData.applicant?.full_name ?? '' }}
                 size={48}
               />
 
               <View style={{ flex: 1 }}>
-                <Text style={styles.applicantName}>{reviewModalData.applicant?.full_name}</Text>
-                <Text style={styles.applicantMeta}>
+                <Text style={[styles.applicantName, { color: themeColors.text }]}>{reviewModalData.applicant?.full_name}</Text>
+                <Text style={[styles.applicantMeta, { color: themeColors.text }]}>
                   {reviewModalData.applicant?.club_name}
                 </Text>
-                <Text style={styles.applicantRole}>
+                <Text style={[styles.applicantRole, { color: themeColors.textMuted }]}>
                   Position: {reviewModalData.applicant?.position}
                 </Text>
                 <View style={styles.verifiedBadge}>

@@ -7,7 +7,9 @@ import * as Location from 'expo-location';
 import { colors } from '../../theme/colors';
 import { RootStackParamList } from '../../navigation/types';
 import { useData } from '../../context/DataContext';
+import { useTheme } from '../../context/ThemeContext';
 import { distanceMeters, formatDistance, punctuality } from '../../utils/checkIn';
+import { formatTime } from '../../utils/timeFormat';
 import UserAvatar from '../../components/UserAvatar';
 import { VerifiedName } from '../../components/VerifiedCheck';
 
@@ -16,6 +18,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'MarkAttendance'>;
 export default function MarkAttendanceScreen({ route }: Props) {
   const { eventId } = route.params;
   const { events, users, participantsFor, checkIn, markAttendance } = useData();
+  const { colors: themeColors, isNightMode } = useTheme();
 
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -25,8 +28,8 @@ export default function MarkAttendanceScreen({ route }: Props) {
 
   if (!event) {
     return (
-      <SafeAreaView style={styles.safe}>
-        <Text style={{ padding: 20, color: colors.text }}>Event not found.</Text>
+      <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.bg }]}>
+        <Text style={{ padding: 20, color: themeColors.text }}>Event not found.</Text>
       </SafeAreaView>
     );
   }
@@ -87,20 +90,20 @@ export default function MarkAttendanceScreen({ route }: Props) {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
-      <View style={styles.headerCard}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.bg }]} edges={['bottom']}>
+      <View style={[styles.headerCard, { backgroundColor: themeColors.cardBg, borderBottomColor: themeColors.border }]}>
         <View style={styles.headerRow}>
-          <Ionicons name="location" size={20} color={colors.primary} />
-          <Text style={styles.headerTitle}>{event.title}</Text>
+          <Ionicons name="location" size={20} color={themeColors.primary} />
+          <Text style={[styles.headerTitle, { color: themeColors.text }]}>{event.title}</Text>
         </View>
-        <Text style={styles.headerSub}>{event.address}, {event.city}</Text>
+        <Text style={[styles.headerSub, { color: themeColors.textMuted }]}>{event.address}, {event.city}</Text>
 
         <View style={styles.statBar}>
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{checkedInCount} / {joined.length}</Text>
-            <Text style={styles.statLabel}>Checked-In</Text>
+            <Text style={[styles.statValue, { color: themeColors.primary }]}>{checkedInCount} / {joined.length}</Text>
+            <Text style={[styles.statLabel, { color: themeColors.textMuted }]}>Checked-In</Text>
           </View>
-          <View style={styles.progressContainer}>
+          <View style={[styles.progressContainer, { backgroundColor: themeColors.surface }]}>
             <View
               style={[
                 styles.progressBar,
@@ -126,7 +129,7 @@ export default function MarkAttendanceScreen({ route }: Props) {
 
           if (isCheckedIn && item.checked_in_at) {
             const checkInDate = new Date(item.checked_in_at);
-            checkInTimeText = checkInDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            checkInTimeText = formatTime(checkInDate);
             const p = punctuality(event, checkInDate);
             punctualityText = p.onTime ? 'On time' : `Late by ${p.lateByMinutes} min`;
             if (item.check_in_distance_m !== undefined) {
@@ -135,7 +138,11 @@ export default function MarkAttendanceScreen({ route }: Props) {
           }
 
           return (
-            <View style={[styles.card, isCheckedIn && styles.cardCheckedIn]}>
+            <View style={[
+              styles.card,
+              { backgroundColor: themeColors.cardBg, borderColor: themeColors.border },
+              isCheckedIn && [styles.cardCheckedIn, { backgroundColor: isNightMode ? themeColors.cardBg : '#F2FAF5', borderColor: colors.success + '44' }],
+            ]}>
               <View style={styles.cardHeader}>
                 {u ? (
                   <UserAvatar user={u} size={40} />
@@ -143,8 +150,8 @@ export default function MarkAttendanceScreen({ route }: Props) {
                   <View style={styles.avatar}><Text style={styles.avatarText}>?</Text></View>
                 )}
                 <View style={{ flex: 1 }}>
-                  <VerifiedName user={u} textStyle={styles.name} numberOfLines={1} />
-                  <Text style={styles.meta}>{u?.club_name}</Text>
+                  <VerifiedName user={u} textStyle={[styles.name, { color: themeColors.text }]} numberOfLines={1} />
+                  <Text style={[styles.meta, { color: themeColors.textMuted }]}>{u?.club_name}</Text>
                 </View>
                 {isCheckedIn && (
                   <View style={styles.checkedInBadge}>
@@ -155,24 +162,24 @@ export default function MarkAttendanceScreen({ route }: Props) {
               </View>
 
               {isCheckedIn ? (
-                <View style={styles.detailsBox}>
+                <View style={[styles.detailsBox, { borderTopColor: themeColors.border }]}>
                   <View style={styles.detailRow}>
-                    <Ionicons name="time-outline" size={14} color={colors.textMuted} />
-                    <Text style={styles.detailText}>
+                    <Ionicons name="time-outline" size={14} color={themeColors.textMuted} />
+                    <Text style={[styles.detailText, { color: themeColors.text }]}>
                       {checkInTimeText ? `Checked in at ${checkInTimeText}` : 'Checked in'}
                       {punctualityText ? ` (${punctualityText})` : ''}
                     </Text>
                   </View>
                   {distanceText ? (
                     <View style={styles.detailRow}>
-                      <Ionicons name="navigate-outline" size={14} color={colors.textMuted} />
-                      <Text style={styles.detailText}>{distanceText} from event location</Text>
+                      <Ionicons name="navigate-outline" size={14} color={themeColors.textMuted} />
+                      <Text style={[styles.detailText, { color: themeColors.text }]}>{distanceText} from event location</Text>
                     </View>
                   ) : null}
                   {item.check_in_method === 'ORGANIZER' && (
                     <View style={styles.detailRow}>
-                      <Ionicons name="hand-left-outline" size={14} color={colors.textMuted} />
-                      <Text style={styles.detailText}>Recorded by organizer (no GPS verification)</Text>
+                      <Ionicons name="hand-left-outline" size={14} color={themeColors.textMuted} />
+                      <Text style={[styles.detailText, { color: themeColors.text }]}>Recorded by organizer (no GPS verification)</Text>
                     </View>
                   )}
 
@@ -186,7 +193,7 @@ export default function MarkAttendanceScreen({ route }: Props) {
                 </View>
               ) : (
                 <TouchableOpacity
-                  style={styles.checkInBtn}
+                  style={[styles.checkInBtn, { backgroundColor: themeColors.primary }]}
                   onPress={() => handleCheckInParticipant(item.id)}
                   disabled={isBusy}
                 >
@@ -203,7 +210,7 @@ export default function MarkAttendanceScreen({ route }: Props) {
             </View>
           );
         }}
-        ListEmptyComponent={<Text style={styles.empty}>No joined participants to check in.</Text>}
+        ListEmptyComponent={<Text style={[styles.empty, { color: themeColors.textMuted }]}>No joined participants to check in.</Text>}
       />
     </SafeAreaView>
   );

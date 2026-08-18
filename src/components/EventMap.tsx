@@ -5,6 +5,8 @@ import { RotaractEvent } from '../types';
 import { statusColor } from '../theme/statusColor';
 
 import { distanceMeters, formatDistance } from '../utils/checkIn';
+import { useTheme } from '../context/ThemeContext';
+import { lightMapStyle, darkMapStyle } from '../theme/mapStyles';
 
 // District 3800 covers Metro Manila and Rizal — used when no events are visible.
 const FALLBACK_REGION: Region = {
@@ -81,6 +83,7 @@ function sameRegion(a: Region | null, b: Region): boolean {
 }
 
 export function EventMap({ events, userCoords, style, interactive = false, showAreas = true, areaRadiusM = 400, onMarkerPress }: EventMapProps) {
+  const { isNightMode } = useTheme();
   const mapRef = useRef<MapView>(null);
   const isMapReady = useRef(false);
   const hasSize = useRef(false);
@@ -110,6 +113,8 @@ export function EventMap({ events, userCoords, style, interactive = false, showA
       ref={mapRef}
       style={[styles.map, style]}
       initialRegion={region}
+      userInterfaceStyle={isNightMode ? 'dark' : 'light'}
+      customMapStyle={isNightMode ? darkMapStyle : lightMapStyle}
       // Pan + zoom work directly in the container now — no need to open fullscreen.
       scrollEnabled
       zoomEnabled
@@ -143,37 +148,40 @@ export function EventMap({ events, userCoords, style, interactive = false, showA
         />
       )}
 
-      {events.map(event => {
-        let distText = '';
-        if (userCoords) {
-          const d = distanceMeters(userCoords, { latitude: event.latitude, longitude: event.longitude });
-          distText = `${formatDistance(d)} away • `;
-        }
+      {events
+        .filter(e => e && typeof e.latitude === 'number' && !isNaN(e.latitude) && typeof e.longitude === 'number' && !isNaN(e.longitude))
+        .map(event => {
+          let distText = '';
+          if (userCoords) {
+            const d = distanceMeters(userCoords, { latitude: event.latitude, longitude: event.longitude });
+            distText = `${formatDistance(d)} away • `;
+          }
 
-        const color = statusColor(event.status);
-        return (
-          <React.Fragment key={event.id}>
-            {showAreas && (
-              // Communicates an approximate area rather than a precise pinpoint.
-              <Circle
-                center={{ latitude: event.latitude, longitude: event.longitude }}
-                radius={areaRadiusM}
-                strokeWidth={1}
-                strokeColor={color + '99'}
-                fillColor={color + '26'}
+          const color = statusColor(event.status);
+          return (
+            <React.Fragment key={`event_group_${event.id}`}>
+              {showAreas && (
+                // Communicates an approximate area rather than a precise pinpoint.
+                <Circle
+                  key={`circle_${event.id}`}
+                  center={{ latitude: event.latitude, longitude: event.longitude }}
+                  radius={areaRadiusM}
+                  strokeWidth={1}
+                  strokeColor={color + '99'}
+                  fillColor={color + '26'}
+                />
+              )}
+              <Marker
+                key={`marker_${event.id}`}
+                coordinate={{ latitude: event.latitude, longitude: event.longitude }}
+                pinColor={color}
+                title={event.title}
+                description={`${distText}${event.address}, ${event.city}`}
+                onPress={() => onMarkerPress?.(event.id)}
               />
-            )}
-            <Marker
-              coordinate={{ latitude: event.latitude, longitude: event.longitude }}
-              pinColor={color}
-              title={event.title}
-              description={`${distText}${event.address}, ${event.city}`}
-              tracksViewChanges={false}
-              onPress={() => onMarkerPress?.(event.id)}
-            />
-          </React.Fragment>
-        );
-      })}
+            </React.Fragment>
+          );
+        })}
     </MapView>
   );
 }

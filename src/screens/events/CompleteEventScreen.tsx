@@ -6,12 +6,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../../theme/colors';
 import { RootStackParamList } from '../../navigation/types';
 import { useData } from '../../context/DataContext';
+import { useTheme } from '../../context/ThemeContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'CompleteEvent'>;
 
 export default function CompleteEventScreen({ route, navigation }: Props) {
   const { eventId } = route.params;
   const { events, impactFor, saveImpact } = useData();
+  const { colors: themeColors, isNightMode } = useTheme();
   const event = events.find(e => e.id === eventId);
   const existingImpact = impactFor(eventId);
 
@@ -22,7 +24,7 @@ export default function CompleteEventScreen({ route, navigation }: Props) {
   const [trees, setTrees] = useState(existingImpact?.trees_planted.toString() || '0');
   const [summary, setSummary] = useState(existingImpact?.impact_summary || '');
 
-  if (!event) return <Text style={{ padding: 20 }}>Event not found.</Text>;
+  if (!event) return <Text style={{ padding: 20, color: themeColors.text }}>Event not found.</Text>;
 
   const handleSave = () => {
     // Completing early would release scoreboard points for an event that never ran.
@@ -45,7 +47,7 @@ export default function CompleteEventScreen({ route, navigation }: Props) {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.bg }]} edges={['bottom']}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -57,10 +59,10 @@ export default function CompleteEventScreen({ route, navigation }: Props) {
           keyboardDismissMode="on-drag"
           automaticallyAdjustKeyboardInsets={true}
         >
-          <View style={styles.headerBox}>
-            <Ionicons name="ribbon" size={32} color={colors.primary} />
-            <Text style={styles.headerTitle}>Record Event Impact</Text>
-            <Text style={styles.headerSub}>{event.title}</Text>
+          <View style={[styles.headerBox, { backgroundColor: isNightMode ? themeColors.cardBg : '#FDF2F7', borderColor: isNightMode ? themeColors.border : '#F9D6E5' }]}>
+            <Ionicons name="ribbon" size={32} color={themeColors.primary} />
+            <Text style={[styles.headerTitle, { color: themeColors.text }]}>Record Event Impact</Text>
+            <Text style={[styles.headerSub, { color: themeColors.primary }]}>{event.title}</Text>
           </View>
 
           <View style={styles.formGroup}>
@@ -80,7 +82,7 @@ export default function CompleteEventScreen({ route, navigation }: Props) {
             />
           </View>
 
-          <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
+          <TouchableOpacity style={[styles.saveBtn, { backgroundColor: themeColors.primary }]} onPress={handleSave}>
             <Ionicons name="checkmark-done" size={20} color="#fff" />
             <Text style={styles.saveBtnText}>Save & Complete Event</Text>
           </TouchableOpacity>
@@ -91,14 +93,15 @@ export default function CompleteEventScreen({ route, navigation }: Props) {
 }
 
 function Field({ label, icon, ...rest }: any) {
+  const { colors: themeColors } = useTheme();
   return (
     <View style={styles.fieldWrap}>
-      <Text style={styles.label}>{label}</Text>
-      <View style={[styles.inputBox, rest.multiline && { alignItems: 'flex-start' }]}>
-        {icon && <Ionicons name={icon} size={18} color={colors.textMuted} style={{ marginTop: rest.multiline ? 10 : 0 }} />}
+      <Text style={[styles.label, { color: themeColors.text }]}>{label}</Text>
+      <View style={[styles.inputBox, { backgroundColor: themeColors.surface, borderColor: themeColors.border }, rest.multiline && { alignItems: 'flex-start' }]}>
+        {icon && <Ionicons name={icon} size={18} color={themeColors.textMuted} style={{ marginTop: rest.multiline ? 10 : 0 }} />}
         <TextInput
-          style={[styles.input, rest.multiline && { minHeight: 80, textAlignVertical: 'top' }]}
-          placeholderTextColor={colors.textMuted}
+          style={[styles.input, { color: themeColors.text }, rest.multiline && { minHeight: 80, textAlignVertical: 'top' }]}
+          placeholderTextColor={themeColors.textMuted}
           onFocus={(e: any) => {
             if (Platform.OS === 'web' && e?.target?.scrollIntoView) {
               setTimeout(() => {

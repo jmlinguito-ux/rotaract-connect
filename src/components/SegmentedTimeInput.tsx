@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, NativeSyntheticEvent, TextInputKeyPressEventData, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
+import { useTheme } from '../context/ThemeContext';
 
 interface SegmentedTimeInputProps {
   label: string;
@@ -13,6 +14,7 @@ interface SegmentedTimeInputProps {
 }
 
 export function SegmentedTimeInput({ label, value, baseDate, onChangeTime, onOpenPicker, error }: SegmentedTimeInputProps) {
+  const { colors: themeColors, isNightMode } = useTheme();
   const [focusedSegment, setFocusedSegment] = useState<'hour' | 'minute' | 'period' | null>(null);
   const [digitBuffer, setDigitBuffer] = useState<string>('');
   const inputRef = useRef<TextInput>(null);
@@ -164,9 +166,13 @@ export function SegmentedTimeInput({ label, value, baseDate, onChangeTime, onOpe
 
   return (
     <View style={styles.container}>
-      <Text style={styles.label}>{label}</Text>
+      <Text style={[styles.label, { color: themeColors.primary }]}>{label}</Text>
 
-      <View style={[styles.inputCard, focusedSegment && styles.inputCardFocused]}>
+      <View style={[
+        styles.inputCard,
+        { backgroundColor: themeColors.surface, borderColor: themeColors.border },
+        focusedSegment && [styles.inputCardFocused, { borderColor: themeColors.primary }],
+      ]}>
         {/* Hidden TextInput for handling keyboard input and auto-advancing */}
         <TextInput
           ref={inputRef}
@@ -197,12 +203,12 @@ export function SegmentedTimeInput({ label, value, baseDate, onChangeTime, onOpe
             onPress={() => selectSegment('hour')}
             activeOpacity={0.7}
           >
-            <Text style={[styles.segmentText, focusedSegment === 'hour' && styles.activeBlueText]}>
+            <Text style={[styles.segmentText, { color: themeColors.text }, focusedSegment === 'hour' && styles.activeBlueText]}>
               {strHours}
             </Text>
           </TouchableOpacity>
 
-          <Text style={styles.colonText}>:</Text>
+          <Text style={[styles.colonText, { color: themeColors.text }]}>:</Text>
 
           {/* Minute Segment */}
           <TouchableOpacity
@@ -210,7 +216,7 @@ export function SegmentedTimeInput({ label, value, baseDate, onChangeTime, onOpe
             onPress={() => selectSegment('minute')}
             activeOpacity={0.7}
           >
-            <Text style={[styles.segmentText, focusedSegment === 'minute' && styles.activeBlueText]}>
+            <Text style={[styles.segmentText, { color: themeColors.text }, focusedSegment === 'minute' && styles.activeBlueText]}>
               {strMinutes}
             </Text>
           </TouchableOpacity>
@@ -223,7 +229,7 @@ export function SegmentedTimeInput({ label, value, baseDate, onChangeTime, onOpe
             onPress={() => selectSegment('period')}
             activeOpacity={0.7}
           >
-            <Text style={[styles.segmentText, focusedSegment === 'period' && styles.activeBlueText]}>
+            <Text style={[styles.segmentText, { color: themeColors.text }, focusedSegment === 'period' && styles.activeBlueText]}>
               {periodStr}
             </Text>
           </TouchableOpacity>
@@ -231,7 +237,7 @@ export function SegmentedTimeInput({ label, value, baseDate, onChangeTime, onOpe
 
         {/* Clock Icon opens browser/native time picker modal */}
         <TouchableOpacity style={styles.clockIconBtn} onPress={onOpenPicker}>
-          <Ionicons name="time-outline" size={18} color={colors.text} />
+          <Ionicons name="time-outline" size={18} color={themeColors.text} />
         </TouchableOpacity>
       </View>
 

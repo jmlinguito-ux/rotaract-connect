@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Dimensions, Easing, Modal, Pressable, StyleSheet, ViewStyle } from 'react-native';
+import { useTheme } from '../context/ThemeContext';
 
 interface BottomSheetProps {
   visible: boolean;
@@ -20,6 +21,7 @@ const SCREEN_HEIGHT = Dimensions.get('window').height;
  * ourselves and leave the Modal itself un-animated.
  */
 export function BottomSheet({ visible, onClose, children, cardStyle }: BottomSheetProps) {
+  const { colors: themeColors } = useTheme();
   const [mounted, setMounted] = useState(visible);
   const [sheetHeight, setSheetHeight] = useState(SCREEN_HEIGHT * 0.5);
   const progress = useRef(new Animated.Value(0)).current;
@@ -57,7 +59,7 @@ export function BottomSheet({ visible, onClose, children, cardStyle }: BottomShe
       <Animated.View style={[styles.backdrop, { opacity: progress }]}>
         <Pressable style={styles.backdropPress} onPress={onClose} />
         <Animated.View
-          style={[styles.card, cardStyle, { transform: [{ translateY }] }]}
+          style={[styles.card, { backgroundColor: themeColors.cardBg }, cardStyle, { transform: [{ translateY }] }]}
           onLayout={e => setSheetHeight(e.nativeEvent.layout.height)}
         >
           {children}

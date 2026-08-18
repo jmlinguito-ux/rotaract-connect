@@ -10,6 +10,7 @@ import UserAvatar from '../../components/UserAvatar';
 import { VerifiedName } from '../../components/VerifiedCheck';
 import { RootStackParamList } from '../../navigation/types';
 import { formatDistance, punctuality } from '../../utils/checkIn';
+import { formatTime, formatDate } from '../../utils/timeFormat';
 import { EventParticipant } from '../../types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ActivityPortfolio'>;
@@ -180,7 +181,7 @@ export default function ActivityPortfolioScreen({ route, navigation }: Props) {
             let checkInDetails = '';
             if (p.checked_in_at) {
               const checkInDate = new Date(p.checked_in_at);
-              const timeStr = checkInDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+              const timeStr = formatTime(checkInDate);
               const pState = punctuality(ev, checkInDate);
               const distStr = p.check_in_distance_m !== undefined ? ` • ${formatDistance(p.check_in_distance_m)}` : '';
               checkInDetails = `Checked in at ${timeStr} (${pState.onTime ? 'On time' : `Late ${pState.lateByMinutes} min`}${distStr})`;
@@ -215,7 +216,7 @@ export default function ActivityPortfolioScreen({ route, navigation }: Props) {
                       {ev.event_type.replace('_', ' ')}
                     </Text>
                   </View>
-                  <Text style={[styles.date, { color: themeColors.textMuted }]}>{new Date(ev.start_datetime).toLocaleDateString()}</Text>
+                  <Text style={[styles.date, { color: themeColors.textMuted }]}>{formatDate(ev.start_datetime, { short: true })}</Text>
                 </View>
 
                 <Text style={[styles.actTitle, { color: themeColors.text }]}>{ev.title}</Text>

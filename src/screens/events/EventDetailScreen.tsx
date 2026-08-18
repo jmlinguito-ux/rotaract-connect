@@ -8,6 +8,7 @@ import { colors } from '../../theme/colors';
 import { StatusBadge } from '../../components/StatusBadge';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
 import { Club } from '../../types';
 import { DeclineReasonModal } from '../../components/DeclineReasonModal';
 import { ConfirmRulesModal } from '../../components/ConfirmRulesModal';
@@ -18,6 +19,7 @@ import { BottomSheet } from '../../components/BottomSheet';
 import { callNumber, sendEmail, openMaps } from '../../utils/contactLinks';
 import { AppUser } from '../../types';
 import { areaOfFocusIcon, areaOfFocusLabel } from '../../data/areasOfFocus';
+import { formatTime, formatDate } from '../../utils/timeFormat';
 
 import * as Location from 'expo-location';
 import { checkInWindow, distanceMeters, formatDistance, CHECK_IN_RADIUS_M } from '../../utils/checkIn';
@@ -35,6 +37,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'EventDetail'>;
 export default function EventDetailScreen({ route, navigation }: Props) {
   const { eventId } = route.params;
   const { user } = useAuth();
+  const { colors: themeColors, isNightMode } = useTheme();
   // The action footer below is a sibling of the SafeAreaView's scroll content, not
   // a child laid out inside its padding — so SafeAreaView's own edges={['bottom']}
   // padding never reaches it. Read the inset directly and pad the footer with it,
@@ -313,7 +316,7 @@ export default function EventDetailScreen({ route, navigation }: Props) {
     if (!userParticipation) return;
     if (hasCheckedIn) {
       const checkInTime = userParticipation.checked_in_at
-        ? new Date(userParticipation.checked_in_at).toLocaleTimeString()
+        ? formatTime(userParticipation.checked_in_at)
         : 'Verified';
       Alert.alert('Attendance Verified', `You checked in at ${checkInTime}. Thank you for volunteering!`);
       return;
@@ -333,7 +336,7 @@ export default function EventDetailScreen({ route, navigation }: Props) {
       const now = new Date();
       const win = checkInWindow(event, now);
       const isScheduleValid = win.state === 'OPEN';
-      const openTimeStr = win.opensAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const openTimeStr = formatTime(win.opensAt);
 
       // 1. Within premise, but schedule is not 30 minutes before event start -> Show schedule error only
       if (isWithinPremise && !isScheduleValid) {
@@ -485,11 +488,11 @@ export default function EventDetailScreen({ route, navigation }: Props) {
       });
 
       if (conflictingEvent) {
-        const conflictStartStr = new Date(conflictingEvent.start_datetime).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
-        const conflictEndStr = new Date(conflictingEvent.end_datetime).toLocaleTimeString([], { timeStyle: 'short' });
+        const conflictDateStr = formatDate(conflictingEvent.start_datetime, { short: true });
+        const conflictTimeRange = `${formatTime(conflictingEvent.start_datetime)} - ${formatTime(conflictingEvent.end_datetime)}`;
         Alert.alert(
           'Event Schedule Conflict',
-          `You have an event schedule conflict with "${conflictingEvent.title}" (${conflictStartStr} - ${conflictEndStr}).`,
+          `You have an event schedule conflict with "${conflictingEvent.title}" (${conflictDateStr}, ${conflictTimeRange}).`,
         );
         return;
       }
@@ -534,7 +537,7 @@ export default function EventDetailScreen({ route, navigation }: Props) {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.bg }]} edges={['bottom']}>
       <ScrollView contentContainerStyle={styles.container}>
         {event.cover_photo ? (
           <View style={styles.coverImageWrap}>
@@ -663,12 +666,12 @@ export default function EventDetailScreen({ route, navigation }: Props) {
                         <Ionicons
                           name={approved ? 'checkmark-circle' : 'ellipse-outline'}
                           size={16}
-                          color={approved ? colors.success : colors.textMuted}
+                          color={approved ? colors.success : themeColors.textMuted}
                         />
-                        <Text style={[styles.approverName, approved && styles.approverNameDone]}>
+                        <Text style={[styles.approverName, { color: themeColors.text }, approved && [styles.approverNameDone, { color: themeColors.textMuted }]]}>
                           {clubNameFor(id)}
                         </Text>
-                        <Text style={styles.approverState}>{approved ? 'Approved' : 'Awaiting'}</Text>
+                        <Text style={[styles.approverState, { color: themeColors.textMuted }]}>{approved ? 'Approved' : 'Awaiting'}</Text>
                       </View>
                     );
                   })}
@@ -676,7 +679,7 @@ export default function EventDetailScreen({ route, navigation }: Props) {
               )}
 
               {alreadyApprovedByMyClub && !canApprove && (
-                <Text style={styles.approvalSub}>
+                <Text style={[styles.approvalSub, { color: themeColors.textMuted }]}>
                   You have already approved on behalf of {clubNameFor(user!.club_id)}.
                 </Text>
               )}
@@ -697,14 +700,14 @@ export default function EventDetailScreen({ route, navigation }: Props) {
           )}
 
           {isOrganizer && pendingParticipants.length > 0 && (
-            <View style={styles.pendingReviewBanner}>
+            <View style={[styles.pendingReviewBanner, { backgroundColor: isNightMode ? themeColors.cardBg : '#FFFBEB', borderColor: isNightMode ? themeColors.border : '#FCD34D' }]}>
               <View style={styles.pendingReviewHeader}>
-                <Ionicons name="person-add" size={20} color="#B45309" />
-                <Text style={styles.pendingReviewTitle}>
+                <Ionicons name="person-add" size={20} color={isNightMode ? themeColors.warning : '#B45309'} />
+                <Text style={[styles.pendingReviewTitle, { color: isNightMode ? themeColors.warning : '#B45309' }]}>
                   {pendingParticipants.length} Pending Join {pendingParticipants.length === 1 ? 'Request' : 'Requests'}
                 </Text>
               </View>
-              <Text style={styles.pendingReviewSub}>
+              <Text style={[styles.pendingReviewSub, { color: themeColors.textMuted }]}>
                 Review applicant profiles below and approve them for this event.
               </Text>
               <View style={styles.pendingCardList}>
@@ -713,18 +716,18 @@ export default function EventDetailScreen({ route, navigation }: Props) {
                   return (
                     <TouchableOpacity
                       key={p.id}
-                      style={styles.pendingUserCard}
+                      style={[styles.pendingUserCard, { backgroundColor: isNightMode ? themeColors.surface : '#fff', borderColor: isNightMode ? themeColors.border : '#FDE68A' }]}
                       onPress={() => u && setSelectedUser(u)}
                       activeOpacity={0.8}
                     >
-                      <View style={styles.pendingUserAvatar}>
+                      <View style={[styles.pendingUserAvatar, { backgroundColor: themeColors.primary }]}>
                         <Text style={styles.pendingAvatarText}>
                           {u?.full_name.split(' ').map(x => x[0]).slice(0, 2).join('') || '?'}
                         </Text>
                       </View>
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.pendingUserName}>{u?.full_name || 'Member'}</Text>
-                        <Text style={styles.pendingUserMeta}>{u?.club_name} • {u?.position}</Text>
+                        <Text style={[styles.pendingUserName, { color: themeColors.text }]}>{u?.full_name || 'Member'}</Text>
+                        <Text style={[styles.pendingUserMeta, { color: themeColors.textMuted }]}>{u?.club_name} • {u?.position}</Text>
                       </View>
                       {user && (
                         <View style={{ flexDirection: 'row', gap: 6 }}>
@@ -757,60 +760,60 @@ export default function EventDetailScreen({ route, navigation }: Props) {
 
             {isOrganizer && (
               <TouchableOpacity
-                style={styles.headerIconBtn}
+                style={[styles.headerIconBtn, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}
                 onPress={() => setOptionsSheetVisible(true)}
                 accessibilityLabel="More Options"
               >
-                <Ionicons name="ellipsis-horizontal" size={20} color={colors.text} />
+                <Ionicons name="ellipsis-horizontal" size={20} color={themeColors.text} />
               </TouchableOpacity>
             )}
           </View>
 
-          <Text style={styles.title}>{event.title}</Text>
-          <Text style={styles.desc}>{event.description}</Text>
+          <Text style={[styles.title, { color: themeColors.text }]}>{event.title}</Text>
+          <Text style={[styles.desc, { color: themeColors.textMuted }]}>{event.description}</Text>
 
           {event.areas_of_focus && event.areas_of_focus.length > 0 && (
             <View style={styles.aofWrap}>
               {event.areas_of_focus.map(area => (
-                <View key={area} style={styles.aofChip}>
-                  <Ionicons name={areaOfFocusIcon(area)} size={13} color={colors.primary} />
-                  <Text style={styles.aofText}>{areaOfFocusLabel(area)}</Text>
+                <View key={area} style={[styles.aofChip, { backgroundColor: themeColors.primary + '18', borderColor: themeColors.primary + '40' }]}>
+                  <Ionicons name={areaOfFocusIcon(area)} size={13} color={themeColors.primary} />
+                  <Text style={[styles.aofText, { color: themeColors.primary }]}>{areaOfFocusLabel(area)}</Text>
                 </View>
               ))}
             </View>
           )}
 
           {impact && (
-            <View style={styles.impactCard}>
+            <View style={[styles.impactCard, { backgroundColor: isNightMode ? themeColors.cardBg : '#FDF2F7', borderColor: isNightMode ? themeColors.border : '#F9D6E5' }]}>
               <View style={styles.impactHeader}>
-                <Ionicons name="ribbon" size={18} color={colors.primary} />
-                <Text style={styles.impactTitle}>Recorded Event Impact</Text>
+                <Ionicons name="ribbon" size={18} color={themeColors.primary} />
+                <Text style={[styles.impactTitle, { color: themeColors.primary }]}>Recorded Event Impact</Text>
               </View>
               <View style={styles.impactGrid}>
                 <View style={styles.impactItem}>
-                  <Text style={styles.impactVal}>{impact.volunteer_hours}</Text>
-                  <Text style={styles.impactLbl}>Volunteer Hrs</Text>
+                  <Text style={[styles.impactVal, { color: themeColors.text }]}>{impact.volunteer_hours}</Text>
+                  <Text style={[styles.impactLbl, { color: themeColors.textMuted }]}>Volunteer Hrs</Text>
                 </View>
                 <View style={styles.impactItem}>
-                  <Text style={styles.impactVal}>{impact.beneficiaries}</Text>
-                  <Text style={styles.impactLbl}>Beneficiaries</Text>
+                  <Text style={[styles.impactVal, { color: themeColors.text }]}>{impact.beneficiaries}</Text>
+                  <Text style={[styles.impactLbl, { color: themeColors.textMuted }]}>Beneficiaries</Text>
                 </View>
                 {impact.funds_raised > 0 && (
                   <View style={styles.impactItem}>
-                    <Text style={styles.impactVal}>₱{impact.funds_raised.toLocaleString()}</Text>
-                    <Text style={styles.impactLbl}>Funds Raised</Text>
+                    <Text style={[styles.impactVal, { color: themeColors.text }]}>₱{impact.funds_raised.toLocaleString()}</Text>
+                    <Text style={[styles.impactLbl, { color: themeColors.textMuted }]}>Funds Raised</Text>
                   </View>
                 )}
               </View>
-              {impact.impact_summary ? <Text style={styles.impactSummary}>“{impact.impact_summary}”</Text> : null}
+              {impact.impact_summary ? <Text style={[styles.impactSummary, { color: themeColors.text }]}>“{impact.impact_summary}”</Text> : null}
             </View>
           )}
 
           <Section title="When">
-            <InfoRow icon="calendar-outline" text={start.toDateString()} />
+            <InfoRow icon="calendar-outline" text={formatDate(start)} />
             <InfoRow
               icon="time-outline"
-              text={`${start.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} — ${end.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+              text={`${formatTime(start)} — ${formatTime(end)}`}
             />
           </Section>
 
@@ -831,9 +834,9 @@ export default function EventDetailScreen({ route, navigation }: Props) {
                   style={styles.infoRow}
                   onPress={() => navigation.navigate('ClubDetail', { clubId: club.id })}
                 >
-                  <Ionicons name="business-outline" size={16} color={colors.textMuted} />
-                  <Text style={styles.infoText} numberOfLines={1}>
-                    {club.club_name} <Text style={styles.teamRoleInline}>· {role}</Text>
+                  <Ionicons name="business-outline" size={16} color={themeColors.textMuted} />
+                  <Text style={[styles.infoText, { color: themeColors.text }]} numberOfLines={1}>
+                    {club.club_name} <Text style={[styles.teamRoleInline, { color: themeColors.textMuted }]}>· {role}</Text>
                   </Text>
                 </TouchableOpacity>
 
@@ -844,10 +847,10 @@ export default function EventDetailScreen({ route, navigation }: Props) {
                     onPress={() => setSelectedUser(member)}
                   >
                     <UserAvatar user={member} size={28} />
-                    <Text style={styles.teamMemberLine} numberOfLines={1}>
+                    <Text style={[styles.teamMemberLine, { color: themeColors.text }]} numberOfLines={1}>
                       {member.full_name}
-                      <Text style={styles.teamMemberMeta}> · {member.position}</Text>
-                      {isCreator && <Text style={styles.teamCreatorInline}> · Creator</Text>}
+                      <Text style={[styles.teamMemberMeta, { color: themeColors.textMuted }]}> · {member.position}</Text>
+                      {isCreator && <Text style={[styles.teamCreatorInline, { color: themeColors.primary }]}> · Creator</Text>}
                     </Text>
                     <VerifiedCheck user={member} size={13} />
                   </TouchableOpacity>
@@ -862,13 +865,13 @@ export default function EventDetailScreen({ route, navigation }: Props) {
                 <InfoRow icon="person-outline" text={`${joinedParticipantsCount} of ${event.max_participants} spots filled`} />
               </View>
               <View style={styles.viewLink}>
-                <Text style={styles.viewLinkText}>View list</Text>
-                <Ionicons name="chevron-forward" size={14} color={colors.primary} />
+                <Text style={[styles.viewLinkText, { color: themeColors.primary }]}>View list</Text>
+                <Ionicons name="chevron-forward" size={14} color={themeColors.primary} />
               </View>
             </TouchableOpacity>
 
-            <View style={styles.progressBar}>
-              <View style={[styles.progressFill, { width: `${Math.min(100, (joinedParticipantsCount / event.max_participants) * 100)}%` }]} />
+            <View style={[styles.progressBar, { backgroundColor: isNightMode ? themeColors.surface : '#E2E8F0' }]}>
+              <View style={[styles.progressFill, { backgroundColor: themeColors.primary, width: `${Math.min(100, (joinedParticipantsCount / event.max_participants) * 100)}%` }]} />
             </View>
           </Section>
 
@@ -878,7 +881,7 @@ export default function EventDetailScreen({ route, navigation }: Props) {
               {/* Card 1: Event Group Chat */}
               {user && canAccessEventGroupChat(eventId, user.id) ? (
                 <TouchableOpacity
-                  style={[styles.commCard, { backgroundColor: colors.primary + '12', borderColor: colors.primary }]}
+                  style={[styles.commCard, { backgroundColor: isNightMode ? themeColors.cardBg : themeColors.primary + '12', borderColor: isNightMode ? themeColors.border : themeColors.primary }]}
                   onPress={() => {
                     const groupConv = getOrCreateEventGroupConversation(eventId);
                     navigation.navigate('Chat', {
@@ -890,23 +893,25 @@ export default function EventDetailScreen({ route, navigation }: Props) {
                     });
                   }}
                 >
-                  <View style={[styles.commIconWrap, { backgroundColor: colors.primary }]}>
+                  <View style={[styles.commIconWrap, { backgroundColor: themeColors.primary }]}>
                     <Ionicons name="chatbubbles" size={18} color="#fff" />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.commCardTitle, { color: colors.text }]}>Event Group Chat</Text>
-                    <Text style={[styles.commCardSub, { color: colors.textMuted }]}>
+                    <Text style={[styles.commCardTitle, { color: themeColors.text }]}>Event Group Chat</Text>
+                    <Text style={[styles.commCardSub, { color: themeColors.textMuted }]}>
                       {joinedParticipantsCount} confirmed attendees • Tap to chat
                     </Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={16} color={colors.primary} />
+                  <Ionicons name="chevron-forward" size={16} color={themeColors.primary} />
                 </TouchableOpacity>
               ) : (
-                <View style={[styles.commCardDisabled, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                  <Ionicons name="lock-closed-outline" size={18} color={colors.textMuted} />
+                <View style={[styles.commCardDisabled, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}>
+                  <View style={[styles.commIconWrap, { backgroundColor: themeColors.surface }]}>
+                    <Ionicons name="lock-closed-outline" size={18} color={themeColors.textMuted} />
+                  </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.commTitleDisabled, { color: colors.textMuted }]}>Group Chat (Locked)</Text>
-                    <Text style={[styles.commSubDisabled, { color: colors.textMuted }]}>
+                    <Text style={[styles.commTitleDisabled, { color: themeColors.text }]}>Group Chat (Locked)</Text>
+                    <Text style={[styles.commSubDisabled, { color: themeColors.textMuted }]}>
                       {isPending
                         ? 'Unlocks when your join request is approved.'
                         : 'Join & get approved to enter attendee group chat.'}
@@ -917,7 +922,7 @@ export default function EventDetailScreen({ route, navigation }: Props) {
 
               {/* Card 2: Message Organizer Direct Inquiry */}
               <TouchableOpacity
-                style={[styles.commCard, { backgroundColor: colors.cardBg, borderColor: colors.border }]}
+                style={[styles.commCard, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}
                 onPress={() => {
                   if (user) {
                     const conv = getOrCreateConversation(eventId, user, event.organizer_user_id, organizingClub?.club_name ?? event.organizing_club_name, event.title);
@@ -931,16 +936,16 @@ export default function EventDetailScreen({ route, navigation }: Props) {
                   }
                 }}
               >
-                <View style={[styles.commIconWrap, { backgroundColor: colors.surface }]}>
-                  <Ionicons name="chatbubble-ellipses-outline" size={18} color={colors.primary} />
+                <View style={[styles.commIconWrap, { backgroundColor: themeColors.surface }]}>
+                  <Ionicons name="chatbubble-ellipses-outline" size={18} color={themeColors.primary} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.commCardTitle, { color: colors.text }]}>Message Organizer</Text>
-                  <Text style={[styles.commCardSub, { color: colors.textMuted }]}>
+                  <Text style={[styles.commCardTitle, { color: themeColors.text }]}>Message Organizer</Text>
+                  <Text style={[styles.commCardSub, { color: themeColors.textMuted }]}>
                     Direct 1-on-1 inquiry to {organizingClub?.club_name ?? event.organizing_club_name}
                   </Text>
                 </View>
-                <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+                <Ionicons name="chevron-forward" size={16} color={themeColors.textMuted} />
               </TouchableOpacity>
             </View>
           </Section>
@@ -1004,24 +1009,24 @@ export default function EventDetailScreen({ route, navigation }: Props) {
       {/* A cancelled or completed event is read-only: details stay visible to
           everyone, but joining, checking in and leaving are no longer meaningful. */}
       {event.status === 'CANCELLED' || event.status === 'COMPLETED' ? (
-        <View style={[styles.footer, { paddingBottom: 16 + insets.bottom }]}>
-          <View style={styles.cancelledFooterBtn}>
-            <Ionicons name={event.status === 'COMPLETED' ? 'checkmark-done-circle' : 'close-circle'} size={18} color={colors.textMuted} />
-            <Text style={styles.cancelledFooterText}>
+        <View style={[styles.footer, { backgroundColor: themeColors.cardBg, borderTopColor: themeColors.border, paddingBottom: 16 + insets.bottom }]}>
+          <View style={[styles.cancelledFooterBtn, { backgroundColor: themeColors.surface }]}>
+            <Ionicons name={event.status === 'COMPLETED' ? 'checkmark-done-circle' : 'close-circle'} size={18} color={themeColors.textMuted} />
+            <Text style={[styles.cancelledFooterText, { color: themeColors.textMuted }]}>
               {event.status === 'COMPLETED' ? 'This event has been completed' : 'This event was cancelled'}
             </Text>
           </View>
         </View>
       ) : (
-      <View style={[styles.footer, { paddingBottom: 16 + insets.bottom }]}>
+      <View style={[styles.footer, { backgroundColor: themeColors.cardBg, borderTopColor: themeColors.border, paddingBottom: 16 + insets.bottom }]}>
         <View style={styles.actionBtnGroup}>
           <TouchableOpacity
             style={[
               styles.primaryBtn,
-              { flex: 1 },
+              { flex: 1, backgroundColor: themeColors.primary },
               hasCheckedIn && { backgroundColor: colors.success },
               isCheckInOpen && !hasCheckedIn && { backgroundColor: colors.success },
-              isLeaveLocked && !isCheckInOpen && { backgroundColor: '#475569' },
+              isLeaveLocked && !isCheckInOpen && { backgroundColor: isNightMode ? '#334155' : '#475569' },
               !isLeaveLocked && !isCheckInOpen && isJoined && styles.joinedBtn,
               isPending && styles.pendingBtn,
             ]}
@@ -1066,9 +1071,10 @@ export default function EventDetailScreen({ route, navigation }: Props) {
           <TouchableOpacity
             style={[
               styles.arrowUpBtn,
+              { backgroundColor: themeColors.primary + 'E6' },
               hasCheckedIn && { backgroundColor: colors.success + 'CC' },
               isCheckInOpen && !hasCheckedIn && { backgroundColor: colors.success + 'CC' },
-              isLeaveLocked && !isCheckInOpen && { backgroundColor: '#334155' },
+              isLeaveLocked && !isCheckInOpen && { backgroundColor: isNightMode ? '#1E293B' : '#334155' },
               !isLeaveLocked && !isCheckInOpen && isJoined && { backgroundColor: colors.success + 'CC' },
               isPending && { backgroundColor: colors.warning + 'CC' },
             ]}
@@ -1080,25 +1086,25 @@ export default function EventDetailScreen({ route, navigation }: Props) {
 
           {/* Only the organizing team may invite when participant invites are disabled. */}
           {(isOnOrganizingTeam(event, user) || event.allow_participant_invites) && (
-            <TouchableOpacity style={styles.secondaryBtn} onPress={() => navigation.navigate('InvitePicker', { eventId })}>
-              <Ionicons name="person-add-outline" size={18} color={colors.primary} />
-              <Text style={styles.secondaryBtnText}>Invite</Text>
+            <TouchableOpacity style={[styles.secondaryBtn, { borderColor: themeColors.primary }]} onPress={() => navigation.navigate('InvitePicker', { eventId })}>
+              <Ionicons name="person-add-outline" size={18} color={themeColors.primary} />
+              <Text style={[styles.secondaryBtnText, { color: themeColors.primary }]}>Invite</Text>
             </TouchableOpacity>
           )}
       </View>
       )}
 
       {/* Organizer "..." Options Sheet — closing the sheet is the cancel action. */}
-      <BottomSheet visible={optionsSheetVisible} onClose={() => setOptionsSheetVisible(false)} cardStyle={styles.actionSheetCard}>
+      <BottomSheet visible={optionsSheetVisible} onClose={() => setOptionsSheetVisible(false)} cardStyle={[styles.actionSheetCard, { backgroundColor: themeColors.cardBg }]}>
         <View style={styles.actionSheetHandle} />
 
             <View style={styles.actionSheetHeader}>
               <View style={{ flex: 1, paddingRight: 12 }}>
-                <Text style={styles.actionSheetTitle}>Event Options</Text>
-                <Text style={styles.actionSheetSub} numberOfLines={1}>{event.title}</Text>
+                <Text style={[styles.actionSheetTitle, { color: themeColors.text }]}>Event Options</Text>
+                <Text style={[styles.actionSheetSub, { color: themeColors.textMuted }]} numberOfLines={1}>{event.title}</Text>
               </View>
-              <TouchableOpacity style={styles.closeSheetBtn} onPress={() => setOptionsSheetVisible(false)}>
-                <Ionicons name="close" size={20} color={colors.textMuted} />
+              <TouchableOpacity style={[styles.closeSheetBtn, { backgroundColor: themeColors.surface }]} onPress={() => setOptionsSheetVisible(false)}>
+                <Ionicons name="close" size={20} color={themeColors.textMuted} />
               </TouchableOpacity>
             </View>
 
@@ -1109,72 +1115,78 @@ export default function EventDetailScreen({ route, navigation }: Props) {
                   disabled={!!item.disabledReason}
                   style={[
                     styles.sheetActionItem,
+                    { backgroundColor: themeColors.cardBg, borderColor: themeColors.border },
                     item.destructive && styles.sheetActionItemDanger,
-                    !!item.disabledReason && styles.sheetActionItemDisabled,
+                    !!item.disabledReason && [styles.sheetActionItemDisabled, { backgroundColor: themeColors.surface, borderColor: themeColors.border }],
                   ]}
                   onPress={() => runOptionsMenuItem(item.run)}
                 >
                   <View
                     style={[
                       styles.sheetIconWrap,
-                      { backgroundColor: (item.disabledReason ? colors.textMuted : item.destructive ? colors.danger : colors.primary) + '1A' },
+                      { backgroundColor: (item.disabledReason ? themeColors.textMuted : item.destructive ? colors.danger : themeColors.primary) + '1A' },
                     ]}
                   >
                     <Ionicons
                       name={item.icon}
                       size={20}
-                      color={item.disabledReason ? colors.textMuted : item.destructive ? colors.danger : colors.primary}
+                      color={item.disabledReason ? themeColors.textMuted : item.destructive ? colors.danger : themeColors.primary}
                     />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text
                       style={[
                         styles.sheetItemTitle,
+                        { color: themeColors.text },
                         item.destructive && { color: colors.danger },
-                        !!item.disabledReason && { color: colors.textMuted },
+                        !!item.disabledReason && { color: themeColors.textMuted },
                       ]}
                     >
                       {item.label}{item.disabledReason ? ' (Disabled)' : ''}
                     </Text>
-                    <Text style={styles.sheetItemSub}>{item.sub}</Text>
+                    <Text style={[styles.sheetItemSub, { color: themeColors.textMuted }]}>{item.sub}</Text>
                   </View>
-                  {!item.disabledReason && <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />}
+                  {!item.disabledReason && <Ionicons name="chevron-forward" size={16} color={themeColors.textMuted} />}
                 </TouchableOpacity>
               ))}
             </View>
       </BottomSheet>
 
       {/* Action Options Sheet Modal */}
-      <BottomSheet visible={actionModalVisible} onClose={() => setActionModalVisible(false)} cardStyle={styles.actionSheetCard}>
+      <BottomSheet visible={actionModalVisible} onClose={() => setActionModalVisible(false)} cardStyle={[styles.actionSheetCard, { backgroundColor: themeColors.cardBg }]}>
             <View style={styles.actionSheetHandle} />
 
             <View style={styles.actionSheetHeader}>
               <View>
-                <Text style={styles.actionSheetTitle}>Event Participation Actions</Text>
-                <Text style={styles.actionSheetSub} numberOfLines={1}>{event.title}</Text>
+                <Text style={[styles.actionSheetTitle, { color: themeColors.text }]}>Event Participation Actions</Text>
+                <Text style={[styles.actionSheetSub, { color: themeColors.textMuted }]} numberOfLines={1}>{event.title}</Text>
               </View>
-              <TouchableOpacity style={styles.closeSheetBtn} onPress={() => setActionModalVisible(false)}>
-                <Ionicons name="close" size={20} color={colors.textMuted} />
+              <TouchableOpacity style={[styles.closeSheetBtn, { backgroundColor: themeColors.surface }]} onPress={() => setActionModalVisible(false)}>
+                <Ionicons name="close" size={20} color={themeColors.textMuted} />
               </TouchableOpacity>
             </View>
 
             <View style={styles.actionSheetList}>
               {/* Action 1: On-Site Check-In */}
               <TouchableOpacity
-                style={[styles.sheetActionItem, isCheckInOpen && styles.sheetActionItemActive]}
+                style={[
+                  styles.sheetActionItem,
+                  { backgroundColor: themeColors.cardBg, borderColor: themeColors.border },
+                  isCheckInOpen && styles.sheetActionItemActive,
+                ]}
                 onPress={() => {
                   setActionModalVisible(false);
                   setTimeout(() => handleCheckIn(), 300);
                 }}
               >
-                <View style={[styles.sheetIconWrap, { backgroundColor: hasCheckedIn || isCheckInOpen ? colors.success : colors.surface }]}>
-                  <Ionicons name={hasCheckedIn ? 'checkmark-circle' : 'location'} size={20} color={hasCheckedIn || isCheckInOpen ? '#fff' : colors.primary} />
+                <View style={[styles.sheetIconWrap, { backgroundColor: hasCheckedIn || isCheckInOpen ? colors.success : themeColors.surface }]}>
+                  <Ionicons name={hasCheckedIn ? 'checkmark-circle' : 'location'} size={20} color={hasCheckedIn || isCheckInOpen ? '#fff' : themeColors.primary} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.sheetItemTitle}>
+                  <Text style={[styles.sheetItemTitle, { color: themeColors.text }]}>
                     {hasCheckedIn ? 'Checked-In ✓' : 'Check In On-Site (GPS Verified)'}
                   </Text>
-                  <Text style={styles.sheetItemSub}>
+                  <Text style={[styles.sheetItemSub, { color: themeColors.textMuted }]}>
                     {hasCheckedIn
                       ? 'Your attendance has been recorded on-site.'
                       : isCheckInOpen
@@ -1182,8 +1194,8 @@ export default function EventDetailScreen({ route, navigation }: Props) {
                       : 'Check-in opens 30 minutes before event start.'}
                   </Text>
                 </View>
-                <View style={[styles.sheetStatusPill, hasCheckedIn || isCheckInOpen ? { backgroundColor: colors.success + '1A' } : { backgroundColor: colors.surface }]}>
-                  <Text style={[styles.sheetStatusText, hasCheckedIn || isCheckInOpen ? { color: colors.success } : { color: colors.textMuted }]}>
+                <View style={[styles.sheetStatusPill, hasCheckedIn || isCheckInOpen ? { backgroundColor: colors.success + '1A' } : { backgroundColor: themeColors.surface }]}>
+                  <Text style={[styles.sheetStatusText, hasCheckedIn || isCheckInOpen ? { color: colors.success } : { color: themeColors.textMuted }]}>
                     {hasCheckedIn ? 'Verified' : isCheckInOpen ? 'Open Now' : 'Scheduled'}
                   </Text>
                 </View>
@@ -1191,21 +1203,21 @@ export default function EventDetailScreen({ route, navigation }: Props) {
 
               {/* Action 2: Join / Leave / Cancel Request */}
               <TouchableOpacity
-                style={styles.sheetActionItem}
+                style={[styles.sheetActionItem, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}
                 onPress={() => {
                   setActionModalVisible(false);
                   setTimeout(() => handleLeaveOrJoinEvent(), 300);
                 }}
               >
-                <View style={[styles.sheetIconWrap, { backgroundColor: isJoined ? (isLeaveLocked ? '#475569' : colors.danger + '1A') : colors.primary + '1A' }]}>
+                <View style={[styles.sheetIconWrap, { backgroundColor: isJoined ? (isLeaveLocked ? (isNightMode ? '#334155' : '#475569') : colors.danger + '1A') : themeColors.primary + '1A' }]}>
                   <Ionicons
                     name={isJoined ? (isLeaveLocked ? 'lock-closed' : 'log-out-outline') : isPending ? 'time-outline' : 'add-circle'}
                     size={20}
-                    color={isJoined ? (isLeaveLocked ? '#fff' : colors.danger) : colors.primary}
+                    color={isJoined ? (isLeaveLocked ? '#fff' : colors.danger) : themeColors.primary}
                   />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.sheetItemTitle}>
+                  <Text style={[styles.sheetItemTitle, { color: themeColors.text }]}>
                     {isJoined
                       ? isLeaveLocked
                         ? `Leave Event (Locked)`
@@ -1216,7 +1228,7 @@ export default function EventDetailScreen({ route, navigation }: Props) {
                       ? 'Request to Join'
                       : 'Join Event'}
                   </Text>
-                  <Text style={styles.sheetItemSub}>
+                  <Text style={[styles.sheetItemSub, { color: themeColors.textMuted }]}>
                     {isJoined
                       ? isLeaveLocked
                         ? `Locked within ${cutoffHours}h of event start time.`
@@ -1246,20 +1258,20 @@ export default function EventDetailScreen({ route, navigation }: Props) {
             keyboardShouldPersistTaps="handled"
             bounces={false}
           >
-            <View style={styles.modalCard}>
+            <View style={[styles.modalCard, { backgroundColor: themeColors.cardBg }]}>
               <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Message Organizer</Text>
+                <Text style={[styles.modalTitle, { color: themeColors.text }]}>Message Organizer</Text>
                 <TouchableOpacity onPress={() => setMessageModalVisible(false)}>
-                  <Ionicons name="close" size={22} color={colors.textMuted} />
+                  <Ionicons name="close" size={22} color={themeColors.textMuted} />
                 </TouchableOpacity>
               </View>
-              <Text style={styles.modalSub}>
+              <Text style={[styles.modalSub, { color: themeColors.textMuted }]}>
                 Send a direct inquiry regarding "{event.title}".
               </Text>
               <TextInput
-                style={styles.modalInput}
+                style={[styles.modalInput, { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text }]}
                 placeholder="Write your question or inquiry here..."
-                placeholderTextColor={colors.textMuted}
+                placeholderTextColor={themeColors.textMuted}
                 multiline
                 numberOfLines={4}
                 value={messageText}
@@ -1267,10 +1279,10 @@ export default function EventDetailScreen({ route, navigation }: Props) {
               />
               <View style={styles.modalActions}>
                 <TouchableOpacity style={styles.cancelModalBtn} onPress={() => setMessageModalVisible(false)}>
-                  <Text style={styles.cancelModalText}>Cancel</Text>
+                  <Text style={[styles.cancelModalText, { color: themeColors.textMuted }]}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.sendModalBtn, !messageText.trim() && styles.sendModalBtnDisabled]}
+                  style={[styles.sendModalBtn, { backgroundColor: themeColors.primary }, !messageText.trim() && styles.sendModalBtnDisabled]}
                   disabled={!messageText.trim()}
                   onPress={() => {
                     if (!messageText.trim() || !user) return;
@@ -1384,28 +1396,30 @@ export default function EventDetailScreen({ route, navigation }: Props) {
 }
 
 function Section({ title, children }: any) {
+  const { colors: themeColors } = useTheme();
   return (
     <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{title}</Text>
+      <Text style={[styles.sectionTitle, { color: themeColors.primary }]}>{title}</Text>
       {children}
     </View>
   );
 }
 
 function InfoRow({ icon, text, onPress, hideOpenIcon }: { icon: keyof typeof Ionicons.glyphMap; text: string; onPress?: () => void; hideOpenIcon?: boolean }) {
+  const { colors: themeColors } = useTheme();
   if (onPress) {
     return (
       <TouchableOpacity style={styles.infoRow} onPress={onPress} activeOpacity={0.6}>
-        <Ionicons name={icon} size={16} color={colors.primary} />
-        <Text style={[styles.infoText, { color: colors.primary, flex: 1 }]}>{text}</Text>
-        {!hideOpenIcon && <Ionicons name="open-outline" size={15} color={colors.primary} />}
+        <Ionicons name={icon} size={16} color={themeColors.primary} />
+        <Text style={[styles.infoText, { color: themeColors.primary, flex: 1 }]}>{text}</Text>
+        {!hideOpenIcon && <Ionicons name="open-outline" size={15} color={themeColors.primary} />}
       </TouchableOpacity>
     );
   }
   return (
     <View style={styles.infoRow}>
-      <Ionicons name={icon} size={16} color={colors.textMuted} />
-      <Text style={styles.infoText}>{text}</Text>
+      <Ionicons name={icon} size={16} color={themeColors.textMuted} />
+      <Text style={[styles.infoText, { color: themeColors.text }]}>{text}</Text>
     </View>
   );
 }

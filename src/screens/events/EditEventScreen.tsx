@@ -7,6 +7,7 @@ import { colors } from '../../theme/colors';
 import { AreaOfFocus, EventType, EventVisibility } from '../../types';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
 import { RootStackParamList } from '../../navigation/types';
 import { LocationPicker } from '../../components/LocationPicker';
 import { LocationValue } from '../../components/location/shared';
@@ -21,6 +22,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'EditEvent'>;
 export default function EditEventScreen({ route, navigation }: Props) {
   const { eventId } = route.params;
   const { user } = useAuth();
+  const { colors: themeColors, isNightMode } = useTheme();
   const { events, updateEvent, users, participantsFor, resetEventApprovals } = useData();
 
   const event = events.find(e => e.id === eventId);
@@ -205,7 +207,7 @@ export default function EditEventScreen({ route, navigation }: Props) {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.bg }]} edges={['bottom']}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -464,14 +466,16 @@ export default function EditEventScreen({ route, navigation }: Props) {
 }
 
 function Field({ label, ...rest }: any) {
+  const { colors: themeColors } = useTheme();
   const [focused, setFocused] = useState(false);
   return (
     <>
-      <Text style={styles.label}>{label}</Text>
+      <Text style={[styles.label, { color: themeColors.text }]}>{label}</Text>
       <TextInput
         style={[
           styles.input,
-          focused && styles.inputFocused,
+          { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text },
+          focused && [styles.inputFocused, { borderColor: themeColors.primary }],
           rest.multiline && { minHeight: 90, textAlignVertical: 'top' },
         ]}
         onFocus={(e: any) => {
@@ -487,7 +491,7 @@ function Field({ label, ...rest }: any) {
           setFocused(false);
           rest.onBlur?.(e);
         }}
-        placeholderTextColor={colors.textMuted}
+        placeholderTextColor={themeColors.textMuted}
         {...rest}
       />
     </>
@@ -495,10 +499,11 @@ function Field({ label, ...rest }: any) {
 }
 
 function Toggle({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
+  const { colors: themeColors } = useTheme();
   return (
-    <TouchableOpacity style={styles.toggleRow} onPress={() => onChange(!value)}>
-      <Text style={styles.toggleLabel}>{label}</Text>
-      <View style={[styles.toggle, value && styles.toggleOn]}>
+    <TouchableOpacity style={[styles.toggleRow, { borderBottomColor: themeColors.border }]} onPress={() => onChange(!value)}>
+      <Text style={[styles.toggleLabel, { color: themeColors.text }]}>{label}</Text>
+      <View style={[styles.toggle, { backgroundColor: themeColors.border }, value && [styles.toggleOn, { backgroundColor: themeColors.primary }]]}>
         <View style={[styles.toggleKnob, value && styles.toggleKnobOn]} />
       </View>
     </TouchableOpacity>
