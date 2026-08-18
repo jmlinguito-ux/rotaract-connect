@@ -7,47 +7,51 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
  * without pulling in unrelated concerns.
  */
 interface PreferencesContextType {
-  /** Show the in-app banner popup when a realtime notification arrives (foreground). */
-  inAppBannerEnabled: boolean;
-  setInAppBannerEnabled: (enabled: boolean) => void;
   /**
    * Master switch for OS push notification banners (foreground/background/closed).
-   * Disabling it stops push delivery but never hides the in-app notification
-   * history — those stay readable in the Inbox. Device-level OS permission still
-   * applies on top of this preference.
+   * Disabling it stops push delivery but never hides the notification history —
+   * those stay readable in the Inbox. Device-level OS permission, and the user's
+   * own per-channel Android settings, still apply on top of this preference.
    */
   pushEnabled: boolean;
   setPushEnabled: (enabled: boolean) => void;
+  /**
+   * Whether to broadcast this user's online presence to others. Off means their
+   * name never appears as active in a chat; they can still see who else is online,
+   * since this governs what they publish, not what they receive.
+   */
+  showActiveStatus: boolean;
+  setShowActiveStatus: (enabled: boolean) => void;
   /** False until persisted values have been read, so toggles don't flash. */
   loaded: boolean;
 }
 
-const BANNER_KEY = 'prefs:inAppBannerEnabled';
 const PUSH_KEY = 'prefs:pushEnabled';
+const ACTIVE_STATUS_KEY = 'prefs:showActiveStatus';
 
 const PreferencesContext = createContext<PreferencesContextType | undefined>(undefined);
 
 export function PreferencesProvider({ children }: { children: ReactNode }) {
-  const [inAppBannerEnabled, setBanner] = useState(true);
   const [pushEnabled, setPush] = useState(true);
+  const [showActiveStatus, setActiveStatus] = useState(true);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([AsyncStorage.getItem(BANNER_KEY), AsyncStorage.getItem(PUSH_KEY)])
-      .then(([banner, push]) => {
+    Promise.all([AsyncStorage.getItem(PUSH_KEY), AsyncStorage.getItem(ACTIVE_STATUS_KEY)])
+      .then(([push, active]) => {
         if (cancelled) return;
-        if (banner !== null) setBanner(banner === 'true');
         if (push !== null) setPush(push === 'true');
+        if (active !== null) setActiveStatus(active === 'true');
       })
       .catch(() => {})
       .finally(() => { if (!cancelled) setLoaded(true); });
     return () => { cancelled = true; };
   }, []);
 
-  const setInAppBannerEnabled = useCallback((enabled: boolean) => {
-    setBanner(enabled);
-    AsyncStorage.setItem(BANNER_KEY, String(enabled)).catch(() => {});
+  const setShowActiveStatus = useCallback((enabled: boolean) => {
+    setActiveStatus(enabled);
+    AsyncStorage.setItem(ACTIVE_STATUS_KEY, String(enabled)).catch(() => {});
   }, []);
 
   const setPushEnabled = useCallback((enabled: boolean) => {
@@ -56,7 +60,7 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <PreferencesContext.Provider value={{ inAppBannerEnabled, setInAppBannerEnabled, pushEnabled, setPushEnabled, loaded }}>
+    <PreferencesContext.Provider value={{ pushEnabled, setPushEnabled, showActiveStatus, setShowActiveStatus, loaded }}>
       {children}
     </PreferencesContext.Provider>
   );
@@ -67,10 +71,10 @@ export function usePreferences() {
   if (!ctx) {
     // Safe defaults if used outside the provider.
     return {
-      inAppBannerEnabled: true,
-      setInAppBannerEnabled: () => {},
       pushEnabled: true,
       setPushEnabled: () => {},
+      showActiveStatus: true,
+      setShowActiveStatus: () => {},
       loaded: true,
     };
   }

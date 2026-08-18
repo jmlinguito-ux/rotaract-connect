@@ -9,6 +9,8 @@ import { StatusBadge } from '../../components/StatusBadge';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
+import { canMessageUser, inquiryBlockedMessage } from '../../utils/messaging';
 import { Club } from '../../types';
 import { DeclineReasonModal } from '../../components/DeclineReasonModal';
 import { ConfirmRulesModal } from '../../components/ConfirmRulesModal';
@@ -52,6 +54,8 @@ export default function EventDetailScreen({ route, navigation }: Props) {
   const [inviteDeclineVisible, setInviteDeclineVisible] = useState(false);
   const [declineTarget, setDeclineTarget] = useState<{ participantId: string; applicantName?: string } | null>(null);
   const [selectedUser, setSelectedUser] = useState<AppUser | null>(null);
+  // Refusal notice, shown instead of letting the write fail into the sync banner.
+  const [blockedName, setBlockedName] = useState<string | null>(null);
   const [approvalConfirmVisible, setApprovalConfirmVisible] = useState(false);
   const [cancelModalVisible, setCancelModalVisible] = useState(false);
   const [rejectModalVisible, setRejectModalVisible] = useState(false);
@@ -1286,6 +1290,15 @@ export default function EventDetailScreen({ route, navigation }: Props) {
                   disabled={!messageText.trim()}
                   onPress={() => {
                     if (!messageText.trim() || !user) return;
+                    // This path sends immediately, without going through ChatScreen,
+                    // so it needs its own check — otherwise the write is rejected by
+                    // RLS and the user only sees the generic sync banner.
+                    const organizer = users.find(u => u.id === event.organizer_user_id);
+                    if (!canMessageUser(organizer, user)) {
+                      setMessageModalVisible(false);
+                      setBlockedName(organizer?.full_name ?? 'This organizer');
+                      return;
+                    }
                     const conv = getOrCreateConversation(eventId, user, event.organizer_user_id, organizingClub?.club_name ?? event.organizing_club_name, event.title);
                     sendMessageToOrganizer(eventId, user, messageText.trim());
                     setMessageText('');
@@ -1337,6 +1350,10 @@ export default function EventDetailScreen({ route, navigation }: Props) {
         eventContext={event ? { eventId: event.id, eventTitle: event.title } : undefined}
         onStartChat={(targetUser, aboutEvent) => {
           if (!user || !event) return;
+          if (!canMessageUser(users.find(u => u.id === targetUser.id), user)) {
+            setBlockedName(targetUser.full_name);
+            return;
+          }
           const ctxEventId = aboutEvent ? event.id : undefined;
           const conv = getOrCreateConversation(ctxEventId, user, targetUser.id, targetUser.full_name, aboutEvent ? event.title : undefined);
           navigation.navigate('Chat', {
@@ -1391,7 +1408,14 @@ export default function EventDetailScreen({ route, navigation }: Props) {
         }}
         onCancel={() => setRejectModalVisible(false)}
       />
-    </SafeAreaView>
+          <ConfirmDialog
+        visible={!!blockedName}
+        title="Messaging unavailable"
+        message={blockedName ? inquiryBlockedMessage(blockedName) : undefined}
+        onClose={() => setBlockedName(null)}
+        confirmLabel="OK"
+      />
+</SafeAreaView>
   );
 }
 

@@ -46,6 +46,36 @@
         <data android:scheme="exp+rotaract-connect"/>
       </intent-filter>
     </activity>
+    <receiver android:name="com.rotaractconnect.app.notifications.RotaractNotificationsService" android:enabled="true" android:exported="false">
+      <intent-filter>
+        <action android:name="expo.modules.notifications.NOTIFICATION_EVENT"/>
+        <action android:name="android.intent.action.BOOT_COMPLETED"/>
+        <action android:name="android.intent.action.REBOOT"/>
+        <action android:name="android.intent.action.QUICKBOOT_POWERON"/>
+        <action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/>
+        <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+      </intent-filter>
+    </receiver>
+    <receiver android:name="com.rotaractconnect.app.notifications.ReplyReceiver" android:enabled="true" android:exported="false">
+      <intent-filter>
+        <action android:name="com.rotaractconnect.app.NOTIFICATION_REPLY"/>
+      </intent-filter>
+    </receiver>
+    <receiver android:name="com.rotaractconnect.app.notifications.NotificationDismissReceiver" android:enabled="true" android:exported="false">
+      <intent-filter>
+        <action android:name="com.rotaractconnect.app.NOTIFICATION_DISMISSED"/>
+      </intent-filter>
+    </receiver>
+    <receiver android:name="com.rotaractconnect.app.notifications.MuteReceiver" android:enabled="true" android:exported="false">
+      <intent-filter>
+        <action android:name="com.rotaractconnect.app.NOTIFICATION_MUTE"/>
+      </intent-filter>
+    </receiver>
+    <receiver android:name="com.rotaractconnect.app.notifications.StopAlertReceiver" android:enabled="true" android:exported="false">
+      <intent-filter>
+        <action android:name="com.rotaractconnect.app.STOP_URGENT_ALERT"/>
+      </intent-filter>
+    </receiver>
     <uses-library android:name="org.apache.http.legacy" android:required="false"/>
   </application>
 </manifest>

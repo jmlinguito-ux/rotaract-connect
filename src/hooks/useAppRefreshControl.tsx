@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { RefreshControl } from 'react-native';
+import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { useTheme } from '../context/ThemeContext';
 
@@ -25,6 +26,9 @@ import { useTheme } from '../context/ThemeContext';
  */
 export function useAppRefreshControl() {
   const { refresh } = useData();
+  // DataContext.refresh reloads the shared datasets but not the signed-in user's
+  // own profile, so a role change stayed invisible however often you pulled.
+  const { refreshProfile } = useAuth();
   const { colors } = useTheme();
   const primary = colors.primary;
   const [refreshing, setRefreshing] = useState(false);
@@ -32,11 +36,11 @@ export function useAppRefreshControl() {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await refresh();
+      await Promise.all([refresh(), refreshProfile()]);
     } finally {
       setRefreshing(false);
     }
-  }, [refresh]);
+  }, [refresh, refreshProfile]);
 
   return useMemo(
     () => (

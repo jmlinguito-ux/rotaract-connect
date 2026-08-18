@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '../services/supabase';
+import { usePreferences } from '../context/PreferencesContext';
 
 export interface TypingUser { id: string; name: string; }
 
@@ -12,6 +13,11 @@ export interface TypingUser { id: string; name: string; }
  * closes (background, network loss, or leaving the screen).
  */
 export function useChatPresence(conversationId: string | undefined, me: { id: string; name: string } | null) {
+  // Privacy setting, applied symmetrically: when off we neither broadcast our own
+  // presence nor surface anyone else's. Included in the effect deps so flipping it
+  // mid-session tears the channel down and rejoins, rather than leaving a stale
+  // presence behind for others to see.
+  const { showActiveStatus } = usePreferences();
   const [onlineIds, setOnlineIds] = useState<Set<string>>(new Set());
   const [typingUsers, setTypingUsers] = useState<TypingUser[]>([]);
   const channelRef = useRef<RealtimeChannel | null>(null);
@@ -35,6 +41,10 @@ export function useChatPresence(conversationId: string | undefined, me: { id: st
 
     channel
       .on('presence', { event: 'sync' }, () => {
+        // Symmetric by design: someone who hides their own status does not get to
+        // see everyone else's. Publishing nothing while still reading the room
+        // would be a one-way mirror.
+        if (!showActiveStatus) { setOnlineIds(new Set()); return; }
         const state = channel.presenceState();
         setOnlineIds(new Set(Object.keys(state)));
       })
@@ -55,7 +65,7 @@ export function useChatPresence(conversationId: string | undefined, me: { id: st
         }
       })
       .subscribe(status => {
-        if (status === 'SUBSCRIBED') {
+        if (status === 'SUBSCRIBED' && showActiveStatus) {
           channel.track({ user_id: me.id, name: me.name, online_at: new Date().toISOString() });
         }
       });
@@ -69,7 +79,7 @@ export function useChatPresence(conversationId: string | undefined, me: { id: st
       supabase.removeChannel(channel);
       channelRef.current = null;
     };
-  }, [conversationId, me?.id, me?.name]);
+  }, [conversationId, me?.id, me?.name, showActiveStatus]);
 
   const sendTyping = useCallback((typing: boolean) => {
     const channel = channelRef.current;

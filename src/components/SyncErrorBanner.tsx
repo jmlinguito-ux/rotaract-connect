@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, StyleSheet, Text, View } from 'react-native';
+import { Animated, Platform, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
@@ -21,9 +21,17 @@ export function SyncErrorBanner() {
   const translateY = useRef(new Animated.Value(120)).current;
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastShownAt = useRef(0);
+  // Which write failed, and why. Shown in development only: "some changes didn't
+  // save" is the right message for a user, but it is useless for diagnosis, and
+  // digging the `[db] … failed` line out of the Metro console is easy to miss.
+  const [detail, setDetail] = useState<string | null>(null);
 
   useEffect(() => {
-    setWriteErrorListener(() => {
+    setWriteErrorListener((op, error) => {
+      if (__DEV__) {
+        const reason = (error as { message?: string })?.message ?? String(error);
+        setDetail(`${op}: ${reason}`);
+      }
       // Debounce: at most one banner per 5s window, no matter how many writes fail.
       const now = Date.now();
       if (now - lastShownAt.current < 5000) return;
@@ -53,9 +61,14 @@ export function SyncErrorBanner() {
     >
       <View style={[styles.card, { backgroundColor: colors.text }]}>
         <Ionicons name="cloud-offline-outline" size={18} color="#fff" />
-        <Text style={styles.text} numberOfLines={2}>
-          Some changes didn't save. Check your connection, then pull down to refresh.
-        </Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.text} numberOfLines={2}>
+            Some changes didn't save. Check your connection, then pull down to refresh.
+          </Text>
+          {__DEV__ && detail ? (
+            <Text style={styles.detail} numberOfLines={3}>{detail}</Text>
+          ) : null}
+        </View>
       </View>
     </Animated.View>
   );
@@ -66,6 +79,12 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, paddingHorizontal: 14,
     borderRadius: 12, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 6,
+  },
+  detail: {
+    color: '#FCA5A5',
+    fontSize: 11,
+    marginTop: 4,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   text: { flex: 1, color: '#fff', fontSize: 13, fontWeight: '600', lineHeight: 18 },
 });

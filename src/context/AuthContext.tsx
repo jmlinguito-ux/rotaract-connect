@@ -1,14 +1,18 @@
-import React, { createContext, useContext, useState, ReactNode, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useEffect, useRef, useCallback } from 'react';
 import { AppUser, UserRole, VerificationStatus } from '../types';
-import { supabase } from '../services/supabase';
+import type { Session } from '@supabase/supabase-js';
+import { supabase, supabaseUrl, supabaseAnonKey } from '../services/supabase';
 import { PickedImage, uploadPublicImage, uploadImageAsset } from '../services/storage';
 import { unregisterPushTokenAsync } from '../services/push';
 import { getCachedUser, setCachedUser, clearCachedUser } from '../services/cache';
+import RotaractNotifications from '../../modules/rotaract-notifications';
 
 interface AuthContextValue {
   user: AppUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  /** Re-reads the signed-in user's own profile (role, verification, club). */
+  refreshProfile: () => Promise<void>;
   /** Accepts either an email address or a username as the identifier. */
   signIn: (identifier: string, password: string) => Promise<{ error?: string; needsVerification?: boolean; email?: string }>;
   /**
@@ -20,6 +24,10 @@ interface AuthContextValue {
   signUp: (email: string, password: string, details: SignUpDetails) => Promise<{ error?: string; user?: AppUser; needsVerification?: boolean; email?: string }>;
   /** Verifies the emailed 6-digit signup code, then finalizes the account. */
   confirmEmailVerification: (code: string) => Promise<{ error?: string }>;
+  /** Starts an email change: sends a 6-digit code to the NEW address. */
+  requestEmailChange: (newEmail: string) => Promise<{ error?: string }>;
+  /** Completes the change with the code from the new address. */
+  confirmEmailChange: (newEmail: string, code: string) => Promise<{ error?: string }>;
   /** Re-sends the signup verification email. Supabase applies its own rate limiting. */
   resendVerificationEmail: () => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
@@ -75,7 +83,30 @@ function profileToAppUser(profile: any, clubName?: string): AppUser {
     verification_status: profile.verification_status as VerificationStatus,
     avatar_url: profile.avatar_url,
     contact_number: profile.contact_number,
+    // Older rows predate the column; absent means "allowed", matching the default.
+    allow_direct_inquiries: profile.allow_direct_inquiries ?? true,
   };
+}
+
+/**
+ * Copies the Supabase session into Android-native storage so the notification
+ * inline-reply receiver can post a message while the app is not running. The reply
+ * is then an ordinary authenticated PostgREST call and RLS applies unchanged.
+ * No-op on iOS and on builds without the native module.
+ */
+function mirrorSessionToNative(session: Session | null) {
+  if (!RotaractNotifications) return;
+  if (session?.access_token && session.refresh_token && session.user?.id) {
+    RotaractNotifications.setSession(
+      supabaseUrl,
+      supabaseAnonKey,
+      session.access_token,
+      session.refresh_token,
+      session.user.id,
+    );
+  } else {
+    RotaractNotifications.clearSession();
+  }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -122,6 +153,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setCachedUser(appUser);
   };
 
+  const fetchProfileRef = useRef(fetchProfile);
+  fetchProfileRef.current = fetchProfile;
+
+  /**
+   * Re-reads the signed-in user's own profile.
+   *
+   * Needed because AuthContext.user was previously written once, at sign-in: a role
+   * change or verification approval stayed invisible until the next sign-in, and
+   * pull-to-refresh did not help because it reloads DataContext, not this.
+   */
+  const refreshProfile = useCallback(async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user) await fetchProfileRef.current(session.user.id);
+  }, []);
+
+  // Live updates to this user's own row — role, verification status, club. Scoped
+  // by id so a district full of profile edits does not wake every device.
+  useEffect(() => {
+    const uid = user?.id;
+    if (!uid) return;
+    const channel = supabase
+      .channel(`rt-profile-${uid}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${uid}` },
+        () => { fetchProfileRef.current(uid); },
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [user?.id]);
+
   useEffect(() => {
     // 1. Instantly restore user profile from local cache for 0ms startup
     getCachedUser().then(cached => {
@@ -138,6 +200,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Check for existing session on mount
     supabase.auth.getSession().then(({ data: { session } }) => {
+      mirrorSessionToNative(session);
       if (session?.user) {
         fetchProfile(session.user.id).finally(() => {
           clearTimeout(safetyTimer);
@@ -154,6 +217,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Listen for auth state changes
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      // Keep the native copy in step — TOKEN_REFRESHED fires here too, which is what
+      // stops the inline-reply receiver from going stale while the app sits closed.
+      mirrorSessionToNative(session);
       if (session?.user) {
         // Don't sign the user in from a password-recovery session — the reset
         // flow drives that itself and signs out when done.
@@ -322,6 +388,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return {};
   };
 
+  /**
+   * Requests an email change. Supabase emails a confirmation code to the NEW
+   * address; nothing changes until confirmEmailChange verifies it, so a typo just
+   * means the code never arrives and the account is untouched.
+   */
+  const requestEmailChange = async (newEmail: string) => {
+    const trimmed = newEmail.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) return { error: 'Enter a valid email address.' };
+    if (trimmed === user?.email?.toLowerCase()) return { error: 'That is already your email address.' };
+
+    const { error } = await supabase.auth.updateUser({ email: trimmed });
+    if (error) return { error: error.message };
+    return {};
+  };
+
+  /**
+   * Confirms the change with the code sent to the new address, then mirrors it onto
+   * the profile row — the app reads `profiles.email` everywhere, so leaving it stale
+   * would show the old address throughout the UI while auth used the new one.
+   */
+  const confirmEmailChange = async (newEmail: string, code: string) => {
+    const trimmed = newEmail.trim().toLowerCase();
+    const { error } = await supabase.auth.verifyOtp({
+      email: trimmed,
+      token: code.trim(),
+      type: 'email_change',
+    });
+    if (error) return { error: error.message };
+
+    if (user) {
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({ email: trimmed })
+        .eq('id', user.id);
+      if (profileError) return { error: profileError.message };
+      await fetchProfileRef.current(user.id);
+    }
+    return {};
+  };
+
   const resendVerificationEmail = async () => {
     const pending = pendingSignUpRef.current;
     if (!pending) return { error: 'Nothing to resend. Please register again.' };
@@ -336,6 +442,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // first, the delete would match zero rows and the server would keep pushing this
     // account's notifications to the device after sign-out.
     try { await unregisterPushTokenAsync(); } catch (e) { console.warn('[auth] push unregister on sign-out failed', e); }
+    RotaractNotifications?.clearSession();
     await supabase.auth.signOut();
     await clearCachedUser();
     setUser(null);
@@ -433,6 +540,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (updates.avatar_url !== undefined) dbUpdates.avatar_url = updates.avatar_url;
     if (updates.contact_number !== undefined) dbUpdates.contact_number = updates.contact_number;
     if (updates.club_id !== undefined) dbUpdates.club_id = updates.club_id;
+    if (updates.allow_direct_inquiries !== undefined) dbUpdates.allow_direct_inquiries = updates.allow_direct_inquiries;
 
     if (Object.keys(dbUpdates).length > 0) {
       await supabase.from('profiles').update(dbUpdates).eq('id', user.id);
@@ -443,7 +551,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, isAuthenticated: !!user, isLoading, signIn, signUp, confirmEmailVerification, resendVerificationEmail, signOut, changePassword, requestPasswordReset, confirmPasswordReset, register, updateAvatar, updateProfile }}
+      value={{ user, isAuthenticated: !!user, isLoading, refreshProfile, signIn, signUp, confirmEmailVerification, requestEmailChange, confirmEmailChange, resendVerificationEmail, signOut, changePassword, requestPasswordReset, confirmPasswordReset, register, updateAvatar, updateProfile }}
     >
       {children}
     </AuthContext.Provider>

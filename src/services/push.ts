@@ -25,15 +25,18 @@ function resolveProjectId(): string | undefined {
   );
 }
 
-// Unconditionally register the foreground notification handler at module load time
-// so the OS banner is ALWAYS suppressed while the app is in the foreground.
+// The OS notification is the only banner the app has — there is no React-rendered
+// one any more — so it must show in the foreground too.
+//
+// Chat notifications suppress themselves for the conversation currently on screen,
+// but that decision is made NATIVELY (ChatScreen reports the active conversation to
+// RotaractNotifications) so it holds in the states where this JS handler never runs.
 if (Platform.OS !== 'web') {
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
-      shouldShowAlert: false,
-      shouldShowBanner: false,
+      shouldShowBanner: true,
       shouldShowList: true,
-      shouldPlaySound: false,
+      shouldPlaySound: true,
       shouldSetBadge: true,
     }),
   });
@@ -44,31 +47,102 @@ if (Platform.OS !== 'web') {
  */
 export async function configurePushNotifications() {
   if (Platform.OS === 'android') {
-    // Delete existing channels to force Android SystemUI to flush its cached icon
-    await Notifications.deleteNotificationChannelAsync('messages').catch(() => {});
-    await Notifications.deleteNotificationChannelAsync('default').catch(() => {});
-    await Notifications.deleteNotificationChannelAsync('high').catch(() => {});
+    // Channel settings are frozen at creation: Android ignores later edits, and
+    // deleting a channel to "reset" it does NOT clear the user's own overrides
+    // (they are restored if the id comes back). So changing a channel means
+    // publishing a NEW id and retiring the old one exactly once — which is why
+    // adding the chime meant a new generation of ids rather than an edit.
+    for (const retired of [
+      'default', 'messages', 'high',            // pre-versioning
+      'default_v2', 'high_v2', 'messages_v2',   // no custom sound
+      'chat_messages',                          // no custom sound
+      // Previous generation: same names, but their sound was baked in at creation
+      // and pointed at the old chime. A channel cannot be re-sounded, only replaced.
+      'chat_v3', 'mentions_v1', 'events_v1', 'general_v3',
+      'organizer_high_v1', 'organizer_alert_v1',
+    ]) {
+      await Notifications.deleteNotificationChannelAsync(retired).catch(() => {});
+    }
 
-    await Notifications.setNotificationChannelAsync('default', {
+    // Split by TYPE, not by importance: an organizer drowning in one category can
+    // silence just that one instead of turning the app off entirely.
+    //
+    // Sound files must exist in android/app/src/main/res/raw. They are committed
+    // there rather than generated: android/ is checked in, so `expo run:android`
+    // builds the existing project and never re-runs config plugins — the
+    // expo-notifications `sounds` array in app.json only applies during
+    // `expo prebuild`. Both are kept in step so either path works.
+    const chime = 'chime.wav';
+
+    await Notifications.setNotificationChannelAsync('chat_v4', {
+      name: 'Chat Messages',
+      description: 'Direct messages and event group chat messages.',
+      importance: Notifications.AndroidImportance.HIGH,
+      sound: chime,
+      vibrationPattern: [0, 100, 80, 100],
+      lightColor: '#D41367',
+      showBadge: true,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PRIVATE,
+    });
+
+    // Separate from chat so muting a busy group chat never silences being
+    // addressed directly — mentions are the one thing that pierces a mute.
+    await Notifications.setNotificationChannelAsync('mentions_v2', {
+      name: 'Mentions',
+      description: 'When someone @mentions you in a group chat.',
+      importance: Notifications.AndroidImportance.HIGH,
+      sound: chime,
+      vibrationPattern: [0, 150, 100, 150],
+      lightColor: '#D41367',
+      showBadge: true,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PRIVATE,
+    });
+
+    await Notifications.setNotificationChannelAsync('events_v2', {
+      name: 'Event Reminders & Invitations',
+      description: 'Reminders before an event starts, invitations, and join approvals.',
+      importance: Notifications.AndroidImportance.HIGH,
+      sound: chime,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#D41367',
+      showBadge: true,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+    });
+
+    await Notifications.setNotificationChannelAsync('general_v4', {
       name: 'General',
-      importance: Notifications.AndroidImportance.MAX,
+      description: 'Approvals, verification updates, and other app notifications.',
+      importance: Notifications.AndroidImportance.DEFAULT,
+      sound: chime,
       vibrationPattern: [0, 250, 250, 250],
       lightColor: '#D41367',
       showBadge: true,
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
     });
-    await Notifications.setNotificationChannelAsync('messages', {
-      name: 'Messages & Group Chats',
+
+    // Organizer broadcasts deliberately do NOT use the chime — an urgent
+    // announcement must not sound like an ordinary message.
+    await Notifications.setNotificationChannelAsync('organizer_high_v2', {
+      name: 'Urgent Organizer Alerts',
+      description: 'Highest-urgency announcements from event organizers.',
       importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 250, 250, 250],
+      // Deliberately silent: UrgentAlertPlayer loops the sound itself, because an
+      // Android channel sound plays once and cannot repeat. A channel sound here
+      // would play over the loop.
+      sound: null,
+      vibrationPattern: [0, 700, 500, 700, 500],
       lightColor: '#D41367',
       showBadge: true,
+      bypassDnd: true,
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
     });
-    await Notifications.setNotificationChannelAsync('high', {
-      name: 'Important Alerts',
+
+    await Notifications.setNotificationChannelAsync('organizer_alert_v2', {
+      name: 'Organizer Announcements',
+      description: 'Important announcements from event organizers.',
       importance: Notifications.AndroidImportance.MAX,
-      vibrationPattern: [0, 250, 250, 250],
+      // Left on the system default: distinct from the chime, without the alarm.
+      vibrationPattern: [0, 400, 200, 400],
       lightColor: '#D41367',
       showBadge: true,
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
@@ -138,8 +212,29 @@ export async function registerForPushNotificationsAsync(userId: string): Promise
   try {
     const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId });
     currentToken = token;
+
+    // Android additionally registers its RAW FCM token. The server sends Android a
+    // data-only FCM message so the native conversation builder actually runs —
+    // Firebase hands a message to the app only when it carries no `notification`
+    // block, and the Expo push service always includes one. iOS keeps using the
+    // Expo token (APNs), so this is null there.
+    let deviceToken: string | null = null;
+    if (Platform.OS === 'android') {
+      try {
+        deviceToken = String((await Notifications.getDevicePushTokenAsync()).data);
+      } catch (e) {
+        console.warn('[push] getDevicePushTokenAsync failed — Android will fall back to Expo delivery', e);
+      }
+    }
+
     const { error } = await supabase.from('push_tokens').upsert(
-      { token, user_id: userId, platform: Platform.OS, updated_at: new Date().toISOString() },
+      {
+        token,
+        device_token: deviceToken,
+        user_id: userId,
+        platform: Platform.OS,
+        updated_at: new Date().toISOString(),
+      },
       { onConflict: 'token' },
     );
     if (error) console.warn('[push] token upsert failed', error.message);

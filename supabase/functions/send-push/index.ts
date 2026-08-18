@@ -1,19 +1,27 @@
 // ============================================================================
-// send-push — Expo push fan-out for new notification rows
+// send-push — Expo push fan-out, mirroring the in-app notification banner
 // ============================================================================
-// Wired as a Supabase Database Webhook on INSERT into public.notifications. It
-// reuses the EXISTING notification row (no data is duplicated): it reads the
-// recipient's registered Expo push tokens and delivers the same title/message as
-// an OS push that works foreground, background, or with the app fully closed.
+// Wired as TWO Supabase Database Webhooks, both POSTing here:
+//
+//   1. INSERT on public.notifications   — everything the Inbox records: broadcasts,
+//      invitations, approvals, reminders, and 1-on-1 chat messages.
+//   2. INSERT on public.direct_messages — group-chat messages ONLY. These create no
+//      notification row (see migration 0015), so without this webhook a user with
+//      the app closed silently missed every group message.
+//
+// Both paths produce the same RICH banner the in-app one shows: a large image
+// (the photo that was sent, else the event cover, else the sender's avatar), a
+// per-conversation tag so a chat replaces its own banner instead of stacking, and
+// the REPLY / VIEW action buttons.
 //
 // Deploy:   supabase functions deploy send-push --no-verify-jwt
 // Secret:   supabase secrets set PUSH_WEBHOOK_SECRET=<random>  (optional but recommended)
-// Webhook:  Database → Webhooks → new webhook on `notifications` (INSERT) → HTTP POST
-//           to this function's URL, adding header  x-webhook-secret: <same value>
+// Webhook:  Database → Webhooks → one webhook per table above → HTTP POST to this
+//           function's URL, adding header  x-webhook-secret: <same value>
 //
 // SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are injected automatically.
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
@@ -27,16 +35,46 @@ interface NotificationRecord {
   application_id: string | null;
   conversation_id: string | null;
   priority: string | null;
+  created_at: string | null;
+}
+
+interface MessageRecord {
+  id: string;
+  conversation_id: string;
+  event_id: string | null;
+  sender_id: string;
+  receiver_id: string | null;
+  text: string | null;
+  attachment_path: string | null;
+  deleted_at: string | null;
+  is_broadcast: boolean | null;
+  created_at: string | null;
+  mentioned_user_ids: string[] | null;
 }
 
 interface WebhookPayload {
   type: 'INSERT' | 'UPDATE' | 'DELETE';
   table: string;
-  record: NotificationRecord | null;
+  record: NotificationRecord | MessageRecord | null;
+}
+
+/** One fully-built Expo push message, minus the recipient token. */
+interface PushContent {
+  type: PushType;
+  dedupeKey: string;
+  title: string;
+  subtitle?: string;
+  body: string;
+  data: Record<string, string | undefined>;
+  image?: string;
+  channelId: string;
+  categoryId: string;
+  collapseKey?: string;
+  highPriority: boolean;
 }
 
 Deno.serve(async (req) => {
-  // Optional shared-secret gate so only the configured webhook can invoke this.
+  // Optional shared-secret gate so only the configured webhooks can invoke this.
   const expectedSecret = Deno.env.get('PUSH_WEBHOOK_SECRET');
   if (expectedSecret && req.headers.get('x-webhook-secret') !== expectedSecret) {
     return new Response('Unauthorized', { status: 401 });
@@ -49,93 +87,632 @@ Deno.serve(async (req) => {
     return new Response('Bad request', { status: 400 });
   }
 
-  // Only act on new notification rows.
-  if (payload.type !== 'INSERT' || payload.table !== 'notifications' || !payload.record) {
-    return new Response(JSON.stringify({ skipped: true }), { headers: { 'Content-Type': 'application/json' } });
-  }
-
-  const n = payload.record;
+  if (payload.type !== 'INSERT' || !payload.record) return skipped();
 
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   );
 
-  // The recipient's registered devices. Token presence IS the push preference:
-  // the client removes tokens when the user turns push off, so an opted-out user
-  // simply has no tokens here.
+  // One message can produce several plans — a group message notifies the room AND
+  // separately notifies anyone it @mentions, on a channel a mute cannot silence.
+  let plans: Plan[] = [];
+  if (payload.table === 'notifications') {
+    const single = await planFromNotification(supabase, payload.record as NotificationRecord);
+    if (single) plans = [single];
+  } else if (payload.table === 'direct_messages') {
+    plans = await plansFromGroupMessage(supabase, payload.record as MessageRecord);
+  } else {
+    return skipped();
+  }
+
+  // Deliver AFTER responding. A database webhook aborts at 5s, and this function
+  // now does a dedupe insert, several lookups and a Google OAuth exchange before it
+  // can send — a cold start can exceed that, and when pg_net cancels the request the
+  // send dies with it. waitUntil keeps the work alive past the response, so delivery
+  // no longer races the webhook timeout.
+  const work = (async () => {
+    for (const plan of plans) {
+      if (plan.recipients.length === 0) continue;
+      // Claimed before sending, so a webhook retry stops here instead of buzzing
+      // everyone a second time.
+      if (!(await claimDelivery(supabase, plan.content.dedupeKey))) continue;
+      try {
+        const result = await deliver(supabase, plan.recipients, plan.content);
+        console.log(`[send-push] ${plan.content.type} → sent ${result.sent}, pruned ${result.pruned}`);
+      } catch (e) {
+        console.error('[send-push] delivery threw', e);
+      }
+    }
+  })();
+
+  // @ts-ignore — EdgeRuntime is provided by the Supabase Edge Functions runtime.
+  if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime?.waitUntil) {
+    // @ts-ignore
+    EdgeRuntime.waitUntil(work);
+  } else {
+    await work;   // local / non-Supabase runtime
+  }
+
+  return json({ accepted: plans.length }, 202);
+});
+
+interface Plan {
+  recipients: string[];
+  content: PushContent;
+}
+
+// ---------------------------------------------------------------------------
+// Path 1 — a notification row (broadcasts, invites, reminders, 1-on-1 messages)
+// ---------------------------------------------------------------------------
+async function planFromNotification(
+  supabase: SupabaseClient,
+  n: NotificationRecord,
+): Promise<Plan | null> {
+  const isChat = !!n.conversation_id;
+  const type = typeForNotification(n.kind, n.priority, isChat);
+  const rule = RULES[type];
+
+  let image: string | undefined;
+  let isGroup = false;
+  let senderId: string | undefined;
+  let senderAvatar: string | undefined;
+
+  if (n.conversation_id) {
+    const { data: conv } = await supabase
+      .from('conversations')
+      .select('is_group, participant_user_id, organizer_user_id')
+      .eq('id', n.conversation_id)
+      .maybeSingle();
+    isGroup = !!conv?.is_group;
+
+    image = await signedChatMedia(supabase, await latestAttachment(supabase, n.conversation_id));
+
+    if (!isGroup && conv) {
+      // 1-on-1: the other participant IS the sender, relative to the RECIPIENT.
+      // n.title is already their name (see DataContext.persistMessage).
+      senderId = (conv.participant_user_id === n.user_id
+        ? conv.organizer_user_id
+        : conv.participant_user_id) ?? undefined;
+      if (senderId) senderAvatar = await avatarOf(supabase, senderId);
+    }
+  }
+
+  if (!image && n.event_id) image = await eventCover(supabase, n.event_id);
+
+  return {
+    recipients: [n.user_id],
+    content: {
+      type,
+      dedupeKey: `notif:${n.id}`,
+      title: n.title,
+      subtitle: isChat ? 'Sent a message' : undefined,
+      body: n.message,
+      data: {
+        notificationId: n.id,
+        type,
+        kind: n.kind,
+        event_id: n.event_id ?? undefined,
+        application_id: n.application_id ?? undefined,
+        conversation_id: n.conversation_id ?? undefined,
+        ...(isChat
+          ? {
+              sender_name: n.title,
+              sender_id: senderId,
+              sender_avatar: senderAvatar,
+              conversation_name: isGroup ? n.title : undefined,
+              is_group: String(isGroup),
+              sent_at: n.created_at ?? undefined,
+              message_preview: n.message,
+            }
+          : {}),
+      },
+      image,
+      channelId: rule.channelId,
+      categoryId: rule.categoryId,
+      collapseKey: n.conversation_id ?? undefined,
+      highPriority: rule.highPriority,
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Path 2 — a group-chat message. No notification row exists for these.
+// ---------------------------------------------------------------------------
+async function plansFromGroupMessage(
+  supabase: SupabaseClient,
+  m: MessageRecord,
+): Promise<Plan[]> {
+  // 1-on-1 messages already push via their notification row; broadcasts already
+  // push via the rows send_event_broadcast inserts. Neither belongs here.
+  if (m.receiver_id !== null) return [];
+  if (m.is_broadcast) return [];
+  if (m.deleted_at) return [];
+
+  const { data: conv } = await supabase
+    .from('conversations')
+    .select('id, is_group, event_id, event_title')
+    .eq('id', m.conversation_id)
+    .maybeSingle();
+  if (!conv?.is_group) return [];
+
+  const eventId = m.event_id ?? conv.event_id;
+  if (!eventId) return []; // group membership is derived from the event
+
+  const { data: parts, error } = await supabase
+    .from('event_participants')
+    .select('user_id')
+    .eq('event_id', eventId)
+    .eq('status', 'JOINED')
+    .neq('user_id', m.sender_id);
+  if (error) {
+    console.error('[send-push] participant lookup failed', error);
+    return [];
+  }
+  const participants = (parts ?? []).map((p) => p.user_id as string);
+  if (participants.length === 0) return [];
+
+  const { data: sender } = await supabase
+    .from('profiles')
+    .select('full_name, avatar_url')
+    .eq('id', m.sender_id)
+    .maybeSingle();
+
+  const senderName = sender?.full_name ?? 'Rotaractor';
+  const firstName = senderName.split(' ')[0];
+  const title = conv.event_title ?? (await eventTitle(supabase, eventId)) ?? 'Group Chat';
+  const rawText = m.text?.trim() || (m.attachment_path ? '📷 Sent a photo' : 'New message');
+  const image = (await signedChatMedia(supabase, m.attachment_path))
+    ?? (await eventCover(supabase, eventId))
+    ?? (sender?.avatar_url || undefined);
+
+  // Mentions are de-duplicated and scoped to people actually in the group: the
+  // column is client-supplied, so a stale or hostile id must not become a push.
+  // The sender never notifies themselves for mentioning themselves.
+  const mentioned = [...new Set(m.mentioned_user_ids ?? [])]
+    .filter((id) => id !== m.sender_id && participants.includes(id));
+
+  // Anyone mentioned gets the MENTION push INSTEAD of the group one — otherwise a
+  // single message would buzz them twice.
+  const groupRecipients = participants.filter((id) => !mentioned.includes(id));
+
+  const sharedData = {
+    kind: 'GROUP_MESSAGE',
+    event_id: eventId,
+    conversation_id: m.conversation_id,
+    message_id: m.id,
+    sender_name: senderName,
+    sender_id: m.sender_id,
+    sender_avatar: sender?.avatar_url || undefined,
+    conversation_name: title,
+    is_group: 'true',
+    sent_at: m.created_at ?? undefined,
+  };
+
+  const plans: Plan[] = [];
+
+  if (groupRecipients.length) {
+    const rule = RULES.chat_message;
+    plans.push({
+      recipients: groupRecipients,
+      content: {
+        type: 'chat_message',
+        dedupeKey: `msg:${m.id}:group`,
+        title,
+        subtitle: `${senderName} sent a message`,
+        body: m.text?.trim() ? `${firstName}: ${m.text.trim()}` : `${firstName}: ${rawText}`,
+        data: { ...sharedData, type: 'chat_message', message_preview: rawText },
+        image,
+        channelId: rule.channelId,
+        categoryId: rule.categoryId,
+        collapseKey: m.conversation_id,
+        highPriority: rule.highPriority,
+      },
+    });
+  }
+
+  if (mentioned.length) {
+    const rule = RULES.mention;
+    plans.push({
+      recipients: mentioned,
+      content: {
+        type: 'mention',
+        dedupeKey: `msg:${m.id}:mention`,
+        title,
+        subtitle: `Mentioned by ${senderName}`,
+        body: `@You were mentioned by ${senderName}: "${rawText}"`,
+        // respects_mute:false travels to the client, which is where mute lives —
+        // the device silences a muted thread, so it must know not to silence this.
+        data: { ...sharedData, type: 'mention', message_preview: rawText, respects_mute: 'false' },
+        image,
+        channelId: rule.channelId,
+        categoryId: rule.categoryId,
+        // Its own collapse key so a mention never replaces (or is replaced by) the
+        // ordinary group notification.
+        collapseKey: `${m.conversation_id}:mention`,
+        highPriority: rule.highPriority,
+      },
+    });
+  }
+
+  return plans;
+}
+
+
+// ---------------------------------------------------------------------------
+// Notification rules — one table, evaluated per type
+// ---------------------------------------------------------------------------
+// Every push is classified into exactly one type, and the type decides the channel
+// (and therefore the sound), the action category, and whether a muted conversation
+// may silence it. Keeping this declarative is what stops "which sound does an
+// invitation use?" from being answered differently in three places.
+//
+// Channel ids carry a generation suffix on purpose: Android freezes a channel's
+// settings at creation, so changing sound or importance requires a NEW id. These
+// must stay in step with configurePushNotifications in services/push.ts.
+
+type PushType =
+  | 'chat_message'
+  | 'mention'
+  | 'event_reminder'
+  | 'invitation'
+  | 'join_approved'
+  | 'organizer_high'
+  | 'organizer_alert'
+  | 'announcement';
+
+interface TypeRule {
+  channelId: string;
+  categoryId: string;
+  /** False only for mentions: being addressed directly pierces a muted group. */
+  respectsMute: boolean;
+  highPriority: boolean;
+}
+
+const RULES: Record<PushType, TypeRule> = {
+  chat_message:    { channelId: 'chat_v4',            categoryId: 'message_actions', respectsMute: true,  highPriority: false },
+  mention:         { channelId: 'mentions_v2',        categoryId: 'message_actions', respectsMute: false, highPriority: false },
+  event_reminder:  { channelId: 'events_v2',          categoryId: 'general_actions', respectsMute: true,  highPriority: false },
+  invitation:      { channelId: 'events_v2',          categoryId: 'general_actions', respectsMute: true,  highPriority: false },
+  join_approved:   { channelId: 'events_v2',          categoryId: 'general_actions', respectsMute: true,  highPriority: false },
+  organizer_high:  { channelId: 'organizer_high_v2',  categoryId: 'general_actions', respectsMute: true,  highPriority: true  },
+  organizer_alert: { channelId: 'organizer_alert_v2', categoryId: 'general_actions', respectsMute: true,  highPriority: true  },
+  announcement:    { channelId: 'general_v4',         categoryId: 'general_actions', respectsMute: true,  highPriority: false },
+};
+
+/** Classifies a notification row. Organizer urgency outranks the kind. */
+function typeForNotification(kind: string, priority: string | null, isChat: boolean): PushType {
+  if (priority === 'HIGH') return 'organizer_high';
+  if (priority === 'ALERT') return 'organizer_alert';
+  if (isChat) return 'chat_message';
+  if (kind === 'EVENT_REMINDER') return 'event_reminder';
+  if (kind === 'INVITATION_RECEIVED') return 'invitation';
+  if (kind === 'JOIN_APPROVED') return 'join_approved';
+  return 'announcement';
+}
+
+/**
+ * Claims a delivery key so an at-least-once webhook cannot buzz everyone twice.
+ *
+ * Fails OPEN: if the ledger itself errors we still send. A rare duplicate is a far
+ * smaller harm than silently dropping someone's notification.
+ */
+async function claimDelivery(supabase: SupabaseClient, key: string): Promise<boolean> {
+  const { error } = await supabase.from('push_deliveries').insert({ dedupe_key: key });
+  if (!error) return true;
+  if (error.code === '23505') return false;   // unique_violation — already sent
+  console.warn('[send-push] dedupe ledger unavailable, sending anyway', error.message);
+  return true;
+}
+
+
+// ---------------------------------------------------------------------------
+// FCM v1 — data-only delivery for Android
+// ---------------------------------------------------------------------------
+// Android's conversation notification is built by native Kotlin, and that code only
+// runs when FCM hands the message to the app. Firebase only does that for messages
+// with NO `notification` block; the Expo push service always sends one, so on a
+// backgrounded or terminated app the system tray drew a generic notification
+// instead. Sending data-only, direct to FCM, is the only way around that.
+//
+// The data keys are dictated by expo-notifications' NotificationData: `title`,
+// `message`, `body` (a JSON string), and `channelId`.
+//
+// Secret:  supabase secrets set FCM_SERVICE_ACCOUNT="$(cat service-account.json)"
+
+interface ServiceAccount {
+  client_email: string;
+  private_key: string;
+  project_id: string;
+}
+
+let cachedToken: { value: string; expiresAt: number } | null = null;
+
+function serviceAccount(): ServiceAccount | null {
+  const raw = Deno.env.get('FCM_SERVICE_ACCOUNT');
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as ServiceAccount;
+  } catch {
+    console.error('[send-push] FCM_SERVICE_ACCOUNT is not valid JSON');
+    return null;
+  }
+}
+
+function base64Url(bytes: Uint8Array): string {
+  let binary = '';
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+async function importKey(pem: string): Promise<CryptoKey> {
+  const der = Uint8Array.from(
+    atob(pem.replace(/-----[A-Z ]+-----/g, '').replace(/\s/g, '')),
+    (c) => c.charCodeAt(0),
+  );
+  return crypto.subtle.importKey(
+    'pkcs8',
+    der,
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+}
+
+/** OAuth access token for FCM, cached until shortly before it expires. */
+async function accessToken(sa: ServiceAccount): Promise<string | null> {
+  if (cachedToken && cachedToken.expiresAt > Date.now() + 60_000) return cachedToken.value;
+
+  const now = Math.floor(Date.now() / 1000);
+  const encoder = new TextEncoder();
+  const segment = (o: unknown) => base64Url(encoder.encode(JSON.stringify(o)));
+  const unsigned =
+    `${segment({ alg: 'RS256', typ: 'JWT' })}.` +
+    segment({
+      iss: sa.client_email,
+      scope: 'https://www.googleapis.com/auth/firebase.messaging',
+      aud: 'https://oauth2.googleapis.com/token',
+      iat: now,
+      exp: now + 3600,
+    });
+
+  try {
+    const signature = await crypto.subtle.sign(
+      'RSASSA-PKCS1-v1_5',
+      await importKey(sa.private_key),
+      encoder.encode(unsigned),
+    );
+    const res = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+        assertion: `${unsigned}.${base64Url(new Uint8Array(signature))}`,
+      }),
+    });
+    const body = await res.json();
+    if (!res.ok || !body.access_token) {
+      console.error('[send-push] FCM token exchange failed', body);
+      return null;
+    }
+    cachedToken = { value: body.access_token, expiresAt: Date.now() + (body.expires_in ?? 3600) * 1000 };
+    return cachedToken.value;
+  } catch (e) {
+    console.error('[send-push] could not sign FCM assertion', e);
+    return null;
+  }
+}
+
+/** Sends to Android device tokens. Returns the tokens FCM says are dead. */
+async function sendViaFcm(tokens: string[], c: PushContent): Promise<string[]> {
+  const sa = serviceAccount();
+  if (!sa) {
+    console.error('[send-push] FCM_SERVICE_ACCOUNT is not set — Android delivery skipped');
+    return [];
+  }
+  const token = await accessToken(sa);
+  if (!token) return [];
+
+  const data: Record<string, string> = {
+    title: c.title,
+    message: c.body,
+    body: JSON.stringify(c.data),
+    channelId: c.channelId,
+  };
+  if (c.image) data.image = c.image;
+
+  const stale: string[] = [];
+  // FCM v1 has no batch endpoint, so this is one request per device. Chunked so a
+  // large group chat does not open hundreds of sockets at once.
+  for (let i = 0; i < tokens.length; i += 20) {
+    await Promise.all(
+      tokens.slice(i, i + 20).map(async (deviceToken) => {
+        try {
+          const res = await fetch(
+            `https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`,
+            {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                message: { token: deviceToken, data, android: { priority: 'HIGH' } },
+              }),
+            },
+          );
+          if (res.ok) return;
+          const body = await res.json().catch(() => ({}));
+          const status = body?.error?.details?.[0]?.errorCode ?? body?.error?.status;
+          if (status === 'UNREGISTERED' || status === 'INVALID_ARGUMENT' || res.status === 404) {
+            stale.push(deviceToken);
+          } else {
+            console.error('[send-push] FCM send failed', res.status, JSON.stringify(body));
+          }
+        } catch (e) {
+          console.error('[send-push] FCM request threw', e);
+        }
+      }),
+    );
+  }
+  return stale;
+}
+
+// ---------------------------------------------------------------------------
+// Lookups
+// ---------------------------------------------------------------------------
+
+/**
+ * The photo attached to the conversation's NEWEST message, if it has one.
+ *
+ * Deliberately not "the newest photo in the thread": a notification row carries no
+ * message id, so that would put a stale picture from earlier in the chat on top of
+ * a plain text message. The row is written only after the message insert commits
+ * (see DataContext.persistMessage), so the newest message IS the one being pushed.
+ */
+async function latestAttachment(supabase: SupabaseClient, conversationId: string) {
+  const { data } = await supabase
+    .from('direct_messages')
+    .select('attachment_path')
+    .eq('conversation_id', conversationId)
+    .is('deleted_at', null)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return (data?.attachment_path as string | null) ?? undefined;
+}
+
+/**
+ * A URL Android can actually fetch for a chat photo.
+ *
+ * `chat-media` is a PRIVATE bucket and the message row stores the bare object path
+ * (see services/storage.ts), so the raw value is unusable in a push: the OS
+ * downloads notification images unauthenticated and would get a 403 — or, with a
+ * bare path, never form a URL at all. The service role can mint a signed URL.
+ *
+ * 24h of validity, not the app's usual 1h: the image is fetched when the device
+ * receives the push, which may be well after we send it if the phone was offline.
+ */
+async function signedChatMedia(supabase: SupabaseClient, path?: string | null) {
+  if (!path) return undefined;
+  if (/^https?:\/\//i.test(path)) return path; // already a full URL
+  const { data, error } = await supabase.storage
+    .from('chat-media')
+    .createSignedUrl(path, 60 * 60 * 24);
+  if (error) {
+    console.warn('[send-push] could not sign chat media', path, error.message);
+    return undefined;
+  }
+  return data.signedUrl;
+}
+
+async function avatarOf(supabase: SupabaseClient, userId: string) {
+  const { data } = await supabase.from('profiles').select('avatar_url').eq('id', userId).maybeSingle();
+  return (data?.avatar_url as string | null) ?? undefined;
+}
+
+async function eventCover(supabase: SupabaseClient, eventId: string) {
+  const { data } = await supabase.from('events').select('cover_photo').eq('id', eventId).maybeSingle();
+  return (data?.cover_photo as string | null) ?? undefined;
+}
+
+async function eventTitle(supabase: SupabaseClient, eventId: string) {
+  const { data } = await supabase.from('events').select('title').eq('id', eventId).maybeSingle();
+  return (data?.title as string | null) ?? undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Delivery
+// ---------------------------------------------------------------------------
+async function deliver(
+  supabase: SupabaseClient,
+  recipients: string[],
+  c: PushContent,
+): Promise<{ sent: number; pruned: number }> {
+  // Token presence IS the push preference: the client removes its token when the
+  // user turns push off, so an opted-out user simply has no row here.
   const { data: tokens, error } = await supabase
     .from('push_tokens')
-    .select('token')
-    .eq('user_id', n.user_id);
+    .select('token, device_token, platform')
+    .in('user_id', recipients);
 
   if (error) {
     console.error('[send-push] token lookup failed', error);
-    return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+    return { sent: 0, pruned: 0 };
   }
-  if (!tokens || tokens.length === 0) {
-    return new Response(JSON.stringify({ delivered: 0 }), { headers: { 'Content-Type': 'application/json' } });
+  if (!tokens?.length) return { sent: 0, pruned: 0 };
+
+  // Android goes direct to FCM as a data-only message so the native conversation
+  // builder runs in every app state. Everything else (iOS, and any Android device
+  // that predates device-token registration) keeps using the Expo push service.
+  const fcmTokens = tokens
+    .filter((t) => t.platform === 'android' && t.device_token)
+    .map((t) => t.device_token as string);
+  const expoTokens = tokens.filter((t) => !(t.platform === 'android' && t.device_token));
+
+  const staleDeviceTokens = fcmTokens.length ? await sendViaFcm(fcmTokens, c) : [];
+  const staleExpoTokens = expoTokens.length ? await sendViaExpo(expoTokens, c) : [];
+
+  // Prune what the providers say is dead so we stop paying to send to it.
+  if (staleDeviceTokens.length) {
+    await supabase.from('push_tokens').delete().in('device_token', staleDeviceTokens);
+  }
+  if (staleExpoTokens.length) {
+    await supabase.from('push_tokens').delete().in('token', staleExpoTokens);
   }
 
-  const highPriority = n.priority === 'HIGH' || n.priority === 'ALERT';
+  const attempted = fcmTokens.length + expoTokens.length;
+  const pruned = staleDeviceTokens.length + staleExpoTokens.length;
+  return { sent: attempted - pruned, pruned };
+}
 
-  // The tap target travels in `data`; the client maps it to a screen (see
-  // services/push.ts → routeFromData). Mirrors the in-app banner's deep links.
-  const data = {
-    notificationId: n.id,
-    kind: n.kind,
-    event_id: n.event_id ?? undefined,
-    application_id: n.application_id ?? undefined,
-    conversation_id: n.conversation_id ?? undefined,
-  };
-
-  const channelId = n.conversation_id ? 'messages' : (highPriority ? 'high' : 'default');
-
-  const messages = tokens.map(({ token }) => ({
+/** Expo push service delivery. Returns the Expo tokens Expo says are dead. */
+async function sendViaExpo(
+  targets: { token: string; platform: string | null }[],
+  c: PushContent,
+): Promise<string[]> {
+  const messages = targets.map(({ token, platform }) => ({
     to: token,
-    sound: 'default',
-    title: n.title,
-    subtitle: n.conversation_id ? 'Sent a message' : undefined,
-    body: n.message,
-    categoryId: n.conversation_id ? 'message_actions' : 'general_actions',
-    data,
+    title: c.title,
+    body: c.body,
+    data: c.data,
+    // Android builds its own inline-reply action natively; sending a categoryId
+    // there too would add a second, duplicate set of buttons. iOS still needs it.
+    ...(platform === 'ios' ? { categoryId: c.categoryId } : {}),
     priority: 'high',
-    channelId,
-    // A stable key so multiple pushes for one conversation collapse on Android.
-    ...(n.conversation_id ? { collapseId: n.conversation_id } : {}),
+
+    // --- Android (only reached by devices without a registered device token) ---
+    channelId: c.channelId,
+    ...(c.collapseKey ? { tag: c.collapseKey } : {}),
+    ...(c.image ? { richContent: { image: c.image } } : {}),
+
+    // --- iOS ---
+    sound: 'default',
+    subtitle: c.subtitle,
+    ...(c.collapseKey ? { collapseId: c.collapseKey, threadId: c.collapseKey } : {}),
+    ...(c.highPriority ? { interruptionLevel: 'time-sensitive' } : {}),
   }));
 
-  // Expo accepts up to 100 messages per request.
-  const chunks: typeof messages[] = [];
-  for (let i = 0; i < messages.length; i += 100) chunks.push(messages.slice(i, i + 100));
-
-  const staleTokens: string[] = [];
-  for (const chunk of chunks) {
+  const stale: string[] = [];
+  for (let i = 0; i < messages.length; i += 100) {
+    const chunk = messages.slice(i, i + 100);
     try {
       const res = await fetch(EXPO_PUSH_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         body: JSON.stringify(chunk),
       });
-      const json = await res.json();
-      const tickets: any[] = json?.data ?? [];
-      tickets.forEach((ticket, i) => {
+      const body = await res.json();
+      const tickets: any[] = body?.data ?? [];
+      tickets.forEach((ticket, index) => {
         if (ticket?.status === 'error' && ticket?.details?.error === 'DeviceNotRegistered') {
-          staleTokens.push(chunk[i].to);
+          stale.push(chunk[index].to);
         }
       });
     } catch (e) {
       console.error('[send-push] Expo push failed', e);
     }
   }
+  return stale;
+}
 
-  // Prune tokens Expo says are dead so we stop paying to send to them.
-  if (staleTokens.length) {
-    await supabase.from('push_tokens').delete().in('token', staleTokens);
-  }
-
-  return new Response(
-    JSON.stringify({ delivered: messages.length - staleTokens.length, pruned: staleTokens.length }),
-    { headers: { 'Content-Type': 'application/json' } },
-  );
-});
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+const skipped = () => json({ skipped: true });

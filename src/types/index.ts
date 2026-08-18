@@ -111,6 +111,12 @@ export interface AppUser {
   avatar_url?: string;
   contact_number?: string;
   proof_url?: string;
+  /**
+   * When false, only same-club members may START a new conversation with this
+   * user. Lives on the profile rather than in local preferences because it governs
+   * what OTHER people may do — a device-local flag could not enforce anything.
+   */
+  allow_direct_inquiries?: boolean;
 }
 
 export interface EventParticipant {
@@ -227,6 +233,12 @@ export interface DirectMessage {
   attachment_type?: string;
   /** Set when the message was unsent ("deleted for everyone") — render a tombstone. */
   deleted_at?: string;
+  /**
+   * Users @mentioned in this message, by ID. Stored as ids rather than parsed from
+   * the text because display names are neither unique nor stable — the composer
+   * resolves the id when the mention is inserted, and the server trusts only this.
+   */
+  mentioned_user_ids?: string[];
   /** Optimistic-send lifecycle for the composer; not persisted. */
   send_status?: 'sending' | 'sent' | 'failed';
 }

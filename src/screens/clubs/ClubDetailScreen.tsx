@@ -11,6 +11,8 @@ import { EventCard } from '../main/MapScreen';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
+import { canMessageUser, inquiryBlockedMessage } from '../../utils/messaging';
 import { AppUser } from '../../types';
 import { UserProfileModal } from '../../components/UserProfileModal';
 import UserAvatar from '../../components/UserAvatar';
@@ -37,8 +39,12 @@ export default function ClubDetailScreen({ route }: Props) {
   const clubMembers = users.filter(u => u.club_id === club.id);
   const presidentUser = users.find(u => u.id === club.president_id || u.full_name === club.president_name);
 
+  const [blockedName, setBlockedName] = useState<string | null>(null);
+
   const handleChatWithMember = (targetUser: AppUser | { id: string; full_name: string }) => {
     if (!user) return;
+    const full = users.find(u => u.id === targetUser.id);
+    if (!canMessageUser(full, user)) { setBlockedName(targetUser.full_name); return; }
     const conv = getOrCreateConversation(undefined, user, targetUser.id, targetUser.full_name);
     navigation.navigate('Chat', {
       conversationId: conv.id,
@@ -158,7 +164,14 @@ export default function ClubDetailScreen({ route }: Props) {
         onClose={() => setSelectedUser(null)}
         onStartChat={(targetUser) => handleChatWithMember(targetUser)}
       />
-    </SafeAreaView>
+          <ConfirmDialog
+        visible={!!blockedName}
+        title="Messaging unavailable"
+        message={blockedName ? inquiryBlockedMessage(blockedName) : undefined}
+        onClose={() => setBlockedName(null)}
+        confirmLabel="OK"
+      />
+</SafeAreaView>
   );
 }
 

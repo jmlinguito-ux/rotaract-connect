@@ -6,6 +6,8 @@ import {
   Conversation, DirectMessage, ReadCursor, NotificationPriority, ConversationState,
 } from '../types';
 import { loadAll, db } from '../services/db';
+import { canMessageUser } from '../utils/messaging';
+import RotaractNotifications from '../../modules/rotaract-notifications';
 import { supabase } from '../services/supabase';
 import { useAuth } from './AuthContext';
 import { getCachedData, setCachedData, clearCachedData } from '../services/cache';
@@ -90,7 +92,8 @@ interface DataContextValue {
   getOrCreateConversation: (eventId: string | undefined, senderUser: AppUser, receiverId: string, receiverName: string, eventTitle?: string) => Conversation;
   getOrCreateEventGroupConversation: (eventId: string) => Conversation;
   canAccessEventGroupChat: (eventId: string, userId: string) => boolean;
-  sendDirectMessage: (conversationId: string, eventId: string | undefined, senderUser: AppUser, receiverId: string | undefined, receiverName: string, text: string, eventTitle?: string, attachmentPath?: string) => void;
+  /** Returns false when the recipient does not accept inquiries from this sender. */
+  sendDirectMessage: (conversationId: string, eventId: string | undefined, senderUser: AppUser, receiverId: string | undefined, receiverName: string, text: string, eventTitle?: string, attachmentPath?: string, mentionedUserIds?: string[]) => boolean;
   /** Re-sends a message whose persistence failed, without duplicating it. */
   retryMessage: (messageId: string) => void;
   /** Hides a message from the current user's own view only (others still see it). */
@@ -633,7 +636,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
         ? { ...e, approved_by_club_ids: approvedByClubIds, status: newStatus }
         : e
     )));
-    db.updateEvent(eventId, { approved_by_club_ids: approvedByClubIds, status: newStatus });
+    // Persisted through the approve_event RPC, not a direct update: RLS only lets
+    // the organising club's President write to events, so this silently no-opped for
+    // every other approver and reverted on the next refetch.
+    db.approveEvent(eventId);
 
     pushNotif({
       user_id: ev.organizer_user_id,
@@ -961,6 +967,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const preview = msg.text?.trim() ? msg.text : (msg.attachment_path ? '📷 Photo' : '');
     setConversations(prev => prev.map(c => c.id === msg.conversation_id ? { ...c, last_message: preview, last_message_at: msg.created_at } : c));
     db.insertMessage(msg).then(ok => {
+      // Refused because the recipient does not accept inquiries from us, and our
+      // copy of their profile was stale (they changed the setting after our last
+      // sync). Drop the optimistic message rather than leaving a "failed" row the
+      // user can retry forever, and refetch so the composer disables itself and
+      // explains why. Self-healing: the race closes on its own.
+      if (ok === 'blocked') {
+        setMessages(prev => prev.filter(m => m.id !== msg.id));
+        refresh().catch(() => {});
+        return;
+      }
       setMessages(prev => prev.map(m => (m.id === msg.id ? { ...m, send_status: ok ? 'sent' : 'failed' } : m)));
       if (ok) {
         db.updateConversation(msg.conversation_id, { last_message: preview, last_message_at: msg.created_at });
@@ -978,9 +994,30 @@ export function DataProvider({ children }: { children: ReactNode }) {
         }
       }
     });
-  }, [pushNotif]);
+  }, [pushNotif, refresh]);
 
-  const sendDirectMessage = useCallback((conversationId: string, eventId: string | undefined, senderUser: AppUser, receiverId: string | undefined, receiverName: string, text: string, eventTitle?: string, attachmentPath?: string) => {
+  /**
+   * Persists a 1-on-1 or group message.
+   *
+   * The recipient's "allow direct inquiries" setting is enforced HERE rather than
+   * only in the screens. Every previous attempt gated a call site, and each new way
+   * of sending — an existing thread reopened from the Inbox, the event screen's
+   * message-the-organiser box — was another chance to forget, surfacing as a
+   * row-level rejection the user could not interpret. This is the single choke
+   * point every send passes through, so no screen can bypass it.
+   *
+   * Returns false when refused, so a caller can react; the database remains the
+   * real authority either way.
+   */
+  const sendDirectMessage = useCallback((conversationId: string, eventId: string | undefined, senderUser: AppUser, receiverId: string | undefined, receiverName: string, text: string, eventTitle?: string, attachmentPath?: string, mentionedUserIds?: string[]): boolean => {
+    // Group messages carry no single recipient; event membership governs those.
+    if (receiverId) {
+      const recipient = users.find(u => u.id === receiverId);
+      if (!canMessageUser(recipient, senderUser)) {
+        console.warn('[data] refused message: recipient does not accept inquiries from this club');
+        return false;
+      }
+    }
     const msg: DirectMessage = {
       id: nextId('msg'),
       conversation_id: conversationId,
@@ -993,18 +1030,32 @@ export function DataProvider({ children }: { children: ReactNode }) {
       created_at: now(),
       attachment_path: attachmentPath,
       attachment_type: attachmentPath ? 'image' : undefined,
+      mentioned_user_ids: mentionedUserIds?.length ? mentionedUserIds : undefined,
     };
     persistMessage(msg, true);
-  }, [persistMessage]);
+    return true;
+  }, [persistMessage, users]);
 
   // Re-sends a message that failed to persist, without creating a duplicate row.
   const retryMessage = useCallback((messageId: string) => {
     setMessages(prev => {
       const m = prev.find(x => x.id === messageId);
-      if (m) persistMessage({ ...m, send_status: 'sending' }, true);
+      if (!m) return prev;
+      // Retry goes straight to persistMessage, so it needs the same check. A message
+      // that failed BEFORE the recipient closed their inbox would otherwise be
+      // retried forever against a rule that now refuses it.
+      if (m.receiver_id) {
+        const sender = users.find(u => u.id === m.sender_id);
+        const recipient = users.find(u => u.id === m.receiver_id);
+        if (!canMessageUser(recipient, sender)) {
+          console.warn('[data] refused retry: recipient does not accept inquiries from this club');
+          return prev;
+        }
+      }
+      persistMessage({ ...m, send_status: 'sending' }, true);
       return prev;
     });
-  }, [persistMessage]);
+  }, [persistMessage, users]);
 
   // Marks the conversation read up to its latest message. Called when the chat is
   // actually visible — one upsert, not a write per message or per render.
@@ -1017,6 +1068,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
       return [...others, { conversation_id: conversationId, user_id: userId, last_read_at: iso, last_read_message_id: last?.id }];
     });
     db.upsertReadCursor(conversationId, userId, last?.id);
+    // Reading the thread retires its Android conversation notification and the
+    // message history the native builder accumulates for it, so reopening the app
+    // never leaves a stale banner behind.
+    RotaractNotifications?.clearConversation(conversationId);
   }, [messages]);
 
   const broadcastToEvent = useCallback(async (eventId: string, title: string, message: string, priority: NotificationPriority) => {

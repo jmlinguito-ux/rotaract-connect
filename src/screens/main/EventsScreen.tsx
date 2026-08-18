@@ -21,7 +21,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { useAppRefreshControl } from '../../hooks/useAppRefreshControl';
 import { AreaOfFocus, RotaractEvent } from '../../types';
 
-import { visibleEvents } from '../../utils/eventApproval';
+import { visibleEvents, canApproveEvent } from '../../utils/eventApproval';
 
 type ParticipationOption = 'JOINED' | 'ATTENDED' | 'INVITED' | 'MY' | 'APPROVALS';
 type StatusOption = 'ONGOING' | 'SCHEDULED' | 'RECRUITING' | 'COMPLETED';
@@ -109,8 +109,14 @@ export default function EventsScreen() {
       const isJoined = participants.some(p => p.event_id === e.id && p.user_id === user.id && p.status === 'JOINED');
       const isInvited = invitations.some(i => i.event_id === e.id && i.invited_user_id === user.id && i.status === 'PENDING');
       const isPendingApproval = e.status === 'PENDING_APPROVAL';
+      // An event waiting on THIS user's sign-off belongs under "My" even when
+      // another club organised it: as a partner or co-organising club's President
+      // they are not on the organising team, so isMyClubOrOrganized misses it and
+      // the event became unreachable from every tab except All — while still
+      // counting toward the pending-approvals badge.
+      const needsMyApproval = canApproveEvent(e, user, users);
 
-      if (agendaTab === 'MY') return isMyClubOrOrganized;
+      if (agendaTab === 'MY') return isMyClubOrOrganized || needsMyApproval;
       if (agendaTab === 'JOINED') return isJoined;
       if (agendaTab === 'INVITED') return isInvited;
       return isMyClubOrOrganized || isJoined || isInvited || isPendingApproval;
@@ -160,7 +166,9 @@ export default function EventsScreen() {
       const isPendingApproval = e.status === 'PENDING_APPROVAL';
 
       let include = false;
-      if (agendaTab === 'MY') include = isMyClubOrOrganized;
+      // Must match the list filter above, or a day shows no count while the list
+      // for that same day has the event.
+      if (agendaTab === 'MY') include = isMyClubOrOrganized || canApproveEvent(e, user, users);
       else if (agendaTab === 'JOINED') include = isJoined;
       else if (agendaTab === 'INVITED') include = isInvited;
       else include = isMyClubOrOrganized || isJoined || isInvited || isPendingApproval;

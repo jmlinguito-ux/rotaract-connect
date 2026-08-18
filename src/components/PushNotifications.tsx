@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { usePreferences } from '../context/PreferencesContext';
 import { navigate } from '../navigation/navigationRef';
+import RotaractNotifications from '../../modules/rotaract-notifications';
 import {
   configurePushNotifications,
   registerForPushNotificationsAsync,
@@ -13,6 +14,7 @@ import {
 
 /** Deep-link payload carried by every push (set by the send-push Edge Function). */
 interface PushData {
+  /** Absent on group-chat pushes, which are sent straight from the message row. */
   notificationId?: string;
   kind?: string;
   event_id?: string;
@@ -59,11 +61,27 @@ export function PushNotifications() {
   // launched the app from a terminated state. Native only — these APIs throw on web.
   useEffect(() => {
     if (Platform.OS === 'web') return;
-    const sub = Notifications.addNotificationResponseReceivedListener(resp => {
+    // The DISMISS action button must NOT navigate — only a tap on the notification
+    // body (DEFAULT_ACTION_IDENTIFIER) or an explicit REPLY / VIEW opens a screen.
+    const accept = (resp: Notifications.NotificationResponse) => {
+      // Any interaction counts as "seen" — silence a looping urgent alert.
+      RotaractNotifications?.stopUrgentAlert();
+      if (resp.actionIdentifier === 'dismiss') return;
       setPending((resp.notification.request.content.data ?? {}) as PushData);
-    });
+    };
+    const sub = Notifications.addNotificationResponseReceivedListener(accept);
     Notifications.getLastNotificationResponseAsync().then(resp => {
-      if (resp) setPending((resp.notification.request.content.data ?? {}) as PushData);
+      if (resp) accept(resp);
+    });
+    return () => sub.remove();
+  }, []);
+
+  // Opening the app is also "seen": an urgent alert must not keep sounding while
+  // the user is looking at it.
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') RotaractNotifications?.stopUrgentAlert();
     });
     return () => sub.remove();
   }, []);

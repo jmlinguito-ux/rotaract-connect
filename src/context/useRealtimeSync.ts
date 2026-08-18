@@ -209,6 +209,12 @@ export function useRealtimeSync({
     const tableReloadChannels = ([
       'events', 'event_participants', 'event_invitations', 'event_impacts',
       'verification_applications', 'conversations',
+      // Added with migration 0019. `clubs` and `event_participating_clubs` decide
+      // who must approve an event, so without them an approver set could change
+      // with no client noticing; `profiles` keeps OTHER members' roles and
+      // verification badges current (a user's OWN profile is handled by its own
+      // subscription in AuthContext).
+      'clubs', 'zones', 'event_participating_clubs', 'audit_logs', 'profiles',
     ] as const).map(table =>
       supabase
         .channel(`rt-${table}`)

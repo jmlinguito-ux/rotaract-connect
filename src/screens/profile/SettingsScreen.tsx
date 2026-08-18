@@ -15,9 +15,9 @@ import TermsAndPrivacyModal from '../../components/TermsAndPrivacyModal';
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
 export default function SettingsScreen({ navigation }: Props) {
-  const { user, changePassword } = useAuth();
+  const { user, changePassword, updateProfile, requestEmailChange, confirmEmailChange } = useAuth();
   const { isNightMode, setNightMode, colors: themeColors } = useTheme();
-  const { inAppBannerEnabled, setInAppBannerEnabled, pushEnabled, setPushEnabled } = usePreferences();
+  const { pushEnabled, setPushEnabled, showActiveStatus, setShowActiveStatus } = usePreferences();
 
   // Legal modal state
   const [legalModalVisible, setLegalModalVisible] = useState(false);
@@ -25,6 +25,42 @@ export default function SettingsScreen({ navigation }: Props) {
 
   // Change-password modal state
   const [pwModalVisible, setPwModalVisible] = useState(false);
+  // Email change: request a code to the NEW address, then confirm it. Two steps so
+  // a typo simply never receives a code, leaving the account untouched.
+  const [emailModalVisible, setEmailModalVisible] = useState(false);
+  const [emailStep, setEmailStep] = useState<'enter' | 'confirm' | 'done'>('enter');
+  const [newEmail, setNewEmail] = useState('');
+  const [emailCode, setEmailCode] = useState('');
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [emailBusy, setEmailBusy] = useState(false);
+
+  const closeEmailModal = () => {
+    setEmailModalVisible(false);
+    setEmailStep('enter');
+    setNewEmail('');
+    setEmailCode('');
+    setEmailError(null);
+    setEmailBusy(false);
+  };
+
+  const submitEmailRequest = async () => {
+    setEmailBusy(true);
+    setEmailError(null);
+    const { error } = await requestEmailChange(newEmail);
+    setEmailBusy(false);
+    if (error) { setEmailError(error); return; }
+    setEmailStep('confirm');
+  };
+
+  const submitEmailConfirm = async () => {
+    if (!emailCode.trim()) { setEmailError('Enter the 6-digit code.'); return; }
+    setEmailBusy(true);
+    setEmailError(null);
+    const { error } = await confirmEmailChange(newEmail, emailCode);
+    setEmailBusy(false);
+    if (error) { setEmailError(error); return; }
+    setEmailStep('done');
+  };
   const [currentPw, setCurrentPw] = useState('');
   const [newPw, setNewPw] = useState('');
   const [retypePw, setRetypePw] = useState('');
@@ -74,11 +110,8 @@ export default function SettingsScreen({ navigation }: Props) {
   const [joinRequestsAlerts, setJoinRequestsAlerts] = useState(true);
   const [districtAnnouncements, setDistrictAnnouncements] = useState(true);
 
-  const [allowDirectInquiries, setAllowDirectInquiries] = useState(true);
-  const [showMapStatus, setShowMapStatus] = useState(true);
   
   const [highAccuracyGps, setHighAccuracyGps] = useState(true);
-  const [checkInRadius, setCheckInRadius] = useState<'250' | '500' | '1000'>('500');
 
   if (!user) return null;
 
@@ -154,7 +187,7 @@ export default function SettingsScreen({ navigation }: Props) {
 
             <View style={dividerStyle} />
 
-            <TouchableOpacity style={styles.row} onPress={() => Alert.alert('Email Address', user.email)}>
+            <TouchableOpacity style={styles.row} onPress={() => setEmailModalVisible(true)}>
               <View style={[styles.rowIconWrap, { backgroundColor: themeColors.primary + '1A' }]}>
                 <Ionicons name="mail-outline" size={18} color={themeColors.primary} />
               </View>
@@ -195,24 +228,6 @@ export default function SettingsScreen({ navigation }: Props) {
               <Switch
                 value={pushEnabled}
                 onValueChange={setPushEnabled}
-                trackColor={{ false: themeColors.border, true: themeColors.primary }}
-                thumbColor="#fff"
-              />
-            </View>
-
-            <View style={dividerStyle} />
-
-            <View style={styles.row}>
-              <View style={[styles.rowIconWrap, { backgroundColor: themeColors.primary + '1A' }]}>
-                <Ionicons name="notifications-outline" size={18} color={themeColors.primary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={titleStyle}>In-App Notification Popups</Text>
-                <Text style={subStyle}>Show a banner at the top when something new arrives</Text>
-              </View>
-              <Switch
-                value={inAppBannerEnabled}
-                onValueChange={setInAppBannerEnabled}
                 trackColor={{ false: themeColors.border, true: themeColors.primary }}
                 thumbColor="#fff"
               />
@@ -302,11 +317,11 @@ export default function SettingsScreen({ navigation }: Props) {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={titleStyle}>Allow Direct Inquiries</Text>
-                <Text style={subStyle}>Let members outside your club message you</Text>
+                <Text style={subStyle}>Let members outside your club start a chat with you</Text>
               </View>
               <Switch
-                value={allowDirectInquiries}
-                onValueChange={setAllowDirectInquiries}
+                value={user.allow_direct_inquiries !== false}
+                onValueChange={v => updateProfile({ allow_direct_inquiries: v })}
                 trackColor={{ false: themeColors.border, true: themeColors.primary }}
                 thumbColor="#fff"
               />
@@ -316,19 +331,20 @@ export default function SettingsScreen({ navigation }: Props) {
 
             <View style={styles.row}>
               <View style={[styles.rowIconWrap, { backgroundColor: themeColors.primary + '1A' }]}>
-                <Ionicons name="map-outline" size={18} color={themeColors.primary} />
+                <Ionicons name="ellipse" size={18} color={themeColors.primary} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={titleStyle}>Show Active Status on Map</Text>
-                <Text style={subStyle}>Visible during ongoing events</Text>
+                <Text style={titleStyle}>Show Active Status</Text>
+                <Text style={subStyle}>Let others see when you're online in chats</Text>
               </View>
               <Switch
-                value={showMapStatus}
-                onValueChange={setShowMapStatus}
+                value={showActiveStatus}
+                onValueChange={setShowActiveStatus}
                 trackColor={{ false: themeColors.border, true: themeColors.primary }}
                 thumbColor="#fff"
               />
             </View>
+
           </View>
         </View>
 
@@ -352,38 +368,6 @@ export default function SettingsScreen({ navigation }: Props) {
               />
             </View>
 
-            <View style={dividerStyle} />
-
-            <View style={styles.columnRow}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <View style={[styles.rowIconWrap, { backgroundColor: themeColors.primary + '1A' }]}>
-                  <Ionicons name="radio-outline" size={18} color={themeColors.primary} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={titleStyle}>Allowed Check-In Distance</Text>
-                  <Text style={subStyle}>Max radius from venue for check-in</Text>
-                </View>
-              </View>
-              <View style={styles.radiusPills}>
-                {(['250', '500', '1000'] as const).map(rad => {
-                  const active = checkInRadius === rad;
-                  return (
-                    <TouchableOpacity
-                      key={rad}
-                      style={[
-                        styles.radiusPill,
-                        { backgroundColor: active ? themeColors.primary : themeColors.surface, borderColor: active ? themeColors.primary : themeColors.border },
-                      ]}
-                      onPress={() => setCheckInRadius(rad)}
-                    >
-                      <Text style={[styles.radiusText, { color: active ? '#fff' : themeColors.textMuted }]}>
-                        {rad === '1000' ? '1 km' : `${rad}m`}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
           </View>
         </View>
 
@@ -458,6 +442,90 @@ export default function SettingsScreen({ navigation }: Props) {
       />
 
       {/* 🔒 CHANGE PASSWORD MODAL */}
+      <Modal visible={emailModalVisible} transparent animationType="fade" onRequestClose={closeEmailModal}>
+        <KeyboardAvoidingView
+          style={styles.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <View style={[styles.modalCard, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: themeColors.text }]}>
+                {emailStep === 'done' ? 'Email Updated' : 'Change Email Address'}
+              </Text>
+              <TouchableOpacity onPress={closeEmailModal} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Ionicons name="close" size={22} color={themeColors.textMuted} />
+              </TouchableOpacity>
+            </View>
+
+            {emailError ? (
+              <View style={styles.pwErrorBanner}>
+                <Ionicons name="alert-circle" size={15} color={themeColors.danger} />
+                <Text style={[styles.pwErrorText, { color: themeColors.danger }]}>{emailError}</Text>
+              </View>
+            ) : null}
+
+            {emailStep === 'enter' ? (
+              <>
+                <Text style={[styles.pwLabel, { color: themeColors.primary }]}>New Email Address</Text>
+                <TextInput
+                  style={[styles.pwInput, { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text }]}
+                  value={newEmail}
+                  onChangeText={setNewEmail}
+                  placeholder="you@example.com"
+                  placeholderTextColor={themeColors.textMuted}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  autoCorrect={false}
+                />
+                <Text style={[styles.pwHint, { color: themeColors.textMuted }]}>
+                  We'll send a 6-digit code to this address. Your email only changes once you enter it.
+                </Text>
+                <TouchableOpacity
+                  style={[styles.saveBtn, { backgroundColor: themeColors.primary }, emailBusy && { opacity: 0.6 }]}
+                  onPress={submitEmailRequest}
+                  disabled={emailBusy}
+                >
+                  {emailBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>Send Code</Text>}
+                </TouchableOpacity>
+              </>
+            ) : emailStep === 'confirm' ? (
+              <>
+                <Text style={[styles.pwLabel, { color: themeColors.primary }]}>Confirmation Code</Text>
+                <TextInput
+                  style={[styles.pwInput, { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text, letterSpacing: 4, textAlign: 'center' }]}
+                  value={emailCode}
+                  onChangeText={setEmailCode}
+                  placeholder="000000"
+                  placeholderTextColor={themeColors.textMuted}
+                  keyboardType="number-pad"
+                  maxLength={6}
+                />
+                <Text style={[styles.pwHint, { color: themeColors.textMuted }]}>
+                  Sent to {newEmail}. Check spam if it hasn't arrived.
+                </Text>
+                <TouchableOpacity
+                  style={[styles.saveBtn, { backgroundColor: themeColors.primary }, emailBusy && { opacity: 0.6 }]}
+                  onPress={submitEmailConfirm}
+                  disabled={emailBusy}
+                >
+                  {emailBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>Confirm</Text>}
+                </TouchableOpacity>
+              </>
+            ) : (
+              <View style={styles.pwSuccessWrap}>
+                <Ionicons name="checkmark-circle" size={44} color={themeColors.success} />
+                <Text style={[styles.pwSuccessText, { color: themeColors.text }]}>
+                  Your email is now {newEmail}.
+                </Text>
+                <TouchableOpacity style={[styles.saveBtn, { backgroundColor: themeColors.primary, marginTop: 4 }]} onPress={closeEmailModal}>
+                  <Text style={styles.saveBtnText}>Done</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
       <Modal visible={pwModalVisible} transparent animationType="fade" onRequestClose={closePwModal}>
         <KeyboardAvoidingView
           style={styles.modalOverlay}
@@ -578,6 +646,7 @@ const styles = StyleSheet.create({
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   modalTitle: { fontSize: 18, fontWeight: '800' },
   pwLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5, marginBottom: 6, marginTop: 12 },
+  pwHint: { fontSize: 12, lineHeight: 17, marginTop: 8, marginBottom: 4 },
   pwInput: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15 },
   pwShowRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12, marginBottom: 4 },
   pwShowText: { fontSize: 13, fontWeight: '600' },

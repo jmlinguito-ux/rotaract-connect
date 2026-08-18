@@ -58,9 +58,20 @@ export async function loadAll(signal?: AbortSignal): Promise<LoadedData> {
     withSignal(supabase.from('event_impacts').select('*')),
     withSignal(supabase.from('verification_applications').select('*')),
     withSignal(supabase.from('audit_logs').select('*')),
-    withSignal(supabase.from('notifications').select('*')),
+    // Ordered and capped explicitly. PostgREST enforces a server-side row cap
+    // (1000 by default), so an unordered select silently returned an ARBITRARY
+    // slice once a user passed it — with no guarantee the newest were included.
+    // Newest-first makes truncation deterministic: you lose the oldest, never the
+    // most recent.
+    withSignal(supabase.from('notifications').select('*')
+      .order('created_at', { ascending: false }).limit(500)),
     withSignal(supabase.from('conversations').select('*')),
-    withSignal(supabase.from('direct_messages').select('*').order('created_at', { ascending: true })),
+    // Descending, not ascending: with the same server-side cap, ascending order
+    // returned the OLDEST rows and dropped recent chat history entirely. The client
+    // re-sorts ascending for display (see messagesForConversation), so the fetch
+    // order is free to be whatever keeps the right rows.
+    withSignal(supabase.from('direct_messages').select('*')
+      .order('created_at', { ascending: false }).limit(1000)),
     // message_reads may not exist until migration 0007 is applied — tolerate that.
     withSignal(supabase.from('message_reads').select('*')),
     // message_deletions may not exist until migration 0009 — tolerate that. RLS
@@ -99,6 +110,9 @@ export async function loadAll(signal?: AbortSignal): Promise<LoadedData> {
     verification_status: p.verification_status,
     avatar_url: p.avatar_url ?? undefined,
     contact_number: p.contact_number ?? undefined,
+    // Required by canMessageUser: without it every other member reads as
+    // "undefined", which is not false, so the messaging gate never engaged.
+    allow_direct_inquiries: p.allow_direct_inquiries ?? true,
   }));
 
   const mappedClubs: Club[] = clubs.map((c: any) => ({
@@ -325,6 +339,20 @@ export const db = {
       }
     }
   },
+  /**
+   * Records the caller's approval of a pending event.
+   *
+   * An RPC rather than a plain update: the events UPDATE policy only admits the
+   * ORGANISING club's President, so a partner or co-organising club's President had
+   * their approval silently discarded (an RLS USING violation updates zero rows and
+   * reports no error). The function re-derives the approver set server-side, so
+   * authorisation does not depend on what the client claims.
+   */
+  approveEvent: async (eventId: string) => {
+    const { error } = await supabase.rpc('approve_event', { p_event_id: eventId });
+    reportError('approveEvent', error);
+    return !error;
+  },
   insertParticipant: async (p: EventParticipant) => {
     reportError('insertParticipant', (await supabase.from('event_participants').upsert(p, { onConflict: 'event_id,user_id' })).error);
   },
@@ -389,10 +417,23 @@ export const db = {
     const { participant_name, organizer_name, ...row } = updates;
     reportError('updateConversation', (await supabase.from('conversations').update(row).eq('id', id)).error);
   },
-  insertMessage: async (msg: DirectMessage): Promise<boolean> => {
+  insertMessage: async (msg: DirectMessage): Promise<boolean | 'blocked'> => {
     // Strip derived / transient fields; keep attachment_path + attachment_type.
     const { sender_name, receiver_name, send_status, ...row } = msg;
     const { error } = await supabase.from('direct_messages').insert(row);
+
+    // A row-level rejection here is not a sync failure — it means the recipient
+    // does not accept inquiries from this sender and our copy of their profile was
+    // stale. Reporting it through the generic "changes didn't save" banner would be
+    // both wrong and unhelpful, so it is signalled separately for the caller to
+    // handle and reconcile.
+    // Matched on message as well as code: the code is the documented signal, but a
+    // single missed match here puts the raw policy error back in front of the user.
+    const refused =
+      error?.code === '42501'
+      || /row-level security/i.test(error?.message ?? '');
+    if (refused) return 'blocked';
+
     reportError('insertMessage', error);
     return !error;
   },

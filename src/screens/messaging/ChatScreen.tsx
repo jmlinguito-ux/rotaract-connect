@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { View, Text, FlatList, StyleSheet, TextInput, TouchableOpacity, Platform, Image, Alert, ActivityIndicator, Keyboard, KeyboardAvoidingView } from 'react-native';
+import { AppState, View, Text, FlatList, StyleSheet, TextInput, TouchableOpacity, Platform, Image, Alert, ActivityIndicator, Keyboard, KeyboardAvoidingView } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useIsFocused } from '@react-navigation/native';
@@ -19,6 +19,9 @@ import { UserProfileModal } from '../../components/UserProfileModal';
 import { useChatPresence } from '../../hooks/useChatPresence';
 import { useSignedUrl } from '../../hooks/useSignedUrl';
 import { uploadImageAsset } from '../../services/storage';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
+import { canMessageUser, inquiryBlockedMessage } from '../../utils/messaging';
+import RotaractNotifications from '../../../modules/rotaract-notifications';
 import { formatTime } from '../../utils/timeFormat';
 import { DirectMessage } from '../../types';
 
@@ -40,10 +43,20 @@ export default function ChatScreen({ route, navigation }: Props) {
   const headerHeight = useHeaderHeight();
   const isFocused = useIsFocused();
   const listRef = useRef<FlatList>(null);
+  // Whether the list is parked at the newest message. Auto-scrolling is gated on
+  // this: without it, every content-size change (a row re-measuring, a chat image
+  // finishing its load) dragged the user back down mid-scroll.
+  const atBottom = useRef(true);
+
+  const handleScroll = useCallback((e: any) => {
+    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+    atBottom.current = contentSize.height - (contentOffset.y + layoutMeasurement.height) < 80;
+  }, []);
 
   useEffect(() => {
     const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const showSub = Keyboard.addListener(showEvt, () => {
+      if (!atBottom.current) return;   // don't yank someone out of the backlog
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
     });
     return () => { showSub.remove(); };
@@ -57,11 +70,42 @@ export default function ChatScreen({ route, navigation }: Props) {
   const [expandedSeenId, setExpandedSeenId] = useState<string | null>(null);
   // Message long-pressed to open the delete menu (delete for me / unsend).
   const [actionMsg, setActionMsg] = useState<DirectMessage | null>(null);
+  // Mentions confirmed by tapping a member. Kept as ids so a rename never breaks
+  // targeting, and re-checked against the text on send so deleting the name drops it.
+  const [mentions, setMentions] = useState<{ id: string; full_name: string }[]>([]);
+  // Refusal notice, shown instead of letting the write fail into the sync banner.
+  const [blockedName, setBlockedName] = useState<string | null>(null);
+  // Explains the read-only composer when the notice is tapped.
+  const [reasonVisible, setReasonVisible] = useState(false);
 
-  const messages = messagesForConversation(conversationId, user?.id);
+  // Memoised: messagesForConversation returns a NEW array each call, so calling it
+  // inline gave FlatList a fresh `data` identity on every render — including ones
+  // caused by typing indicators and presence, which re-rendered the whole list.
+  const messages = useMemo(
+    () => messagesForConversation(conversationId, user?.id),
+    [messagesForConversation, conversationId, user?.id],
+  );
   const event = eventId ? events.find(e => e.id === eventId) : undefined;
   const isGroupChat = recipientId === 'ALL_PARTICIPANTS' || conversationId.includes('conv_group');
   const recipientUser = !isGroupChat ? users.find(u => u.id === recipientId || u.full_name === recipientName) : undefined;
+  /**
+   * Why this thread is read-only, if it is.
+   *
+   * Checked HERE and not only where a chat is opened: an existing thread can be
+   * reopened straight from the Inbox, bypassing every entry-point check — which is
+   * how the row-level rejection was still being hit.
+   *
+   * A deleted account and a closed inbox both make the composer useless, but for
+   * different reasons, so they are distinguished rather than sharing one message.
+   * Profiles are hard-deleted (see DataContext.removeUser), so a missing recipient
+   * IS the deleted case.
+   */
+  const recipientMissing = !isGroupChat && !recipientUser;
+  const inquiriesClosed = !isGroupChat && !!recipientUser && !canMessageUser(recipientUser, user);
+  const cannotMessage = recipientMissing || inquiriesClosed;
+  const blockReason = recipientMissing
+    ? `${recipientName || 'This member'} is no longer on Rotaract Connect. Their account was deleted, so this conversation is read-only.`
+    : inquiryBlockedMessage(recipientName);
   const confirmedParticipants = eventId ? participantsFor(eventId).filter(p => p.status === 'JOINED') : [];
 
   // A completed (or cancelled) event's group chat is archived: history stays fully
@@ -72,6 +116,30 @@ export default function ChatScreen({ route, navigation }: Props) {
   // Presence + typing over an ephemeral realtime channel (no DB writes).
   const me = user ? { id: user.id, name: user.full_name } : null;
   const { onlineIds, typingUsers, sendTyping } = useChatPresence(conversationId, me);
+
+  // While this chat is on screen its incoming messages must not become notifications.
+  // Handled natively rather than in the JS notification handler so it still applies
+  // in the states where JS is not running (see RotaractPresentationDelegate).
+  //
+  // The flag is re-asserted on a heartbeat and cleared when the app backgrounds:
+  // unmount cleanup alone is not enough, because force-closing the app runs no
+  // cleanup at all and a stuck flag suppresses this conversation's notifications
+  // entirely. Native also expires it, so the two guard each other.
+  useEffect(() => {
+    if (!isFocused) return;
+    const assert = () => RotaractNotifications?.setActiveConversation(conversationId);
+    assert();
+    const heartbeat = setInterval(assert, 60_000);
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') assert();
+      else RotaractNotifications?.setActiveConversation(null);
+    });
+    return () => {
+      clearInterval(heartbeat);
+      sub.remove();
+      RotaractNotifications?.setActiveConversation(null);
+    };
+  }, [isFocused, conversationId]);
   const typingThrottle = useRef<number>(0);
 
   // Read receipts: mark the conversation read whenever it is on-screen and the
@@ -84,13 +152,47 @@ export default function ChatScreen({ route, navigation }: Props) {
     }
   }, [isFocused, lastMsgId, conversationId, user?.id, markConversationRead]);
 
-  // Keep the newest message in view as messages arrive / keyboard opens.
+  // Follow new messages only when already at the newest one — or when the new
+  // message is our own, since sending always implies wanting to see it.
   useEffect(() => {
-    if (messages.length) {
-      const t = setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
-      return () => clearTimeout(t);
-    }
+    if (!messages.length) return;
+    const mine = messages[messages.length - 1]?.sender_id === user?.id;
+    if (!atBottom.current && !mine) return;
+    const t = setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastMsgId]);
+
+  // Members who can be @mentioned: the event's JOINED participants, minus me.
+  const mentionableMembers = useMemo(() => {
+    if (!isGroupChat || !eventId) return [];
+    const joined = participantsFor(eventId).filter(p => p.status === 'JOINED');
+    return joined
+      .map(p => users.find(u => u.id === p.user_id))
+      .filter((u): u is NonNullable<typeof u> => !!u && u.id !== user?.id);
+  }, [isGroupChat, eventId, participantsFor, users, user?.id]);
+
+  // Matches an in-progress "@query" at the end of the composer. Anchored to the end
+  // because that is where a mention is actually being typed; matching anywhere would
+  // re-open the picker while editing earlier text.
+  const mentionQuery = useMemo(() => {
+    if (!isGroupChat) return null;
+    const m = text.match(/(?:^|\s)@([\p{L}\p{N}_.-]*)$/u);
+    return m ? m[1] : null;
+  }, [text, isGroupChat]);
+
+  const mentionMatches = useMemo(() => {
+    if (mentionQuery === null) return [];
+    const q = mentionQuery.toLowerCase();
+    return mentionableMembers
+      .filter(u => u.full_name.toLowerCase().includes(q))
+      .slice(0, 6);
+  }, [mentionQuery, mentionableMembers]);
+
+  const insertMention = useCallback((member: { id: string; full_name: string }) => {
+    setText(prev => prev.replace(/(^|\s)@([\p{L}\p{N}_.-]*)$/u, `$1@${member.full_name} `));
+    setMentions(prev => (prev.some(m => m.id === member.id) ? prev : [...prev, { id: member.id, full_name: member.full_name }]));
+  }, []);
 
   const handleTextChange = useCallback((val: string) => {
     setText(val);
@@ -104,15 +206,22 @@ export default function ChatScreen({ route, navigation }: Props) {
   }, [sendTyping]);
 
   const handleSend = () => {
-    if (!text.trim() || !user || isArchived) return;
-    sendDirectMessage(conversationId, eventId, user, isGroupChat ? undefined : recipientId, recipientName, text.trim(), eventTitle || event?.title);
+    if (!text.trim() || !user || isArchived || cannotMessage) return;
+    const body = text.trim();
+    const stillMentioned = mentions.filter(m => body.includes(`@${m.full_name}`));
+    sendDirectMessage(
+      conversationId, eventId, user, isGroupChat ? undefined : recipientId, recipientName,
+      body, eventTitle || event?.title, undefined,
+      [...new Set(stillMentioned.map(m => m.id))],
+    );
+    setMentions([]);
     setText('');
     sendTyping(false); // typing indicator disappears immediately on send
     typingThrottle.current = 0;
   };
 
   const handleAttachPhoto = async () => {
-    if (!user || isArchived) return;
+    if (!user || isArchived || cannotMessage) return;
     try {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) {
@@ -279,7 +388,13 @@ export default function ChatScreen({ route, navigation }: Props) {
           keyExtractor={m => m.id}
           style={{ flex: 1 }}
           contentContainerStyle={styles.messageList}
-          onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
+          onContentSizeChange={() => {
+            // Fires for image loads and row re-measures too, not just new messages —
+            // scrolling unconditionally here is what made the backlog unreachable.
+            if (atBottom.current) listRef.current?.scrollToEnd({ animated: false });
+          }}
           renderItem={({ item, index }) => {
             const isMe = item.sender_id === user.id;
             const senderUser = users.find(u => u.id === item.sender_id);
@@ -443,7 +558,52 @@ export default function ChatScreen({ route, navigation }: Props) {
             <Ionicons name="lock-closed" size={14} color={themeColors.textMuted} />
             <Text style={[styles.archivedComposerText, { color: themeColors.textMuted }]}>Messaging is closed for this archived conversation</Text>
           </View>
+        ) : cannotMessage ? (
+          <TouchableOpacity
+            style={[styles.archivedComposer, { backgroundColor: themeColors.cardBg, borderTopColor: themeColors.border }]}
+            onPress={() => setReasonVisible(true)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="lock-closed" size={14} color={themeColors.textMuted} />
+            <Text style={[styles.archivedComposerText, { color: themeColors.textMuted }]}>
+              You can't message this account
+            </Text>
+            <Ionicons name="information-circle-outline" size={15} color={themeColors.textMuted} />
+          </TouchableOpacity>
         ) : (
+          <>
+            {/* Member picker, shown while an "@query" is being typed. A plain mapped
+                list rather than a FlatList: it is capped at six rows, and nesting a
+                VirtualizedList inside the message list warns at runtime. */}
+            {mentionMatches.length > 0 && (
+              <View style={[styles.mentionBar, { backgroundColor: themeColors.cardBg, borderTopColor: themeColors.border }]}>
+                {mentionMatches.map(member => (
+                  <TouchableOpacity
+                    key={member.id}
+                    style={styles.mentionRow}
+                    onPress={() => insertMention(member)}
+                    activeOpacity={0.7}
+                  >
+                    <UserAvatar user={member} size={28} showBadge={false} />
+                    <Text style={[styles.mentionName, { color: themeColors.text }]} numberOfLines={1}>
+                      {member.full_name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
+            {/* Confirmed mentions, so the user can see who the message will notify. */}
+            {mentions.length > 0 && (
+              <View style={[styles.mentionChipRow, { backgroundColor: themeColors.cardBg }]}>
+                {mentions.map(m => (
+                  <View key={m.id} style={[styles.mentionChip, { backgroundColor: themeColors.primary + '1A' }]}>
+                    <Text style={[styles.mentionChipText, { color: themeColors.primary }]}>@{m.full_name}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
           <View style={[styles.inputBar, { backgroundColor: themeColors.cardBg, borderTopColor: themeColors.border }]}>
             <TouchableOpacity style={styles.attachBtn} onPress={handleAttachPhoto} disabled={uploading}>
               {uploading ? <ActivityIndicator size="small" color={themeColors.primary} /> : <Ionicons name="image" size={22} color={themeColors.primary} />}
@@ -465,6 +625,7 @@ export default function ChatScreen({ route, navigation }: Props) {
               <Ionicons name="send" size={16} color="#fff" />
             </TouchableOpacity>
           </View>
+          </>
         )}
       </KeyboardAvoidingView>
 
@@ -517,6 +678,10 @@ export default function ChatScreen({ route, navigation }: Props) {
         onStartChat={(targetUser, aboutEvent) => {
           setSelectedUserModal(null);
           if (targetUser.id !== recipientId) {
+            if (!canMessageUser(users.find(u => u.id === targetUser.id), user)) {
+              setBlockedName(targetUser.full_name);
+              return;
+            }
             const ctxEventId = aboutEvent ? eventId : undefined;
             const conv = getOrCreateConversation(ctxEventId, user, targetUser.id, targetUser.full_name);
             navigation.push('Chat', {
@@ -529,7 +694,22 @@ export default function ChatScreen({ route, navigation }: Props) {
           }
         }}
       />
-    </SafeAreaView>
+          <ConfirmDialog
+        visible={reasonVisible}
+        title={recipientMissing ? 'Account deleted' : 'Messaging unavailable'}
+        message={blockReason}
+        onClose={() => setReasonVisible(false)}
+        confirmLabel="OK"
+      />
+
+      <ConfirmDialog
+        visible={!!blockedName}
+        title="Messaging unavailable"
+        message={blockedName ? inquiryBlockedMessage(blockedName) : undefined}
+        onClose={() => setBlockedName(null)}
+        confirmLabel="OK"
+      />
+</SafeAreaView>
   );
 }
 
@@ -553,6 +733,12 @@ function ChatImage({ path, onPress, onLongPress }: { path: string; onPress: (uri
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
+  mentionBar: { borderTopWidth: StyleSheet.hairlineWidth, paddingVertical: 4 },
+  mentionRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 8 },
+  mentionName: { fontSize: 14, fontWeight: '600', flex: 1 },
+  mentionChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 14, paddingTop: 6 },
+  mentionChip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  mentionChipText: { fontSize: 12, fontWeight: '700' },
   userHeaderCard: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 12, borderBottomWidth: 1 },
   avatarCircle: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   onlineDot: { position: 'absolute', bottom: 0, right: 0, width: 12, height: 12, borderRadius: 6, backgroundColor: '#22C55E', borderWidth: 2 },

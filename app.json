@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "rotaract-connect",
+    "name": "Rotaract Connect",
     "slug": "rotaract-connect",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -57,6 +57,7 @@
       ],
       "@react-native-community/datetimepicker",
       "./plugins/withDisableScriptSandboxing",
+      "./plugins/withConversationNotifications",
       "expo-audio",
       "expo-asset",
       [
@@ -64,7 +65,11 @@
         {
           "icon": "./assets/notification-icon.png",
           "color": "#D41367",
-          "defaultChannel": "default"
+          "defaultChannel": "general_v3",
+          "sounds": [
+            "./assets/sounds/chime.wav",
+            "./assets/sounds/alert.wav"
+          ]
         }
       ],
       [

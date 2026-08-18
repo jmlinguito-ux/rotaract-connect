@@ -32,6 +32,17 @@ export function UserProfileModal({
   const { users, userStats, updateUserRole } = useData();
   const { colors } = useTheme();
   const [fullImageUri, setFullImageUri] = useState<string | null>(null);
+
+  /**
+   * This member only accepts inquiries from their own club, and we are not in it.
+   * The database enforces this too (migration 0022) — hiding the button just keeps
+   * the UI honest rather than offering an action that would be rejected.
+   */
+  const inquiriesBlocked =
+    targetUser?.allow_direct_inquiries === false
+    && targetUser?.club_id !== currentUser?.club_id
+    && currentUser?.role !== 'DISTRICT_ADMIN'
+    && currentUser?.role !== 'APP_ADMIN';
   const [isRolePickerOpen, setIsRolePickerOpen] = useState(false);
   const [roleNotice, setRoleNotice] = useState<{ text: string; error: boolean } | null>(null);
 
@@ -144,7 +155,7 @@ export function UserProfileModal({
 
             {/* Direct Action Button(s): when opened from an event, let the user
                 choose to message about that event or just send a plain message. */}
-            {!isMe && onStartChat && (
+            {!isMe && onStartChat && !inquiriesBlocked && (
               eventContext ? (
                 <View style={styles.chatChoiceGroup}>
                   <TouchableOpacity
@@ -174,14 +185,17 @@ export function UserProfileModal({
             )}
           </TouchableOpacity>
         </TouchableOpacity>
-      </Modal>
 
-      <FullImageModal
-        visible={!!fullImageUri}
-        imageUri={fullImageUri}
-        title={`${targetUser.full_name}'s Profile Photo`}
-        onClose={() => setFullImageUri(null)}
-      />
+        {/* Inside the Modal, and as an overlay rather than a second Modal — iOS
+            will not present one Modal on top of another. */}
+        <FullImageModal
+          presentation="overlay"
+          visible={!!fullImageUri}
+          imageUri={fullImageUri}
+          title={`${targetUser.full_name}'s Profile Photo`}
+          onClose={() => setFullImageUri(null)}
+        />
+      </Modal>
     </>
   );
 }

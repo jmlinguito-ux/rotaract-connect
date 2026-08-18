@@ -4,7 +4,6 @@ import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import * as SplashScreen from 'expo-splash-screen';
 import { navigationRef } from './navigationRef';
-import { InAppNotificationBanner } from '../components/InAppNotificationBanner';
 import { PushNotifications } from '../components/PushNotifications';
 import { SyncErrorBanner } from '../components/SyncErrorBanner';
 import { StatusBar } from 'expo-status-bar';
@@ -35,12 +34,8 @@ import OrganizerBroadcastScreen from '../screens/events/OrganizerBroadcastScreen
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function RootNavigator() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
   const { isNightMode, colors: themeColors } = useTheme();
-
-  useEffect(() => {
-    SplashScreen.hideAsync().catch(() => {});
-  }, []);
 
   const navTheme = {
     ...DefaultTheme,
@@ -53,6 +48,14 @@ export default function RootNavigator() {
       primary: themeColors.primary,
     },
   };
+
+  // Nothing renders until the stored session is known: the native splash is still
+  // covering the screen, so there is no frame in which the auth stack can appear.
+  useEffect(() => {
+    if (!isLoading) SplashScreen.hideAsync().catch(() => {});
+  }, [isLoading]);
+
+  if (isLoading) return null;
 
   return (
     <NavigationContainer theme={navTheme} ref={navigationRef}>
@@ -90,7 +93,6 @@ export default function RootNavigator() {
           <Stack.Screen name="Auth" component={AuthStack} options={{ headerShown: false }} />
         )}
       </Stack.Navigator>
-      {isAuthenticated && <InAppNotificationBanner />}
       <PushNotifications />
       {isAuthenticated && <SyncErrorBanner />}
     </NavigationContainer>

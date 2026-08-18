@@ -11,8 +11,12 @@ import { AuthProvider } from './src/context/AuthContext';
 import { DataProvider } from './src/context/DataContext';
 import RootNavigator from './src/navigation/RootNavigator';
 
-// Immediately hide native splash screen on app boot
-SplashScreen.hideAsync().catch(() => {});
+// Hold the native splash until AuthContext has resolved the stored session.
+// Hiding it here (the previous behaviour) exposed the navigator while `user` was
+// still null, so a signed-in user saw the login screen flash before the app.
+// RootNavigator hides it once auth settles; AuthContext's 4s safety timer bounds
+// that, so a slow or offline start can never leave the splash stuck.
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 export default function App() {
   return (
