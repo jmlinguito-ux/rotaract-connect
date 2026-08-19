@@ -207,3 +207,74 @@ export async function exportServiceTranscript(
     }
   }
 }
+
+/**
+ * Exports a full personal data archive JSON package for the member via native OS share sheet.
+ */
+export async function exportUserDataArchive(
+  user: AppUser,
+  participants: EventParticipant[],
+  events: RotaractEvent[],
+  impacts: EventImpact[],
+): Promise<void> {
+  try {
+    const myParticipations = participants.filter(p => p.user_id === user.id);
+    const myEvents = events.filter(e => e.organizer_user_id === user.id || e.co_organizer_user_ids?.includes(user.id));
+    const myAttendedEvents = myParticipations.map(p => {
+      const ev = events.find(e => e.id === p.event_id);
+      return {
+        event_id: p.event_id,
+        event_title: ev?.title ?? 'Unknown Event',
+        event_type: ev?.event_type,
+        start_datetime: ev?.start_datetime,
+        end_datetime: ev?.end_datetime,
+        status: p.status,
+        attendance_status: p.attendance_status,
+        checked_in_at: p.checked_in_at,
+        checked_out_at: p.checked_out_at,
+        check_in_method: p.check_in_method,
+        volunteer_hours_recorded: ev ? calculateParticipantHours(p, ev) : 0,
+      };
+    });
+
+    const archive = {
+      export_version: '1.0',
+      exported_at: new Date().toISOString(),
+      user_profile: {
+        id: user.id,
+        full_name: user.full_name,
+        email: user.email,
+        username: user.username,
+        club_id: user.club_id,
+        club_name: user.club_name,
+        position: user.position,
+        role: user.role,
+        verification_status: user.verification_status,
+        contact_number: user.contact_number,
+        contact_privacy: user.contact_privacy,
+      },
+      participations: myAttendedEvents,
+      organized_events: myEvents.map(e => ({
+        id: e.id,
+        title: e.title,
+        description: e.description,
+        event_type: e.event_type,
+        status: e.status,
+        start_datetime: e.start_datetime,
+        end_datetime: e.end_datetime,
+        address: e.address,
+        city: e.city,
+      })),
+    };
+
+    const jsonString = JSON.stringify(archive, null, 2);
+    await Share.share({
+      title: `Rotaract Data Archive - ${user.full_name}`,
+      message: jsonString,
+    });
+  } catch (err: any) {
+    if (err?.message !== 'User did not share') {
+      Alert.alert('Export Error', 'Unable to export personal data archive.');
+    }
+  }
+}

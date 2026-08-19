@@ -24,6 +24,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { zones } from '../../data/mockData';
 import { distanceMeters, formatDistance } from '../../utils/checkIn';
+import { openNavigationApp } from '../../utils/navigationLauncher';
 
 import { visibleEvents } from '../../utils/eventApproval';
 import { BottomSheet } from '../../components/BottomSheet';
@@ -634,18 +635,38 @@ export function EventCard({ event, userCoords, onPress }: { event: RotaractEvent
       <Text style={[styles.cardTitle, { color: c.text }]}>{event.title}</Text>
       <Text style={[styles.cardClub, { color: c.textMuted }]}>{event.organizing_club_name}</Text>
 
-      <View style={styles.locationRow}>
-        <Ionicons name="location-outline" size={13} color={c.primary} />
-        <Text style={[styles.cardLoc, { color: c.textMuted }]} numberOfLines={1}>
-          {event.address}, {event.city}
-          {distStr ? ` • ${distStr} away` : ''}
-        </Text>
+      <View style={styles.cardFooterRow}>
+        <View style={styles.locationRow}>
+          <Ionicons name="location-outline" size={13} color={c.primary} />
+          <Text style={[styles.cardLoc, { color: c.textMuted }]} numberOfLines={1}>
+            {event.address}, {event.city}
+            {distStr ? ` • ${distStr}` : ''}
+          </Text>
+        </View>
+        <TouchableOpacity
+          style={[styles.cardNavBtn, { backgroundColor: c.primary + '18', borderColor: c.primary + '40' }]}
+          onPress={(e) => {
+            e.stopPropagation?.();
+            openNavigationApp(event.latitude, event.longitude, event.title, event.address);
+          }}
+        >
+          <Ionicons name="navigate" size={11} color={c.primary} />
+          <Text style={[styles.cardNavBtnText, { color: c.primary }]}>Directions</Text>
+        </TouchableOpacity>
       </View>
     </TouchableOpacity>
   );
 }
 
 function FullscreenMapModal({ visible, events, userCoords, colors: c, onClose, onPinPress }: { visible: boolean; events: RotaractEvent[]; userCoords: { latitude: number; longitude: number } | null; colors: any; onClose: () => void; onPinPress: (ev: RotaractEvent) => void }) {
+  const [selectedEv, setSelectedEv] = useState<RotaractEvent | null>(null);
+
+  let selectedDistStr = '';
+  if (selectedEv && userCoords) {
+    const meters = distanceMeters(userCoords, { latitude: selectedEv.latitude, longitude: selectedEv.longitude });
+    selectedDistStr = formatDistance(meters);
+  }
+
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <SafeAreaProvider initialMetrics={initialWindowMetrics}>
@@ -657,16 +678,51 @@ function FullscreenMapModal({ visible, events, userCoords, colors: c, onClose, o
             </TouchableOpacity>
           </View>
 
-          <EventMap
-            events={events}
-            userCoords={userCoords}
-            style={styles.fsCanvas}
-            interactive
-            onMarkerPress={id => {
-              const ev = events.find(e => e.id === id);
-              if (ev) onPinPress(ev);
-            }}
-          />
+          <View style={{ flex: 1, position: 'relative' }}>
+            <EventMap
+              events={events}
+              userCoords={userCoords}
+              style={styles.fsCanvas}
+              interactive
+              onMarkerPress={id => {
+                const ev = events.find(e => e.id === id);
+                if (ev) setSelectedEv(ev);
+              }}
+            />
+
+            {/* Floating Pin Preview HUD */}
+            {selectedEv && (
+              <View style={[styles.pinHudCard, { backgroundColor: c.cardBg, borderColor: c.border }]}>
+                <View style={styles.pinHudHeader}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.pinHudTitle, { color: c.text }]} numberOfLines={1}>{selectedEv.title}</Text>
+                    <Text style={[styles.pinHudClub, { color: c.textMuted }]}>{selectedEv.organizing_club_name} {selectedDistStr ? `• ${selectedDistStr} away` : ''}</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => setSelectedEv(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                    <Ionicons name="close-circle" size={20} color={c.textMuted} />
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.pinHudActions}>
+                  <TouchableOpacity
+                    style={[styles.pinHudNavBtn, { backgroundColor: c.primary + '18', borderColor: c.primary + '40' }]}
+                    onPress={() => openNavigationApp(selectedEv.latitude, selectedEv.longitude, selectedEv.title, selectedEv.address)}
+                  >
+                    <Ionicons name="navigate" size={13} color={c.primary} />
+                    <Text style={[styles.pinHudNavBtnText, { color: c.primary }]}>Get Directions</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.pinHudViewBtn, { backgroundColor: c.primary }]}
+                    onPress={() => onPinPress(selectedEv)}
+                  >
+                    <Text style={styles.pinHudViewBtnText}>View Event</Text>
+                    <Ionicons name="chevron-forward" size={14} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </View>
         </SafeAreaView>
       </SafeAreaProvider>
     </Modal>
@@ -704,14 +760,26 @@ const styles = StyleSheet.create({
   cardDate: { fontSize: 11 },
   cardTitle: { fontSize: 16, fontWeight: '700' },
   cardClub: { fontSize: 12, marginTop: 2 },
-  locationRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8 },
+  locationRow: { flexDirection: 'row', alignItems: 'center', gap: 4, flex: 1 },
   cardLoc: { fontSize: 12, flex: 1 },
+  cardFooterRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 8 },
+  cardNavBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, borderWidth: 1 },
+  cardNavBtnText: { fontSize: 10, fontWeight: '700' },
   empty: { textAlign: 'center', marginTop: 30 },
   fsSafe: { flex: 1 },
   fsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1 },
   fsTitle: { fontSize: 17, fontWeight: '800' },
   fsCloseBtn: { padding: 4 },
   fsCanvas: { flex: 1 },
+  pinHudCard: { position: 'absolute', bottom: 20, left: 16, right: 16, padding: 14, borderRadius: 16, borderWidth: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 8 },
+  pinHudHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 },
+  pinHudTitle: { fontSize: 16, fontWeight: '800' },
+  pinHudClub: { fontSize: 12, marginTop: 2 },
+  pinHudActions: { flexDirection: 'row', gap: 10 },
+  pinHudNavBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 10, borderWidth: 1 },
+  pinHudNavBtnText: { fontSize: 12, fontWeight: '700' },
+  pinHudViewBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 10 },
+  pinHudViewBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalContent: { borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '80%', padding: 20 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },

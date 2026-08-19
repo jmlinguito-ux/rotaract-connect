@@ -14,16 +14,19 @@ import TermsAndPrivacyModal from '../../components/TermsAndPrivacyModal';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { useData } from '../../context/DataContext';
 import { useToast } from '../../context/ToastContext';
+import { exportUserDataArchive } from '../../utils/csvExport';
 import { Club } from '../../types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
 export default function SettingsScreen({ navigation }: Props) {
-  const { user, changePassword, updateProfile, requestEmailChange, confirmEmailChange } = useAuth();
-  const { clubs } = useData();
+  const { user, changePassword, updateProfile, requestEmailChange, confirmEmailChange, signOut } = useAuth();
+  const { clubs, participants, events, impacts, removeUser } = useData();
   const { showToast } = useToast();
   const { isNightMode, setNightMode, colors: themeColors } = useTheme();
   const { pushEnabled, setPushEnabled, showActiveStatus, setShowActiveStatus, highAccuracyGps, setHighAccuracyGps, autoCheckIn, setAutoCheckIn } = usePreferences();
+
+  const [confirmDeleteAccountVisible, setConfirmDeleteAccountVisible] = useState(false);
 
   // Club transfer state
   const [clubModalVisible, setClubModalVisible] = useState(false);
@@ -546,6 +549,42 @@ export default function SettingsScreen({ navigation }: Props) {
           </View>
         </View>
 
+        {/* 📦 ACCOUNT DATA & PRIVACY */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: themeColors.primary }]}>ACCOUNT & DATA MANAGEMENT</Text>
+          <View style={cardStyle}>
+            <TouchableOpacity
+              style={styles.row}
+              onPress={() => exportUserDataArchive(user, participants, events, impacts)}
+            >
+              <View style={[styles.rowIconWrap, { backgroundColor: themeColors.primary + '1A' }]}>
+                <Ionicons name="download-outline" size={18} color={themeColors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={titleStyle}>Export Data Archive</Text>
+                <Text style={subStyle}>Download a complete JSON record of your profile and volunteer history</Text>
+              </View>
+              <Ionicons name="share-outline" size={16} color={themeColors.textMuted} />
+            </TouchableOpacity>
+
+            <View style={dividerStyle} />
+
+            <TouchableOpacity
+              style={styles.row}
+              onPress={() => setConfirmDeleteAccountVisible(true)}
+            >
+              <View style={[styles.rowIconWrap, { backgroundColor: '#FEF2F2' }]}>
+                <Ionicons name="trash-outline" size={18} color={themeColors.danger} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[titleStyle, { color: themeColors.danger }]}>Delete Account</Text>
+                <Text style={subStyle}>Permanently remove your account and clear all local data</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={themeColors.danger} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {/* Save Button */}
         <TouchableOpacity style={[styles.saveBtn, { backgroundColor: themeColors.primary }]} onPress={handleSaveProfile}>
           <Ionicons name="checkmark-circle" size={18} color="#fff" />
@@ -585,6 +624,23 @@ export default function SettingsScreen({ navigation }: Props) {
           setConfirmTransferVisible(false);
           setPendingClubTransfer(null);
         }}
+      />
+
+      {/* Account Deletion Confirmation Dialog */}
+      <ConfirmDialog
+        visible={confirmDeleteAccountVisible}
+        title="Permanently Delete Account?"
+        message="Are you sure you want to permanently delete your Rotaract account? All your volunteer history, certificates, and profile data will be permanently removed. This action cannot be undone."
+        confirmLabel="Delete Account"
+        destructive
+        onConfirm={async () => {
+          setConfirmDeleteAccountVisible(false);
+          if (user) {
+            removeUser(user.id);
+            await signOut();
+          }
+        }}
+        onClose={() => setConfirmDeleteAccountVisible(false)}
       />
 
       {/* Club Selection Modal */}
