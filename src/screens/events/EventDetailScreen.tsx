@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert, Image, Modal, TextInput, KeyboardAvoidingView, Platform, Keyboard } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert, Image, Modal, TextInput, KeyboardAvoidingView, Platform, Keyboard, ActivityIndicator } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
@@ -24,6 +24,7 @@ import { areaOfFocusIcon, areaOfFocusLabel } from '../../data/areasOfFocus';
 import { formatTime, formatDate } from '../../utils/timeFormat';
 
 import * as Location from 'expo-location';
+import { usePreferences } from '../../context/PreferencesContext';
 import { checkInWindow, distanceMeters, formatDistance, CHECK_IN_RADIUS_M } from '../../utils/checkIn';
 import { eventEditPolicy, editLockRulesForApproval } from '../../utils/eventEditPolicy';
 import {
@@ -45,7 +46,7 @@ export default function EventDetailScreen({ route, navigation }: Props) {
   // padding never reaches it. Read the inset directly and pad the footer with it,
   // so its buttons clear the Android gesture/nav bar instead of sitting under it.
   const insets = useSafeAreaInsets();
-  const { events, clubs, users, notifications, participantsFor, participationFor, joinEvent, leaveEvent, checkIn, impactFor, approveEvent, rejectEvent, cancelEvent, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, approveParticipant, declineParticipant, invitationFor, respondInvitation } = useData();
+  const { events, clubs, users, notifications, participantsFor, participationFor, joinEvent, leaveEvent, checkIn, impactFor, approveEvent, rejectEvent, cancelEvent, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, approveParticipant, declineParticipant, invitationFor, respondInvitation, refresh } = useData();
 
   const [messageModalVisible, setMessageModalVisible] = useState(false);
   const [messageText, setMessageText] = useState('');
@@ -76,8 +77,111 @@ export default function EventDetailScreen({ route, navigation }: Props) {
     };
   }, []);
 
+  const { highAccuracyGps, autoCheckIn } = usePreferences();
+  // Guards against a double check-in while an update is in flight or the effect restarts.
+  const autoCheckInDone = useRef(false);
+
+  /**
+   * Auto check-in: while the window is open and the user has joined, is verified,
+   * and has not checked in, watch the device location and record the check-in the
+   * moment it comes within range. Foreground only — no background location.
+   *
+   * Declared BEFORE the early returns below (hooks must run unconditionally) and
+   * kept self-contained: it re-derives the event and participation from raw inputs
+   * rather than the consts computed further down, which do not exist yet here.
+   */
+  useEffect(() => {
+    if (!autoCheckIn || !user || user.verification_status !== 'VERIFIED') return;
+    const ev = events.find(e => e.id === eventId);
+    if (!ev) return;
+    const part = user ? participationFor(eventId, user.id) : undefined;
+    if (!part || part.status !== 'JOINED') return;
+    if (part.checked_in_at || part.attendance_status === 'ATTENDED' || autoCheckInDone.current) return;
+    if (checkInWindow(ev).state !== 'OPEN') return;
+    if (ev.status === 'COMPLETED' || ev.status === 'CANCELLED') return;
+
+    const accuracy = highAccuracyGps ? Location.Accuracy.Highest : Location.Accuracy.Balanced;
+    let sub: Location.LocationSubscription | null = null;
+    let cancelled = false;
+
+    (async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted' || cancelled) return; // silent — manual check-in still works
+
+      const tryCheckIn = (coords: { latitude: number; longitude: number }) => {
+        if (cancelled || autoCheckInDone.current) return;
+        const meters = distanceMeters(coords, { latitude: ev.latitude, longitude: ev.longitude });
+        if (meters > CHECK_IN_RADIUS_M) return;
+        if (checkInWindow(ev).state !== 'OPEN') return;
+        autoCheckInDone.current = true;
+        sub?.remove();
+        checkIn(part.id, {
+          checkedInAt: new Date().toISOString(),
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          distanceMeters: meters,
+        });
+        Alert.alert('Checked In Automatically', `You've arrived at ${ev.title} and your attendance was recorded.`);
+      };
+
+      // Immediate read so someone already on-site checks in without waiting to move,
+      // then a watcher for the walk-in case.
+      try {
+        const first = await Location.getCurrentPositionAsync({ accuracy });
+        tryCheckIn(first.coords);
+      } catch { /* ignore; the watcher retries */ }
+
+      if (cancelled || autoCheckInDone.current) return;
+      sub = await Location.watchPositionAsync(
+        { accuracy, distanceInterval: 15, timeInterval: 10000 },
+        pos => tryCheckIn(pos.coords),
+      );
+    })();
+
+    return () => { cancelled = true; sub?.remove(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoCheckIn, highAccuracyGps, eventId, user?.id, user?.verification_status, events, participationFor, checkIn]);
+
+  // Recover from a deep link / notification tap that arrives before the event has
+  // synced. Event creation writes the event and its participating clubs in separate
+  // inserts, so an approver's client can be notified before it has the row; giving
+  // up immediately showed a false "Event not found". Refresh once, show a loader,
+  // and only conclude it is missing after that resolves.
+  const recoverTried = useRef(false);
+  const [recovering, setRecovering] = useState(false);
+  useEffect(() => {
+    if (events.some(e => e.id === eventId)) { recoverTried.current = true; return; }
+    if (recoverTried.current) return;
+    recoverTried.current = true;
+    setRecovering(true);
+    refresh().finally(() => setRecovering(false));
+  }, [eventId, events, refresh]);
+
   const event = events.find(e => e.id === eventId);
-  if (!event) return <Text style={{ padding: 20 }}>Event not found.</Text>;
+  if (!event) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12 }}>
+        {recovering ? (
+          <>
+            <ActivityIndicator color={themeColors.primary} />
+            <Text style={{ color: themeColors.textMuted }}>Loading event…</Text>
+          </>
+        ) : (
+          <>
+            <Text style={{ color: themeColors.textMuted, textAlign: 'center' }}>
+              This event isn't available yet — it may still be syncing.
+            </Text>
+            <TouchableOpacity
+              onPress={() => { setRecovering(true); refresh().finally(() => setRecovering(false)); }}
+              style={{ marginTop: 4, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 12, backgroundColor: themeColors.primary }}
+            >
+              <Text style={{ color: '#fff', fontWeight: '700' }}>Try Again</Text>
+            </TouchableOpacity>
+          </>
+        )}
+      </View>
+    );
+  }
 
   const allParticipants = participantsFor(eventId);
 
@@ -333,7 +437,7 @@ export default function EventDetailScreen({ route, navigation }: Props) {
         return;
       }
 
-      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      const pos = await Location.getCurrentPositionAsync({ accuracy: highAccuracyGps ? Location.Accuracy.Highest : Location.Accuracy.Balanced });
       const meters = distanceMeters(pos.coords, { latitude: event.latitude, longitude: event.longitude });
       const isWithinPremise = meters <= CHECK_IN_RADIUS_M;
 

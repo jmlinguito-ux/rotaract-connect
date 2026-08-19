@@ -17,7 +17,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 export default function SettingsScreen({ navigation }: Props) {
   const { user, changePassword, updateProfile, requestEmailChange, confirmEmailChange } = useAuth();
   const { isNightMode, setNightMode, colors: themeColors } = useTheme();
-  const { pushEnabled, setPushEnabled, showActiveStatus, setShowActiveStatus } = usePreferences();
+  const { pushEnabled, setPushEnabled, showActiveStatus, setShowActiveStatus, highAccuracyGps, setHighAccuracyGps, autoCheckIn, setAutoCheckIn } = usePreferences();
 
   // Legal modal state
   const [legalModalVisible, setLegalModalVisible] = useState(false);
@@ -111,7 +111,6 @@ export default function SettingsScreen({ navigation }: Props) {
   const [districtAnnouncements, setDistrictAnnouncements] = useState(true);
 
   
-  const [highAccuracyGps, setHighAccuracyGps] = useState(true);
 
   if (!user) return null;
 
@@ -363,6 +362,24 @@ export default function SettingsScreen({ navigation }: Props) {
               <Switch
                 value={highAccuracyGps}
                 onValueChange={setHighAccuracyGps}
+                trackColor={{ false: themeColors.border, true: themeColors.primary }}
+                thumbColor="#fff"
+              />
+            </View>
+
+            <View style={dividerStyle} />
+
+            <View style={styles.row}>
+              <View style={[styles.rowIconWrap, { backgroundColor: themeColors.primary + '1A' }]}>
+                <Ionicons name="location-outline" size={18} color={themeColors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={titleStyle}>Auto Check-In</Text>
+                <Text style={subStyle}>Check in automatically when you reach the venue during the check-in window</Text>
+              </View>
+              <Switch
+                value={autoCheckIn}
+                onValueChange={setAutoCheckIn}
                 trackColor={{ false: themeColors.border, true: themeColors.primary }}
                 thumbColor="#fff"
               />

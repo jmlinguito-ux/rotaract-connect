@@ -318,13 +318,19 @@ function reportError(op: string, error: unknown) {
 }
 
 export const db = {
-  insertEvent: async (e: RotaractEvent) => {
+  insertEvent: async (e: RotaractEvent): Promise<boolean> => {
     const { participating_club_ids, organizing_club_name, ...row } = e;
-    reportError('insertEvent', (await supabase.from('events').insert(row)).error);
+    const { error } = await supabase.from('events').insert(row);
+    reportError('insertEvent', error);
+    // Children (participants, notifications, invitations) FK to events.id — if the
+    // event itself did not land, signal that so the caller skips them rather than
+    // firing a cascade of foreign-key violations.
+    if (error) return false;
     if (participating_club_ids?.length) {
       reportError('insertEventClubs', (await supabase.from('event_participating_clubs')
         .insert(participating_club_ids.map(cid => ({ event_id: e.id, club_id: cid })))).error);
     }
+    return true;
   },
   updateEvent: async (eventId: string, updates: Partial<RotaractEvent>) => {
     const { participating_club_ids, organizing_club_name, ...row } = updates;

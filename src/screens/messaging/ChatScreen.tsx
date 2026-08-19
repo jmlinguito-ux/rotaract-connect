@@ -47,8 +47,25 @@ export default function ChatScreen({ route, navigation }: Props) {
   // this: without it, every content-size change (a row re-measuring, a chat image
   // finishing its load) dragged the user back down mid-scroll.
   const atBottom = useRef(true);
+  // True only once the conversation has settled at the newest message. Until then
+  // every layout pass (text, then async images) is pinned to the bottom regardless
+  // of atBottom — otherwise the opening scroll races image loads and lands midway.
+  const didInitialScroll = useRef(false);
+
+  // Reset when switching conversations, and end the settle window shortly after so
+  // later scrolls respect where the user actually is.
+  useEffect(() => {
+    didInitialScroll.current = false;
+    atBottom.current = true;
+    listRef.current?.scrollToEnd({ animated: false });
+    const t = setTimeout(() => { didInitialScroll.current = true; }, 600);
+    return () => clearTimeout(t);
+  }, [conversationId]);
 
   const handleScroll = useCallback((e: any) => {
+    // Ignore programmatic frames during the opening settle — they would flip
+    // atBottom to false mid-scroll and defeat the pin.
+    if (!didInitialScroll.current) return;
     const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
     atBottom.current = contentSize.height - (contentOffset.y + layoutMeasurement.height) < 80;
   }, []);
@@ -156,9 +173,10 @@ export default function ChatScreen({ route, navigation }: Props) {
   // message is our own, since sending always implies wanting to see it.
   useEffect(() => {
     if (!messages.length) return;
+    const settling = !didInitialScroll.current;
     const mine = messages[messages.length - 1]?.sender_id === user?.id;
-    if (!atBottom.current && !mine) return;
-    const t = setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
+    if (!settling && !atBottom.current && !mine) return;
+    const t = setTimeout(() => listRef.current?.scrollToEnd({ animated: !settling }), 80);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastMsgId]);
@@ -391,9 +409,12 @@ export default function ChatScreen({ route, navigation }: Props) {
           onScroll={handleScroll}
           scrollEventThrottle={16}
           onContentSizeChange={() => {
-            // Fires for image loads and row re-measures too, not just new messages —
-            // scrolling unconditionally here is what made the backlog unreachable.
-            if (atBottom.current) listRef.current?.scrollToEnd({ animated: false });
+            // During the opening settle, always pin to the newest message so async
+            // image heights cannot leave the view stranded midway. After that, only
+            // follow when the user is already at the bottom.
+            if (!didInitialScroll.current || atBottom.current) {
+              listRef.current?.scrollToEnd({ animated: false });
+            }
           }}
           renderItem={({ item, index }) => {
             const isMe = item.sender_id === user.id;

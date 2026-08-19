@@ -15,6 +15,12 @@ interface PreferencesContextType {
    */
   pushEnabled: boolean;
   setPushEnabled: (enabled: boolean) => void;
+  /** Use the device's most precise (and more power-hungry) GPS for check-in. */
+  highAccuracyGps: boolean;
+  setHighAccuracyGps: (enabled: boolean) => void;
+  /** Check in automatically once the device is within range during the window. */
+  autoCheckIn: boolean;
+  setAutoCheckIn: (enabled: boolean) => void;
   /**
    * Whether to broadcast this user's online presence to others. Off means their
    * name never appears as active in a chat; they can still see who else is online,
@@ -28,21 +34,32 @@ interface PreferencesContextType {
 
 const PUSH_KEY = 'prefs:pushEnabled';
 const ACTIVE_STATUS_KEY = 'prefs:showActiveStatus';
+const HIGH_ACCURACY_KEY = 'prefs:highAccuracyGps';
+const AUTO_CHECKIN_KEY = 'prefs:autoCheckIn';
 
 const PreferencesContext = createContext<PreferencesContextType | undefined>(undefined);
 
 export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [pushEnabled, setPush] = useState(true);
   const [showActiveStatus, setActiveStatus] = useState(true);
+  const [highAccuracyGps, setHighAccuracy] = useState(true);
+  const [autoCheckIn, setAuto] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([AsyncStorage.getItem(PUSH_KEY), AsyncStorage.getItem(ACTIVE_STATUS_KEY)])
-      .then(([push, active]) => {
+    Promise.all([
+      AsyncStorage.getItem(PUSH_KEY),
+      AsyncStorage.getItem(ACTIVE_STATUS_KEY),
+      AsyncStorage.getItem(HIGH_ACCURACY_KEY),
+      AsyncStorage.getItem(AUTO_CHECKIN_KEY),
+    ])
+      .then(([push, active, highAcc, auto]) => {
         if (cancelled) return;
         if (push !== null) setPush(push === 'true');
         if (active !== null) setActiveStatus(active === 'true');
+        if (highAcc !== null) setHighAccuracy(highAcc === 'true');
+        if (auto !== null) setAuto(auto === 'true');
       })
       .catch(() => {})
       .finally(() => { if (!cancelled) setLoaded(true); });
@@ -59,8 +76,18 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     AsyncStorage.setItem(PUSH_KEY, String(enabled)).catch(() => {});
   }, []);
 
+  const setHighAccuracyGps = useCallback((enabled: boolean) => {
+    setHighAccuracy(enabled);
+    AsyncStorage.setItem(HIGH_ACCURACY_KEY, String(enabled)).catch(() => {});
+  }, []);
+
+  const setAutoCheckIn = useCallback((enabled: boolean) => {
+    setAuto(enabled);
+    AsyncStorage.setItem(AUTO_CHECKIN_KEY, String(enabled)).catch(() => {});
+  }, []);
+
   return (
-    <PreferencesContext.Provider value={{ pushEnabled, setPushEnabled, showActiveStatus, setShowActiveStatus, loaded }}>
+    <PreferencesContext.Provider value={{ pushEnabled, setPushEnabled, showActiveStatus, setShowActiveStatus, highAccuracyGps, setHighAccuracyGps, autoCheckIn, setAutoCheckIn, loaded }}>
       {children}
     </PreferencesContext.Provider>
   );
@@ -75,6 +102,10 @@ export function usePreferences() {
       setPushEnabled: () => {},
       showActiveStatus: true,
       setShowActiveStatus: () => {},
+      highAccuracyGps: true,
+      setHighAccuracyGps: () => {},
+      autoCheckIn: false,
+      setAutoCheckIn: () => {},
       loaded: true,
     };
   }

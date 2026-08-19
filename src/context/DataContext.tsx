@@ -444,7 +444,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const createEvent = useCallback((e: Omit<RotaractEvent, 'id'>) => {
     const ev: RotaractEvent = { ...e, id: nextId('e') };
     setEvents(prev => [ev, ...prev]);
-    db.insertEvent(ev);
+
+    // Child rows (participants, notifications, invitations) all FK to events.id, so
+    // their DATABASE writes must not fire until the event row has committed —
+    // otherwise they race ahead and violate the foreign key. Local optimistic state
+    // is applied immediately below; the persistence is queued and flushed only once
+    // db.insertEvent resolves successfully.
+    const deferredWrites: Array<() => void> = [];
+    const queueNotif = (n: Omit<AppNotification, 'id' | 'created_at' | 'is_read'>) => {
+      if (!n.user_id) return;
+      const notif: AppNotification = { ...n, id: nextId('n'), created_at: now(), is_read: false };
+      setNotifications(prev => [notif, ...prev]);
+      deferredWrites.push(() => db.insertNotification(notif));
+    };
 
     // Automatically register organizer and co-organizers as JOINED participants
     const teamUserIds = [
@@ -461,14 +473,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
         joined_at: now(),
       }));
       setParticipants(prev => [...teamParts, ...prev]);
-      teamParts.forEach(p => db.insertParticipant(p));
+      teamParts.forEach(p => deferredWrites.push(() => db.insertParticipant(p)));
     }
     if (ev.status === 'PENDING_APPROVAL') {
       const creatorName = users.find(u => u.id === ev.organizer_user_id)?.full_name ?? 'A member';
       if (ev.event_type === 'DISTRICT_EVENT') {
         const districtAdmin = users.find(u => u.role === 'DISTRICT_ADMIN');
         if (districtAdmin) {
-          pushNotif({
+          queueNotif({
             user_id: districtAdmin.id,
             kind: 'EVENT_APPROVAL_REQUEST',
             title: 'District Event Approval Needed',
@@ -484,7 +496,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           const club = clubs.find(c => c.id === clubId);
           const presidentId = club?.president_id;
           if (!presidentId) continue;
-          pushNotif({
+          queueNotif({
             user_id: presidentId,
             kind: 'EVENT_APPROVAL_REQUEST',
             title: 'Event Approval Needed',
@@ -512,9 +524,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
         sent_at: now(),
       }));
       setInvitations(prev => [...prev, ...newInvitations]);
-      newInvitations.forEach(i => db.insertInvitation(i));
+      newInvitations.forEach(i => deferredWrites.push(() => db.insertInvitation(i)));
       for (const u of usersToInvite) {
-        pushNotif({
+        queueNotif({
           user_id: u.id,
           kind: 'INVITATION_RECEIVED',
           title: 'District Event Invitation',
@@ -523,8 +535,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
         });
       }
     }
+
+    // Persist the event first; flush the children only once it has committed.
+    db.insertEvent(ev).then(ok => {
+      if (ok) deferredWrites.forEach(w => w());
+    });
+
     return ev;
-  }, [clubs, users, pushNotif]);
+  }, [clubs, users]);
 
   const updateEvent = useCallback((eventId: string, updates: Partial<Omit<RotaractEvent, 'id'>>) => {
     setEvents(prev => prev.map(e => (e.id === eventId ? { ...e, ...updates } : e)));
