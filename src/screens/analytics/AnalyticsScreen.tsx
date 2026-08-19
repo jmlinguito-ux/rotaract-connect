@@ -9,6 +9,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { zones } from '../../data/mockData';
 import { RootStackParamList } from '../../navigation/types';
 import { exportDistrictImpactCSV } from '../../utils/csvExport';
+import { AREAS_OF_FOCUS } from '../../data/areasOfFocus';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Analytics'>;
 
@@ -57,6 +58,25 @@ export default function AnalyticsScreen({ navigation }: Props) {
 
   const serviceProjectsCount = filteredEvents.filter(e => e.event_type === 'SERVICE_PROJECT').length;
   const fellowshipsCount = filteredEvents.filter(e => e.event_type === 'FELLOWSHIP').length;
+
+  const aofStats = useMemo(() => {
+    return AREAS_OF_FOCUS.map(aof => {
+      const matchingEvents = filteredEvents.filter(
+        e => e.areas_of_focus && e.areas_of_focus.includes(aof.key),
+      );
+      const matchingEventIds = new Set(matchingEvents.map(e => e.id));
+      const hours = filteredImpacts
+        .filter(i => matchingEventIds.has(i.event_id))
+        .reduce((sum, imp) => sum + imp.volunteer_hours, 0);
+
+      return {
+        ...aof,
+        projectCount: matchingEvents.length,
+        volunteerHours: hours,
+        percentOfTotal: totalVolunteerHours > 0 ? (hours / totalVolunteerHours) * 100 : 0,
+      };
+    });
+  }, [filteredEvents, filteredImpacts, totalVolunteerHours]);
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.bg }]} edges={['bottom']}>
@@ -126,6 +146,56 @@ export default function AnalyticsScreen({ navigation }: Props) {
               <View style={[styles.barFillService, { width: `${(serviceProjectsCount / Math.max(1, filteredEvents.length)) * 100}%`, backgroundColor: themeColors.success }]} />
               <View style={[styles.barFillFellowship, { width: `${(fellowshipsCount / Math.max(1, filteredEvents.length)) * 100}%`, backgroundColor: themeColors.warning }]} />
             </View>
+          </View>
+        </View>
+
+        {/* 🌟 Rotary 7 Areas of Focus Impact Distribution */}
+        <View style={[styles.sectionCard, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}>
+          <View style={styles.aofSectionHeader}>
+            <Ionicons name="globe-outline" size={16} color={themeColors.primary} />
+            <Text style={[styles.sectionTitle, { color: themeColors.text, marginBottom: 0 }]}>
+              Rotary 7 Areas of Focus Impact
+            </Text>
+          </View>
+          <Text style={[styles.aofSectionSub, { color: themeColors.textMuted }]}>
+            Distribution of service projects & verified hours across Rotary International focus areas
+          </Text>
+
+          <View style={styles.aofList}>
+            {aofStats.map(item => (
+              <View key={item.key} style={styles.aofRow}>
+                <View style={styles.aofTopRow}>
+                  <View style={[styles.aofIconWrap, { backgroundColor: themeColors.primary + '18' }]}>
+                    <Ionicons name={item.icon} size={15} color={themeColors.primary} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.aofLabel, { color: themeColors.text }]}>{item.label}</Text>
+                  </View>
+                  <View style={styles.aofMetricsGroup}>
+                    <View style={[styles.aofProjectsBadge, { backgroundColor: themeColors.surface }]}>
+                      <Text style={[styles.aofProjectsText, { color: themeColors.text }]}>
+                        {item.projectCount} proj{item.projectCount === 1 ? '' : 's'}
+                      </Text>
+                    </View>
+                    <Text style={[styles.aofHoursText, { color: themeColors.primary }]}>
+                      {item.volunteerHours} hrs
+                    </Text>
+                  </View>
+                </View>
+                {/* Horizontal Progress Bar */}
+                <View style={[styles.aofTrack, { backgroundColor: themeColors.surface }]}>
+                  <View
+                    style={[
+                      styles.aofFill,
+                      {
+                        backgroundColor: themeColors.primary,
+                        width: `${Math.min(100, Math.max(item.projectCount > 0 ? 8 : 0, Math.round(item.percentOfTotal)))}%`,
+                      },
+                    ]}
+                  />
+                </View>
+              </View>
+            ))}
           </View>
         </View>
 
@@ -228,6 +298,19 @@ const styles = StyleSheet.create({
   barTrack: { height: 12, borderRadius: 6, flexDirection: 'row', overflow: 'hidden' },
   barFillService: { height: '100%' },
   barFillFellowship: { height: '100%' },
+  aofSectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
+  aofSectionSub: { fontSize: 12, marginBottom: 14, lineHeight: 16 },
+  aofList: { gap: 12 },
+  aofRow: { gap: 6 },
+  aofTopRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  aofIconWrap: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  aofLabel: { fontSize: 12, fontWeight: '700' },
+  aofMetricsGroup: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  aofProjectsBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  aofProjectsText: { fontSize: 10, fontWeight: '700' },
+  aofHoursText: { fontSize: 11, fontWeight: '800' },
+  aofTrack: { height: 6, borderRadius: 3, overflow: 'hidden', marginLeft: 36 },
+  aofFill: { height: '100%', borderRadius: 3 },
   queueRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
   queueItem: { flex: 1, alignItems: 'center' },
   queueVal: { fontSize: 24, fontWeight: '800' },

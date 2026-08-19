@@ -15,6 +15,7 @@ import { useData } from '../../context/DataContext';
 import { useTheme } from '../../context/ThemeContext';
 import { AuditLog } from '../../types';
 import { ROLE_LABELS } from '../../utils/roles';
+import { exportAuditLogsCSV } from '../../utils/csvExport';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'AuditLogs'>;
 type CategoryFilter = 'ALL' | 'ROLE' | 'EVENT' | 'VERIFICATION';
@@ -98,6 +99,13 @@ export default function AuditLogsScreen({ navigation }: Props) {
               Immutable record of role changes, event governance & approvals
             </Text>
           </View>
+          <TouchableOpacity
+            style={[styles.exportBtn, { backgroundColor: themeColors.surface, borderColor: themeColors.border }]}
+            onPress={() => exportAuditLogsCSV(filteredLogs)}
+          >
+            <Ionicons name="share-outline" size={15} color={themeColors.primary} />
+            <Text style={[styles.exportBtnText, { color: themeColors.primary }]}>Export</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Filter Pills */}
@@ -226,9 +234,11 @@ const styles = StyleSheet.create({
   headerBanner: { padding: 16, borderBottomWidth: 1 },
   bannerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
   iconWrap: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
-  bannerTitle: { fontSize: 18, fontWeight: '800' },
-  bannerSub: { fontSize: 11, marginTop: 2 },
-  filterRow: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
+  bannerTitle: { fontSize: 16, fontWeight: '800' },
+  bannerSub: { fontSize: 12, marginTop: 2 },
+  exportBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, borderWidth: 1 },
+  exportBtnText: { fontSize: 12, fontWeight: '700' },
+  filterRow: { flexDirection: 'row', gap: 6, marginTop: 12, flexWrap: 'wrap' },
   filterPill: {
     flexDirection: 'row',
     alignItems: 'center',

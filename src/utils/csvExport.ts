@@ -1,5 +1,5 @@
 import { Share, Alert } from 'react-native';
-import { RotaractEvent, EventParticipant, AppUser, Club, EventImpact } from '../types';
+import { RotaractEvent, EventParticipant, AppUser, Club, EventImpact, AuditLog } from '../types';
 import { calculateParticipantHours } from './hoursCalculation';
 
 function escapeCsv(value: any): string {
@@ -278,3 +278,58 @@ export async function exportUserDataArchive(
     }
   }
 }
+
+/**
+ * Generates and shares a District Governance Audit Trail CSV report via the native OS share sheet.
+ */
+export async function exportAuditLogsCSV(auditLogs: AuditLog[]): Promise<void> {
+  try {
+    const headers = [
+      'Log ID',
+      'Timestamp (ISO)',
+      'Category',
+      'Action',
+      'Performed By Name',
+      'Performed By Role',
+      'Target Name',
+      'Target User ID',
+      'Event ID',
+      'Application ID',
+      'Previous Status',
+      'New Status',
+      'Remarks / Notes',
+    ];
+
+    const rows: string[] = [headers.join(',')];
+
+    for (const log of auditLogs) {
+      const row = [
+        escapeCsv(log.id),
+        escapeCsv(log.created_at),
+        escapeCsv(log.category ?? 'GENERAL'),
+        escapeCsv(log.action),
+        escapeCsv(log.performed_by_name),
+        escapeCsv(log.performed_by_role),
+        escapeCsv(log.target_name ?? ''),
+        escapeCsv(log.target_user_id ?? ''),
+        escapeCsv(log.event_id ?? ''),
+        escapeCsv(log.application_id ?? ''),
+        escapeCsv(log.previous_status ?? ''),
+        escapeCsv(log.new_status ?? ''),
+        escapeCsv(log.notes ?? ''),
+      ];
+      rows.push(row.join(','));
+    }
+
+    const csvContent = rows.join('\n');
+    await Share.share({
+      title: 'District 3800 Governance Audit Trail',
+      message: csvContent,
+    });
+  } catch (err: any) {
+    if (err?.message !== 'User did not share') {
+      Alert.alert('Export Error', 'Unable to export Audit Trail CSV report.');
+    }
+  }
+}
+

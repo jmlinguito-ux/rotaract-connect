@@ -17,10 +17,11 @@ import { openNavigationApp } from '../../utils/navigationLauncher';
 import { AppUser } from '../../types';
 import { UserProfileModal } from '../../components/UserProfileModal';
 import UserAvatar from '../../components/UserAvatar';
-import RotaryWheel from '../../components/RotaryWheel';
 import ClubLogo from '../../components/ClubLogo';
 import { VerifiedName } from '../../components/VerifiedCheck';
 import { visibleEvents } from '../../utils/eventApproval';
+import { callNumber, sendEmail } from '../../utils/contactLinks';
+import { useToast } from '../../context/ToastContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ClubDetail'>;
 
@@ -29,6 +30,7 @@ export default function ClubDetailScreen({ route }: Props) {
   const { user } = useAuth();
   const { clubs, events, users, participants, getOrCreateConversation } = useData();
   const { colors: themeColors } = useTheme();
+  const { showToast } = useToast();
   const [showMembers, setShowMembers] = useState(true);
   const [selectedUser, setSelectedUser] = useState<AppUser | null>(null);
 
@@ -89,13 +91,52 @@ export default function ClubDetailScreen({ route }: Props) {
           <Text style={[styles.meta, { color: themeColors.textMuted }]}>{zone?.zone_name} • {club.city}, {club.province}</Text>
           <Text style={[styles.clubId, { color: themeColors.textMuted }]}>{club.club_code}</Text>
 
-          <TouchableOpacity
-            style={[styles.clubDirectionsBtn, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}
-            onPress={() => openNavigationApp(club.latitude, club.longitude, club.club_name, `${club.city}, ${club.province}`)}
-          >
-            <Ionicons name="navigate-outline" size={13} color={themeColors.primary} />
-            <Text style={[styles.clubDirectionsBtnText, { color: themeColors.primary }]}>Get Directions</Text>
-          </TouchableOpacity>
+          {/* Quick Actions Row */}
+          <View style={styles.clubActionRow}>
+            <TouchableOpacity
+              style={[styles.clubActionBtn, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}
+              onPress={() => {
+                if (presidentUser?.contact_number) {
+                  callNumber(presidentUser.contact_number);
+                } else {
+                  showToast({
+                    type: 'info',
+                    title: 'Contact Unlisted',
+                    message: 'President phone number is not publicly listed.',
+                  });
+                }
+              }}
+            >
+              <Ionicons name="call-outline" size={13} color={themeColors.primary} />
+              <Text style={[styles.clubActionBtnText, { color: themeColors.primary }]}>Call Pres</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.clubActionBtn, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}
+              onPress={() => {
+                if (presidentUser?.email) {
+                  sendEmail(presidentUser.email);
+                } else {
+                  showToast({
+                    type: 'info',
+                    title: 'Email Unlisted',
+                    message: 'Club/President email is not publicly listed.',
+                  });
+                }
+              }}
+            >
+              <Ionicons name="mail-outline" size={13} color={themeColors.primary} />
+              <Text style={[styles.clubActionBtnText, { color: themeColors.primary }]}>Email Pres</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.clubActionBtn, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}
+              onPress={() => openNavigationApp(club.latitude, club.longitude, club.club_name, `${club.city}, ${club.province}`)}
+            >
+              <Ionicons name="navigate-outline" size={13} color={themeColors.primary} />
+              <Text style={[styles.clubActionBtnText, { color: themeColors.primary }]}>Venue Map</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={[styles.statsRow, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}>
@@ -227,11 +268,12 @@ const styles = StyleSheet.create({
   name: { fontSize: 22, fontWeight: '800', textAlign: 'center' },
   charterBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, borderWidth: 1, marginTop: 8 },
   charterBadgeText: { fontSize: 11, fontWeight: '700' },
-  meta: { fontSize: 13, marginTop: 6 },
-  clubId: { fontSize: 11, marginTop: 4, letterSpacing: 0.5 },
-  clubDirectionsBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, borderWidth: 1, marginTop: 10 },
-  clubDirectionsBtnText: { fontSize: 11, fontWeight: '700' },
-  statsRow: { flexDirection: 'row', margin: 16, borderRadius: 14, borderWidth: 1, padding: 16 },
+  meta: { fontSize: 13, marginTop: 4 },
+  clubId: { fontSize: 12, marginTop: 2, letterSpacing: 1 },
+  clubActionRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  clubActionBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, borderWidth: 1 },
+  clubActionBtnText: { fontSize: 12, fontWeight: '700' },
+  statsRow: { flexDirection: 'row', margin: 20, marginTop: -15, borderRadius: 16, padding: 16, borderWidth: 1 },
   stat: { flex: 1, alignItems: 'center' },
   statValue: { fontSize: 22, fontWeight: '800' },
   statLabel: { fontSize: 12, marginTop: 2 },
