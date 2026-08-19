@@ -113,6 +113,7 @@ export async function loadAll(signal?: AbortSignal): Promise<LoadedData> {
     // Required by canMessageUser: without it every other member reads as
     // "undefined", which is not false, so the messaging gate never engaged.
     allow_direct_inquiries: p.allow_direct_inquiries ?? true,
+    contact_privacy: p.contact_privacy ?? 'ALL_VERIFIED',
   }));
 
   const mappedClubs: Club[] = clubs.map((c: any) => ({
@@ -126,6 +127,8 @@ export async function loadAll(signal?: AbortSignal): Promise<LoadedData> {
     longitude: c.longitude,
     description: c.description ?? '',
     member_count: c.member_count ?? 0,
+    club_type: c.club_type ?? 'COMMUNITY_BASED',
+    institution_name: c.institution_name ?? undefined,
     president_id: c.president_id ?? '',
     president_name: (c.president_id && nameById.get(c.president_id)) || 'Pending Election',
   }));
@@ -172,6 +175,11 @@ export async function loadAll(signal?: AbortSignal): Promise<LoadedData> {
     check_in_longitude: p.check_in_longitude ?? undefined,
     check_in_distance_m: p.check_in_distance_m ?? undefined,
     check_in_method: p.check_in_method ?? undefined,
+    checked_out_at: p.checked_out_at ?? undefined,
+    check_out_latitude: p.check_out_latitude ?? undefined,
+    check_out_longitude: p.check_out_longitude ?? undefined,
+    check_out_distance_m: p.check_out_distance_m ?? undefined,
+    check_out_method: p.check_out_method ?? undefined,
   }));
 
   const invitations: EventInvitation[] = (invRes.data ?? []).map((i: any) => ({
