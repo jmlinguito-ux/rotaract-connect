@@ -7,7 +7,10 @@ interface Props {
   visible: boolean;
   imageUri: string | null;
   title?: string;
+  senderName?: string;
+  sentAt?: string;
   onClose: () => void;
+  onJumpToMessage?: () => void;
   /**
    * How to present. 'modal' (default) is correct at screen level.
    *
@@ -22,7 +25,16 @@ interface Props {
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-export default function FullImageModal({ visible, imageUri, title, onClose, presentation = 'modal' }: Props) {
+export default function FullImageModal({
+  visible,
+  imageUri,
+  title,
+  senderName,
+  sentAt,
+  onClose,
+  onJumpToMessage,
+  presentation = 'modal',
+}: Props) {
   // Read the inset directly rather than wrapping in SafeAreaView: the header is
   // absolutely positioned, so SafeAreaView's padding does not move it clear of the
   // status bar and the close button ended up under the clock.
@@ -36,7 +48,14 @@ export default function FullImageModal({ visible, imageUri, title, onClose, pres
           <TouchableOpacity style={styles.closeBtn} onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
             <Ionicons name="close" size={26} color="#fff" />
           </TouchableOpacity>
-          {title ? <Text style={styles.title} numberOfLines={1}>{title}</Text> : null}
+          <View style={styles.headerInfo}>
+            {title ? <Text style={styles.title} numberOfLines={1}>{title}</Text> : null}
+            {(senderName || sentAt) && (
+              <Text style={styles.subtitle} numberOfLines={1}>
+                {senderName ? `Shared by ${senderName}` : ''}{senderName && sentAt ? ' • ' : ''}{sentAt || ''}
+              </Text>
+            )}
+          </View>
         </View>
 
         <TouchableOpacity style={styles.imageWrap} activeOpacity={1} onPress={onClose}>
@@ -46,6 +65,22 @@ export default function FullImageModal({ visible, imageUri, title, onClose, pres
             resizeMode="contain"
           />
         </TouchableOpacity>
+
+        {onJumpToMessage && (
+          <View style={[styles.bottomBar, { bottom: insets.bottom + 20 }]}>
+            <TouchableOpacity
+              style={styles.jumpBtn}
+              onPress={() => {
+                onClose();
+                onJumpToMessage();
+              }}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="chatbubble-ellipses-outline" size={16} color="#fff" />
+              <Text style={styles.jumpBtnText}>Jump to in Chat</Text>
+            </TouchableOpacity>
+          </View>
+        )}
     </View>
   );
 
@@ -70,7 +105,7 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.92)',
+    backgroundColor: 'rgba(0,0,0,0.94)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -83,6 +118,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
+  headerInfo: {
+    flex: 1,
+  },
   closeBtn: {
     width: 40,
     height: 40,
@@ -93,9 +131,13 @@ const styles = StyleSheet.create({
   },
   title: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
-    flex: 1,
+  },
+  subtitle: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 12,
+    marginTop: 2,
   },
   imageWrap: {
     width: SCREEN_WIDTH,
@@ -105,6 +147,32 @@ const styles = StyleSheet.create({
   },
   fullImage: {
     width: '100%',
-    height: '80%',
+    height: '75%',
+  },
+  bottomBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 100,
+  },
+  jumpBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  jumpBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

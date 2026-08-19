@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { AppState, View, Text, FlatList, StyleSheet, TextInput, TouchableOpacity, Platform, Image, Alert, ActivityIndicator, Keyboard, KeyboardAvoidingView, Clipboard } from 'react-native';
+import { AppState, View, Text, FlatList, ScrollView, StyleSheet, TextInput, TouchableOpacity, Platform, Image, Alert, ActivityIndicator, Keyboard, KeyboardAvoidingView, Clipboard } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useIsFocused } from '@react-navigation/native';
@@ -13,6 +13,8 @@ import { useTheme } from '../../context/ThemeContext';
 import UserAvatar from '../../components/UserAvatar';
 import VerifiedCheck from '../../components/VerifiedCheck';
 import FullImageModal from '../../components/FullImageModal';
+import ChatMediaGalleryModal from '../../components/ChatMediaGalleryModal';
+import ChatDetailsModal from '../../components/ChatDetailsModal';
 import { SwipeableRow } from '../../components/SwipeableRow';
 import { BottomSheet } from '../../components/BottomSheet';
 import { UserProfileModal } from '../../components/UserProfileModal';
@@ -87,6 +89,17 @@ export default function ChatScreen({ route, navigation }: Props) {
   // Explains the read-only composer when the notice is tapped.
   const [reasonVisible, setReasonVisible] = useState(false);
 
+  // In-Chat Search State
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchFilter, setSearchFilter] = useState<'all' | 'announcements' | 'photos'>('all');
+  const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
+
+  // Chat Details & Media Gallery modals
+  const [chatDetailsVisible, setChatDetailsVisible] = useState(false);
+  const [mediaGalleryVisible, setMediaGalleryVisible] = useState(false);
+
   // Memoised: messagesForConversation returns a NEW array each call, so calling it
   // inline gave FlatList a fresh `data` identity on every render — including ones
   // caused by typing indicators and presence, which re-rendered the whole list.
@@ -101,6 +114,34 @@ export default function ChatScreen({ route, navigation }: Props) {
   const effectiveEventId = eventId || currentConv?.event_id;
   const event = effectiveEventId ? events.find(e => e.id === effectiveEventId) : undefined;
   const recipientUser = !isGroupChat ? users.find(u => u.id === recipientId || u.full_name === recipientName) : undefined;
+
+  // Matching messages based on query and filter
+  const matchingMessageIds = useMemo(() => {
+    if (!isSearchOpen) return [];
+    const q = searchQuery.toLowerCase().trim();
+    if (!q && searchFilter === 'all') return [];
+
+    return reversedMessages
+      .filter(m => {
+        if (m.deleted_at) return false;
+        if (searchFilter === 'announcements' && !m.is_broadcast && !m.text?.startsWith('📢')) return false;
+        if (searchFilter === 'photos' && (!m.attachment_path || m.attachment_type !== 'image')) return false;
+        if (!q) return true;
+        const matchesText = !!m.text && m.text.toLowerCase().includes(q);
+        const matchesSender = !!m.sender_name && m.sender_name.toLowerCase().includes(q);
+        return matchesText || matchesSender;
+      })
+      .map(m => m.id);
+  }, [reversedMessages, searchQuery, searchFilter, isSearchOpen]);
+
+  const participantUsers = useMemo(() => {
+    if (!isGroupChat) return [];
+    if (eventId) {
+      const joinedIds = new Set(participantsFor(eventId).filter(p => p.status === 'JOINED').map(p => p.user_id));
+      return users.filter(u => joinedIds.has(u.id));
+    }
+    return users.filter(u => (user?.club_id ? u.club_id === user.club_id : true));
+  }, [isGroupChat, eventId, participantsFor, users, user?.club_id]);
   /**
    * Why this thread is read-only, if it is.
    *
@@ -245,15 +286,40 @@ export default function ChatScreen({ route, navigation }: Props) {
   const scrollToMessage = useCallback((targetId: string) => {
     const idx = reversedMessages.findIndex(m => m.id === targetId);
     if (idx !== -1) {
+      setHighlightedMessageId(targetId);
       listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.5 });
+      setTimeout(() => {
+        setHighlightedMessageId(prev => (prev === targetId ? null : prev));
+      }, 2500);
     } else {
       showToast({
         type: 'info',
         title: 'Message Not Found',
-        message: 'The quoted message is not currently loaded in the chat history.',
+        message: 'The message is not currently loaded in the chat history.',
       });
     }
   }, [reversedMessages, showToast]);
+
+  useEffect(() => {
+    if (matchingMessageIds.length > 0) {
+      setCurrentMatchIndex(0);
+      scrollToMessage(matchingMessageIds[0]);
+    }
+  }, [matchingMessageIds, scrollToMessage]);
+
+  const handleNextMatch = useCallback(() => {
+    if (matchingMessageIds.length === 0) return;
+    const nextIdx = (currentMatchIndex + 1) % matchingMessageIds.length;
+    setCurrentMatchIndex(nextIdx);
+    scrollToMessage(matchingMessageIds[nextIdx]);
+  }, [matchingMessageIds, currentMatchIndex, scrollToMessage]);
+
+  const handlePrevMatch = useCallback(() => {
+    if (matchingMessageIds.length === 0) return;
+    const prevIdx = (currentMatchIndex - 1 + matchingMessageIds.length) % matchingMessageIds.length;
+    setCurrentMatchIndex(prevIdx);
+    scrollToMessage(matchingMessageIds[prevIdx]);
+  }, [matchingMessageIds, currentMatchIndex, scrollToMessage]);
 
   const handleSend = () => {
     if (!text.trim() || !user || cannotMessage || isArchived) return;
@@ -409,12 +475,12 @@ export default function ChatScreen({ route, navigation }: Props) {
         {isGroupChat ? (
           <TouchableOpacity
             style={[styles.avatarCircle, { backgroundColor: themeColors.primary }]}
-            onPress={() => { if (eventId) navigation.navigate('Participants', { eventId }); }}
+            onPress={() => setChatDetailsVisible(true)}
           >
             <Ionicons name="chatbubbles" size={20} color="#fff" />
           </TouchableOpacity>
         ) : (
-          <TouchableOpacity onPress={() => recipientUser && setSelectedUserModal(recipientUser)}>
+          <TouchableOpacity onPress={() => setChatDetailsVisible(true)}>
             <View>
               <UserAvatar user={recipientUser ?? { full_name: displayName }} size={44} />
               {recipientOnline && <View style={[styles.onlineDot, { borderColor: themeColors.cardBg }]} />}
@@ -425,10 +491,7 @@ export default function ChatScreen({ route, navigation }: Props) {
         <TouchableOpacity
           style={{ flex: 1 }}
           activeOpacity={0.7}
-          onPress={() => {
-            if (!isGroupChat && recipientUser) setSelectedUserModal(recipientUser);
-            else if (eventId) navigation.navigate('Participants', { eventId });
-          }}
+          onPress={() => setChatDetailsVisible(true)}
         >
           <View style={styles.nameRow}>
             <Text style={[styles.userName, { color: themeColors.text }]} numberOfLines={1}>{displayName}</Text>
@@ -439,9 +502,44 @@ export default function ChatScreen({ route, navigation }: Props) {
           </Text>
         </TouchableOpacity>
 
+        {/* Search toggle button */}
+        <TouchableOpacity
+          style={[styles.headerActionBtn, { backgroundColor: isSearchOpen ? themeColors.primary + '20' : themeColors.surface }]}
+          onPress={() => {
+            setIsSearchOpen(prev => {
+              if (prev) {
+                setSearchQuery('');
+                setSearchFilter('all');
+                setHighlightedMessageId(null);
+              }
+              return !prev;
+            });
+          }}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons
+            name="search"
+            size={18}
+            color={isSearchOpen ? themeColors.primary : themeColors.textMuted}
+          />
+        </TouchableOpacity>
+
+        {/* Media gallery toggle button */}
+        <TouchableOpacity
+          style={[styles.headerActionBtn, { backgroundColor: themeColors.surface }]}
+          onPress={() => setMediaGalleryVisible(true)}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons
+            name="images-outline"
+            size={18}
+            color={themeColors.textMuted}
+          />
+        </TouchableOpacity>
+
         {/* Mute / Unmute bell toggle button */}
         <TouchableOpacity
-          style={[styles.headerMuteBtn, { backgroundColor: isMuted ? 'rgba(239, 68, 68, 0.12)' : themeColors.surface }]}
+          style={[styles.headerActionBtn, { backgroundColor: isMuted ? 'rgba(239, 68, 68, 0.12)' : themeColors.surface }]}
           onPress={() => {
             if (user && conversationId) {
               const nextMuted = !isMuted;
@@ -458,6 +556,107 @@ export default function ChatScreen({ route, navigation }: Props) {
           />
         </TouchableOpacity>
       </View>
+
+      {/* In-Chat Search Bar */}
+      {isSearchOpen && (
+        <View style={[styles.searchContainer, { backgroundColor: themeColors.cardBg, borderBottomColor: themeColors.border }]}>
+          <View style={[styles.searchInputRow, { backgroundColor: themeColors.surface, borderColor: themeColors.border }]}>
+            <Ionicons name="search" size={16} color={themeColors.textMuted} />
+            <TextInput
+              style={[styles.searchInput, { color: themeColors.text }]}
+              placeholder="Search in conversation..."
+              placeholderTextColor={themeColors.textMuted}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              autoFocus
+              returnKeyType="search"
+            />
+            {!!searchQuery && (
+              <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="close-circle" size={16} color={themeColors.textMuted} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Match navigation controls and filter chips */}
+          <View style={styles.searchMetaRow}>
+            {/* Filter chips */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.searchChipsScroll}>
+              <TouchableOpacity
+                style={[
+                  styles.searchChip,
+                  searchFilter === 'all'
+                    ? { backgroundColor: themeColors.primary, borderColor: themeColors.primary }
+                    : { backgroundColor: themeColors.surface, borderColor: themeColors.border },
+                ]}
+                onPress={() => setSearchFilter('all')}
+              >
+                <Text style={[styles.searchChipText, { color: searchFilter === 'all' ? '#fff' : themeColors.text }]}>All</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.searchChip,
+                  searchFilter === 'announcements'
+                    ? { backgroundColor: '#F59E0B', borderColor: '#F59E0B' }
+                    : { backgroundColor: themeColors.surface, borderColor: themeColors.border },
+                ]}
+                onPress={() => setSearchFilter('announcements')}
+              >
+                <Text style={[styles.searchChipText, { color: searchFilter === 'announcements' ? '#fff' : themeColors.text }]}>📢 Announcements</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.searchChip,
+                  searchFilter === 'photos'
+                    ? { backgroundColor: themeColors.primary, borderColor: themeColors.primary }
+                    : { backgroundColor: themeColors.surface, borderColor: themeColors.border },
+                ]}
+                onPress={() => setSearchFilter('photos')}
+              >
+                <Text style={[styles.searchChipText, { color: searchFilter === 'photos' ? '#fff' : themeColors.text }]}>📷 Photos</Text>
+              </TouchableOpacity>
+            </ScrollView>
+
+            {/* Match Counter & Up/Down Arrows */}
+            <View style={styles.matchCounterRow}>
+              <Text style={[styles.matchCounterText, { color: themeColors.textMuted }]}>
+                {matchingMessageIds.length > 0
+                  ? `${currentMatchIndex + 1} of ${matchingMessageIds.length}`
+                  : (searchQuery.trim() || searchFilter !== 'all' ? 'No matches' : '')}
+              </Text>
+              {matchingMessageIds.length > 0 && (
+                <View style={styles.matchNavButtons}>
+                  <TouchableOpacity
+                    style={[styles.matchNavBtn, { backgroundColor: themeColors.surface }]}
+                    onPress={handlePrevMatch}
+                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                  >
+                    <Ionicons name="chevron-up" size={16} color={themeColors.text} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.matchNavBtn, { backgroundColor: themeColors.surface }]}
+                    onPress={handleNextMatch}
+                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                  >
+                    <Ionicons name="chevron-down" size={16} color={themeColors.text} />
+                  </TouchableOpacity>
+                </View>
+              )}
+              <TouchableOpacity
+                style={[styles.searchCloseBtn, { backgroundColor: themeColors.surface }]}
+                onPress={() => {
+                  setIsSearchOpen(false);
+                  setSearchQuery('');
+                  setSearchFilter('all');
+                  setHighlightedMessageId(null);
+                }}
+              >
+                <Ionicons name="close" size={16} color={themeColors.text} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
 
       {isArchived && (
         <View style={[styles.archivedBanner, { backgroundColor: themeColors.textMuted + '1A', borderColor: themeColors.border }]}>
@@ -596,6 +795,9 @@ export default function ChatScreen({ route, navigation }: Props) {
             }
             const groupedReactions = Array.from(reactionMap.entries()).map(([emoji, data]) => ({ emoji, ...data }));
 
+            const isMatchFocus = isSearchOpen && matchingMessageIds[currentMatchIndex] === item.id;
+            const isJumpHighlighted = highlightedMessageId === item.id;
+
             return (
               <SwipeableRow
                 onReply={() => !item.deleted_at && setReplyingTo(item)}
@@ -621,6 +823,10 @@ export default function ChatScreen({ route, navigation }: Props) {
                         ? [styles.myBubble, { backgroundColor: themeColors.primary }]
                         : [styles.theirBubble, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }],
                       item.deleted_at && styles.deletedBubble,
+                      (isMatchFocus || isJumpHighlighted) && [
+                        styles.highlightedBubble,
+                        { borderColor: isNightMode ? '#60A5FA' : '#2563EB' },
+                      ],
                     ]}
                   >
                     {isAnnouncement && !item.deleted_at && (
@@ -698,12 +904,12 @@ export default function ChatScreen({ route, navigation }: Props) {
                           />
                         )}
                         {!!item.text && (
-                          <Text style={[
-                            styles.messageText,
-                            { color: isAnnouncement ? (isNightMode ? '#FDE68A' : '#78350F') : (isMe ? '#fff' : themeColors.text) }
-                          ]}>
-                            {isAnnouncement ? item.text.replace(/^📢\s*(\[ANNOUNCEMENT\])?\s*/i, '') : item.text}
-                          </Text>
+                          <HighlightedText
+                            text={isAnnouncement ? item.text.replace(/^📢\s*(\[ANNOUNCEMENT\])?\s*/i, '') : item.text}
+                            query={isSearchOpen ? searchQuery : ''}
+                            baseColor={isAnnouncement ? (isNightMode ? '#FDE68A' : '#78350F') : (isMe ? '#fff' : themeColors.text)}
+                            isNight={isNightMode}
+                          />
                         )}
                       </TouchableOpacity>
                     )}
@@ -1110,7 +1316,87 @@ export default function ChatScreen({ route, navigation }: Props) {
         onClose={() => setBlockedName(null)}
         confirmLabel="OK"
       />
-</SafeAreaView>
+
+      {/* Comprehensive Chat Details & Media Gallery */}
+      <ChatDetailsModal
+        visible={chatDetailsVisible}
+        onClose={() => setChatDetailsVisible(false)}
+        isGroupChat={isGroupChat}
+        otherUser={recipientUser}
+        event={event}
+        participants={participantUsers}
+        messages={messages}
+        isMuted={isMuted}
+        onToggleMute={() => {
+          if (user && conversationId) {
+            const nextMuted = !isMuted;
+            setConversationMuted(conversationId, user.id, nextMuted);
+            showToast({ title: nextMuted ? 'Conversation muted' : 'Conversation unmuted', type: 'info' });
+          }
+        }}
+        onOpenSearch={() => {
+          setIsSearchOpen(true);
+        }}
+        onOpenMediaGallery={() => {
+          setMediaGalleryVisible(true);
+        }}
+        onSelectUser={(u) => {
+          setSelectedUserModal(u);
+        }}
+        onNavigateEvent={(evId) => {
+          navigation.navigate('EventDetail', { eventId: evId });
+        }}
+      />
+
+      <ChatMediaGalleryModal
+        visible={mediaGalleryVisible}
+        messages={messages}
+        onClose={() => setMediaGalleryVisible(false)}
+        onJumpToMessage={(msgId) => {
+          scrollToMessage(msgId);
+        }}
+      />
+    </SafeAreaView>
+  );
+}
+
+/** Highlights matched substrings when search is active. */
+function HighlightedText({
+  text,
+  query,
+  baseColor,
+  isNight,
+}: {
+  text: string;
+  query: string;
+  baseColor: string;
+  isNight: boolean;
+}) {
+  if (!query.trim()) {
+    return <Text style={[styles.messageText, { color: baseColor }]}>{text}</Text>;
+  }
+
+  const escaped = query.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+  const parts = text.split(new RegExp(`(${escaped})`, 'gi'));
+  return (
+    <Text style={[styles.messageText, { color: baseColor }]}>
+      {parts.map((part, i) =>
+        part.toLowerCase() === query.toLowerCase() ? (
+          <Text
+            key={i}
+            style={{
+              backgroundColor: isNight ? '#B45309' : '#FEF08A',
+              color: isNight ? '#FEF3C7' : '#78350F',
+              fontWeight: '800',
+            }}
+          >
+            {part}
+          </Text>
+        ) : (
+          part
+        )
+      )}
+    </Text>
   );
 }
 
@@ -1400,5 +1686,89 @@ const styles = StyleSheet.create({
   replyPreviewClose: {
     padding: 4,
     marginLeft: 8,
+  },
+  headerActionBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 4,
+  },
+  searchContainer: {
+    paddingHorizontal: 14,
+    paddingTop: 8,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+  },
+  searchInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    padding: 0,
+  },
+  searchMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 8,
+    gap: 8,
+  },
+  searchChipsScroll: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  searchChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  searchChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  matchCounterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  matchCounterText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  matchNavButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  matchNavBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  searchCloseBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  highlightedBubble: {
+    borderWidth: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+    elevation: 4,
   },
 });
