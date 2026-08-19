@@ -498,6 +498,67 @@ export default function ApplicationReviewScreen({ route, navigation }: Props) {
           </TouchableOpacity>
         </View>
       </BottomSheet>
+
+      {/* 🔍 Fullscreen Document Inspection Lightbox with 1-Tap Action */}
+      <Modal
+        visible={!!proofModalUri}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setProofModalUri(null)}
+      >
+        <View style={styles.lightboxContainer}>
+          <SafeAreaView style={styles.lightboxSafe} edges={['top', 'bottom']}>
+            <View style={styles.lightboxHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.lightboxTitle} numberOfLines={1}>Proof of Membership Document</Text>
+                <Text style={styles.lightboxSub}>{app.full_name} • {app.club_name}</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.lightboxCloseBtn}
+                onPress={() => setProofModalUri(null)}
+              >
+                <Ionicons name="close" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.lightboxImageWrap}>
+              {proofModalUri && (
+                <Image
+                  source={{ uri: proofModalUri }}
+                  style={styles.lightboxFullImage}
+                  resizeMode="contain"
+                />
+              )}
+            </View>
+
+            {canReview && (
+              <View style={styles.lightboxFooter}>
+                <TouchableOpacity
+                  style={[styles.lightboxActionBtn, { backgroundColor: themeColors.success }]}
+                  onPress={() => {
+                    setProofModalUri(null);
+                    setTimeout(() => handleApprove(), 200);
+                  }}
+                >
+                  <Ionicons name="checkmark-circle" size={18} color="#fff" />
+                  <Text style={styles.lightboxActionText}>Approve & Verify</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.lightboxActionBtn, { backgroundColor: themeColors.danger }]}
+                  onPress={() => {
+                    setProofModalUri(null);
+                    setTimeout(() => handleOpenRejectModal(), 200);
+                  }}
+                >
+                  <Ionicons name="close-circle" size={18} color="#fff" />
+                  <Text style={styles.lightboxActionText}>Reject</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </SafeAreaView>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -608,4 +669,17 @@ const styles = StyleSheet.create({
   pickerModalCard: { width: '100%', maxWidth: 360, borderRadius: 20, padding: 20, borderWidth: 1 },
   pickerItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12, borderRadius: 10, borderWidth: 1 },
   pickerItemText: { fontSize: 14 },
+
+  // Fullscreen Lightbox Styles
+  lightboxContainer: { flex: 1, backgroundColor: 'rgba(0,0,0,0.95)' },
+  lightboxSafe: { flex: 1 },
+  lightboxHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12 },
+  lightboxTitle: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  lightboxSub: { color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 2 },
+  lightboxCloseBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
+  lightboxImageWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 10 },
+  lightboxFullImage: { width: '100%', height: '100%' },
+  lightboxFooter: { flexDirection: 'row', gap: 12, paddingHorizontal: 16, paddingVertical: 14, backgroundColor: 'rgba(0,0,0,0.6)' },
+  lightboxActionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 12 },
+  lightboxActionText: { color: '#fff', fontSize: 14, fontWeight: '800' },
 });

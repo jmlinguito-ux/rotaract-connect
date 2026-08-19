@@ -9,6 +9,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { usePreferences } from '../../context/PreferencesContext';
 import RoleBadgeIcon from '../../components/RoleBadgeIcon';
 import { VerifiedName } from '../../components/VerifiedCheck';
+import RotaryWheel from '../../components/RotaryWheel';
 import { ROLE_BADGES } from '../../utils/roles';
 import TermsAndPrivacyModal from '../../components/TermsAndPrivacyModal';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
@@ -143,6 +144,36 @@ export default function SettingsScreen({ navigation }: Props) {
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.bg }]} edges={['bottom']}>
       <ScrollView contentContainerStyle={styles.container}>
+
+        {/* 🌟 Official Rotary Year Charter Banner */}
+        <TouchableOpacity
+          style={[styles.ryBannerCard, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}
+          onPress={() => navigation.navigate('ActivityPortfolio')}
+          activeOpacity={0.8}
+        >
+          <View style={styles.ryBannerHeader}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <RotaryWheel size={22} />
+              <Text style={[styles.ryBannerTheme, { color: themeColors.primary }]}>ROTARACT DISTRICT 3800</Text>
+            </View>
+            <View style={[styles.ryYearBadge, { backgroundColor: themeColors.primary + '18' }]}>
+              <Text style={[styles.ryYearText, { color: themeColors.primary }]}>RY 2025-2026</Text>
+            </View>
+          </View>
+
+          <View style={styles.ryBannerBody}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.ryClubName, { color: themeColors.text }]}>{user.club_name || 'Rotaract Club'}</Text>
+              <Text style={[styles.ryPosition, { color: themeColors.textMuted }]}>
+                {user.position} • {user.verification_status === 'VERIFIED' ? 'Verified Member' : 'Pending Verification'}
+              </Text>
+            </View>
+            <View style={styles.ryViewPortfolioBtn}>
+              <Text style={[styles.ryViewPortfolioText, { color: themeColors.primary }]}>Portfolio</Text>
+              <Ionicons name="chevron-forward" size={14} color={themeColors.primary} />
+            </View>
+          </View>
+        </TouchableOpacity>
 
         {/* 👤 ACCOUNT & MEMBERSHIP PROFILE */}
         <View style={styles.section}>
@@ -981,4 +1012,14 @@ const styles = StyleSheet.create({
   pwErrorText: { flex: 1, fontSize: 13, fontWeight: '600' },
   pwSuccessWrap: { alignItems: 'center', gap: 10, paddingVertical: 12 },
   pwSuccessText: { fontSize: 15, fontWeight: '600', textAlign: 'center' },
+  ryBannerCard: { borderRadius: 16, borderWidth: 1, padding: 14, marginBottom: 16 },
+  ryBannerHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  ryBannerTheme: { fontSize: 12, fontWeight: '900', letterSpacing: 0.8 },
+  ryYearBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  ryYearText: { fontSize: 11, fontWeight: '800' },
+  ryBannerBody: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  ryClubName: { fontSize: 15, fontWeight: '800' },
+  ryPosition: { fontSize: 12, marginTop: 2 },
+  ryViewPortfolioBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: 'transparent' },
+  ryViewPortfolioText: { fontSize: 12, fontWeight: '700' },
 });

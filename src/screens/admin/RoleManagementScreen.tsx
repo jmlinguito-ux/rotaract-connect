@@ -15,6 +15,7 @@ import UserAvatar from '../../components/UserAvatar';
 import FullImageModal from '../../components/FullImageModal';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import RoleBadgeIcon from '../../components/RoleBadgeIcon';
+import RotaryWheel from '../../components/RotaryWheel';
 import { VerifiedName } from '../../components/VerifiedCheck';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RoleManagement'>;
@@ -64,6 +65,8 @@ export default function RoleManagementScreen({ navigation }: Props) {
   const counts = useMemo(() => ({
     APP_ADMIN: users.filter(u => u.role === 'APP_ADMIN').length,
     DISTRICT_ADMIN: users.filter(u => u.role === 'DISTRICT_ADMIN').length,
+    CLUB_PRESIDENT: users.filter(u => u.role === 'CLUB_PRESIDENT').length,
+    MEMBER: users.filter(u => u.role === 'MEMBER').length,
   }), [users]);
 
   const applyRole = (targetUser: AppUser, role: UserRole) => {
@@ -164,6 +167,89 @@ export default function RoleManagementScreen({ navigation }: Props) {
         </View>
         <Ionicons name="chevron-forward" size={16} color={themeColors.textMuted} />
       </TouchableOpacity>
+
+      {/* 👑 2x2 Governance Leadership Hierarchy Grid */}
+      <View style={styles.hudGrid}>
+        <TouchableOpacity
+          style={[
+            styles.hudCard,
+            {
+              backgroundColor: themeColors.cardBg,
+              borderColor: filter === 'APP_ADMIN' ? themeColors.primary : themeColors.border,
+            },
+          ]}
+          onPress={() => setFilter(prev => (prev === 'APP_ADMIN' ? 'ALL' : 'APP_ADMIN'))}
+        >
+          <View style={[styles.hudIconWrap, { backgroundColor: '#F59E0B' + '1A' }]}>
+            <Ionicons name="key" size={16} color="#F59E0B" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.hudCount, { color: themeColors.text }]}>{counts.APP_ADMIN}</Text>
+            <Text style={[styles.hudLabel, { color: themeColors.textMuted }]}>App Admins</Text>
+          </View>
+          {filter === 'APP_ADMIN' && <Ionicons name="checkmark-circle" size={16} color={themeColors.primary} />}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.hudCard,
+            {
+              backgroundColor: themeColors.cardBg,
+              borderColor: filter === 'DISTRICT_ADMIN' ? themeColors.primary : themeColors.border,
+            },
+          ]}
+          onPress={() => setFilter(prev => (prev === 'DISTRICT_ADMIN' ? 'ALL' : 'DISTRICT_ADMIN'))}
+        >
+          <View style={[styles.hudIconWrap, { backgroundColor: '#3B82F6' + '1A' }]}>
+            <RotaryWheel size={16} color="#3B82F6" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.hudCount, { color: themeColors.text }]}>{counts.DISTRICT_ADMIN}</Text>
+            <Text style={[styles.hudLabel, { color: themeColors.textMuted }]}>District Admins</Text>
+          </View>
+          {filter === 'DISTRICT_ADMIN' && <Ionicons name="checkmark-circle" size={16} color={themeColors.primary} />}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.hudCard,
+            {
+              backgroundColor: themeColors.cardBg,
+              borderColor: filter === 'CLUB_PRESIDENT' ? themeColors.primary : themeColors.border,
+            },
+          ]}
+          onPress={() => setFilter(prev => (prev === 'CLUB_PRESIDENT' ? 'ALL' : 'CLUB_PRESIDENT'))}
+        >
+          <View style={[styles.hudIconWrap, { backgroundColor: '#D41367' + '1A' }]}>
+            <Ionicons name="star" size={16} color="#D41367" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.hudCount, { color: themeColors.text }]}>{counts.CLUB_PRESIDENT}</Text>
+            <Text style={[styles.hudLabel, { color: themeColors.textMuted }]}>Presidents</Text>
+          </View>
+          {filter === 'CLUB_PRESIDENT' && <Ionicons name="checkmark-circle" size={16} color={themeColors.primary} />}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.hudCard,
+            {
+              backgroundColor: themeColors.cardBg,
+              borderColor: filter === 'MEMBER' ? themeColors.primary : themeColors.border,
+            },
+          ]}
+          onPress={() => setFilter(prev => (prev === 'MEMBER' ? 'ALL' : 'MEMBER'))}
+        >
+          <View style={[styles.hudIconWrap, { backgroundColor: '#10B981' + '1A' }]}>
+            <Ionicons name="people" size={16} color="#10B981" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.hudCount, { color: themeColors.text }]}>{counts.MEMBER}</Text>
+            <Text style={[styles.hudLabel, { color: themeColors.textMuted }]}>Members</Text>
+          </View>
+          {filter === 'MEMBER' && <Ionicons name="checkmark-circle" size={16} color={themeColors.primary} />}
+        </TouchableOpacity>
+      </View>
 
       <ScrollView
         horizontal
@@ -370,4 +456,9 @@ const styles = StyleSheet.create({
   },
   auditBannerLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   auditBannerText: { fontSize: 13, fontWeight: '700' },
+  hudGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginHorizontal: 16, marginBottom: 12 },
+  hudCard: { width: '48.5%', flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, borderRadius: 12, borderWidth: 1 },
+  hudIconWrap: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  hudCount: { fontSize: 16, fontWeight: '800' },
+  hudLabel: { fontSize: 11, marginTop: 1 },
 });
