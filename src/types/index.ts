@@ -11,6 +11,9 @@ export type VerificationStatus =
 
 export type UserRole = 'MEMBER' | 'CLUB_PRESIDENT' | 'DISTRICT_ADMIN' | 'APP_ADMIN';
 
+export type SystemRole = 'APP_ADMIN' | 'DISTRICT_ADMIN' | 'NONE';
+export type ClubRole = 'CLUB_PRESIDENT' | 'OFFICER' | 'MEMBER';
+
 export type EventType = 'SERVICE_PROJECT' | 'FELLOWSHIP' | 'DISTRICT_EVENT';
 
 export type EventStatus =
@@ -111,8 +114,11 @@ export interface AppUser {
   club_name: string;
   position: string;
   role: UserRole;
+  system_role?: SystemRole;
+  club_role?: ClubRole;
   verification_status: VerificationStatus;
   avatar_url?: string;
+  signature_url?: string;
   contact_number?: string;
   proof_url?: string;
   /**
@@ -254,14 +260,28 @@ export interface DirectMessage {
   attachment_height?: number;
   /** Set when the message was unsent ("deleted for everyone") — render a tombstone. */
   deleted_at?: string;
+  is_broadcast?: boolean;
   /**
    * Users @mentioned in this message, by ID. Stored as ids rather than parsed from
    * the text because display names are neither unique nor stable — the composer
    * resolves the id when the mention is inserted, and the server trusts only this.
    */
   mentioned_user_ids?: string[];
+  /** Quoted/replied-to message metadata. */
+  reply_to_message_id?: string;
+  reply_to_sender_name?: string;
+  reply_to_text?: string;
   /** Optimistic-send lifecycle for the composer; not persisted. */
   send_status?: 'sending' | 'sent' | 'failed';
+}
+
+/** Emoji reaction left on a message. */
+export interface MessageReaction {
+  id: string;
+  message_id: string;
+  user_id: string;
+  emoji: string;
+  created_at: string;
 }
 
 /** Per-user read cursor for a conversation — powers read receipts. */
@@ -282,6 +302,7 @@ export interface ConversationState {
   user_id: string;
   pinned: boolean;
   archived: boolean;
+  muted?: boolean;
   deleted_at?: string;
 }
 

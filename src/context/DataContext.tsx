@@ -3,7 +3,8 @@ import {
   RotaractEvent, EventParticipant, EventInvitation, EventImpact,
   VerificationApplication, AuditLog, AppNotification,
   VerificationStatus, AttendanceStatus, AppUser, UserRole, Club,
-  Conversation, DirectMessage, ReadCursor, NotificationPriority, ConversationState,
+  Conversation, DirectMessage, ReadCursor, NotificationPriority, ConversationState, MessageReaction,
+  SystemRole, ClubRole,
 } from '../types';
 import { AppState } from 'react-native';
 import { loadAll, db } from '../services/db';
@@ -14,7 +15,7 @@ import { useAuth } from './AuthContext';
 import { getCachedData, setCachedData, clearCachedData } from '../services/cache';
 import { getEffectiveEventStatus } from '../utils/eventUtils';
 import { approverClubIdsFor, pendingApproverClubIdsFor } from '../utils/eventApproval';
-import { ROLE_LABELS } from '../utils/roles';
+import { ROLE_LABELS, getSystemRole, getClubRole, isAppAdmin, isDistrictAdmin, isClubPresident } from '../utils/roles';
 import { useRealtimeSync } from './useRealtimeSync';
 import { enqueueOfflineCheckIn, drainOfflineCheckIns } from '../services/offlineQueue';
 import { calculateParticipantHours } from '../utils/hoursCalculation';
@@ -106,7 +107,7 @@ interface DataContextValue {
   getOrCreateEventGroupConversation: (eventId: string) => Conversation;
   canAccessEventGroupChat: (eventId: string, userId: string) => boolean;
   /** Returns false when the recipient does not accept inquiries from this sender. */
-  sendDirectMessage: (conversationId: string, eventId: string | undefined, senderUser: AppUser, receiverId: string | undefined, receiverName: string, text: string, eventTitle?: string, attachmentPath?: string, mentionedUserIds?: string[], attachmentWidth?: number, attachmentHeight?: number) => boolean;
+  sendDirectMessage: (conversationId: string, eventId: string | undefined, senderUser: AppUser, receiverId: string | undefined, receiverName: string, text: string, eventTitle?: string, attachmentPath?: string, mentionedUserIds?: string[], attachmentWidth?: number, attachmentHeight?: number, replyTo?: { id: string; senderName: string; text: string }) => boolean;
   /** Re-sends a message whose persistence failed, without duplicating it. */
   retryMessage: (messageId: string) => void;
   /** Hides a message from the current user's own view only (others still see it). */
@@ -114,17 +115,25 @@ interface DataContextValue {
   /** Unsends the current user's own message for everyone (leaves a tombstone). */
   unsendMessage: (messageId: string) => void;
   /** Marks a conversation read up to its latest message (call when it is visible). */
-  markConversationRead: (conversationId: string, userId: string) => void;
+  markConversationRead: (conversationId: string, userId: string, lastMessageId?: string) => void;
   /** Read cursors for a conversation — who has read up to when. */
   readCursorsFor: (conversationId: string) => ReadCursor[];
   /** The current user's own state for a conversation (pin/archive/delete), if any. */
-  conversationStateFor: (conversationId: string) => ConversationState | undefined;
+  conversationStateFor: (conversationId: string, userId?: string) => ConversationState | undefined;
   /** Pins/unpins a conversation for the current user only. */
   setConversationPinned: (conversationId: string, userId: string, pinned: boolean) => void;
+  /** Mutes/unmutes push notifications for a conversation for the current user only. */
+  setConversationMuted: (conversationId: string, userId: string, muted: boolean) => void;
   /** Archives/unarchives a conversation for the current user only. */
   setConversationArchived: (conversationId: string, userId: string, archived: boolean) => void;
   /** Removes a conversation from the current user's inbox only (a newer message un-hides it). */
   deleteConversationForMe: (conversationId: string, userId: string) => void;
+  /** Emoji reactions on chat messages. */
+  reactions: MessageReaction[];
+  /** Retrieves all reactions for a specific message. */
+  reactionsFor: (messageId: string) => MessageReaction[];
+  /** Toggles the user's reaction on a message (replaces different emoji, removes same emoji). */
+  toggleMessageReaction: (messageId: string, userId: string, emoji: string) => void;
   /** Organizer-only: fan a banner notification out to every JOINED participant. */
   broadcastToEvent: (eventId: string, title: string, message: string, priority: NotificationPriority) => Promise<{ ok: boolean; error?: string }>;
 
@@ -151,10 +160,14 @@ interface DataContextValue {
   markNotificationRead: (notificationId: string) => void;
   deleteNotification: (notificationId: string) => void;
   /**
-   * App Admin only: promotes or demotes any user in the app. `actor` is recorded
-   * in the notification sent to the target so the change is never anonymous.
+   * Promotes or updates user system and club leadership roles. `actor` is recorded
+   * in the audit log and notification sent to the target.
    */
-  updateUserRole: (targetUserId: string, newRole: UserRole, actor?: AppUser) => void;
+  updateUserRole: (
+    targetUserId: string,
+    newRoleOrUpdates: UserRole | { system_role?: SystemRole; club_role?: ClubRole; position?: string; legacyRole?: UserRole },
+    actor?: AppUser,
+  ) => void;
   /** App Admin only: permanently removes a user and their data. */
   removeUser: (targetUserId: string) => void;
 
@@ -212,6 +225,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [readCursors, setReadCursors] = useState<ReadCursor[]>([]);
   const [deletedMessageIds, setDeletedMessageIds] = useState<string[]>([]);
   const [conversationStates, setConversationStates] = useState<ConversationState[]>([]);
+  const [reactions, setReactions] = useState<MessageReaction[]>([]);
 
   // 1. Immediately hydrate local state from persistent cache on boot (0ms instant startup)
   useEffect(() => {
@@ -231,6 +245,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setReadCursors(cached.readCursors ?? []);
         setDeletedMessageIds(cached.deletedMessageIds ?? []);
         setConversationStates(cached.conversationStates ?? []);
+        setReactions(cached.reactions ?? []);
       }
     });
   }, []);
@@ -258,6 +273,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setReadCursors(d.readCursors);
     setDeletedMessageIds(d.deletedMessageIds);
     setConversationStates(d.conversationStates);
+    setReactions(d.reactions);
 
     // Save snapshot to local persistent cache for instant future launches
     setCachedData(d);
@@ -329,6 +345,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setReadCursors,
     setDeletedMessageIds,
     setConversationStates,
+    setReactions,
   });
 
   const addClub = useCallback((c: {
@@ -370,22 +387,69 @@ export function DataProvider({ children }: { children: ReactNode }) {
     db.insertNotification(notif);
   }, []);
 
-  const updateUserRole = useCallback((targetUserId: string, newRole: UserRole, actor?: AppUser) => {
+  const updateUserRole = useCallback((
+    targetUserId: string,
+    newRoleOrUpdates: UserRole | { system_role?: SystemRole; club_role?: ClubRole; position?: string; legacyRole?: UserRole },
+    actor?: AppUser,
+  ) => {
     const target = users.find(u => u.id === targetUserId);
-    // Role and position must tell the same story, and the club's recorded
-    // president must follow the role — otherwise application routing keeps
-    // notifying the previous president.
-    const becomesPresident = newRole === 'CLUB_PRESIDENT';
-    const losesPresidency = target?.role === 'CLUB_PRESIDENT' && newRole !== 'CLUB_PRESIDENT';
-    const newPosition = becomesPresident ? 'President' : losesPresidency ? 'Member' : undefined;
+    if (!target) return;
 
-    setUsers(prev => prev.map(u => (u.id === targetUserId ? { ...u, role: newRole, ...(newPosition ? { position: newPosition } : {}) } : u)));
-    // admin_set_role persists the role, position, and the club president sync
-    // server-side in one atomic transaction (RLS blocks direct cross-user
-    // updates to profiles and clubs).
-    db.updateProfileRole(targetUserId, newRole);
+    let nextSysRole: SystemRole = target.system_role || getSystemRole(target);
+    let nextClubRole: ClubRole = target.club_role || getClubRole(target);
+    let nextPosition: string = target.position || 'Member';
+    let nextLegacyRole: UserRole = target.role;
 
-    if (target?.club_id && (becomesPresident || losesPresidency)) {
+    if (typeof newRoleOrUpdates === 'string') {
+      const newRole = newRoleOrUpdates;
+      nextLegacyRole = newRole;
+      if (newRole === 'APP_ADMIN') {
+        nextSysRole = 'APP_ADMIN';
+      } else if (newRole === 'DISTRICT_ADMIN') {
+        nextSysRole = 'DISTRICT_ADMIN';
+      } else if (newRole === 'CLUB_PRESIDENT') {
+        nextClubRole = 'CLUB_PRESIDENT';
+        nextPosition = 'President';
+      } else if (newRole === 'MEMBER') {
+        nextClubRole = 'MEMBER';
+        if (nextPosition.toLowerCase() === 'president') {
+          nextPosition = 'Member';
+        }
+      }
+    } else {
+      if (newRoleOrUpdates.system_role !== undefined) nextSysRole = newRoleOrUpdates.system_role;
+      if (newRoleOrUpdates.club_role !== undefined) nextClubRole = newRoleOrUpdates.club_role;
+      if (newRoleOrUpdates.position !== undefined) nextPosition = newRoleOrUpdates.position;
+
+      // Determine the primary legacy role for backward compatibility
+      if (nextSysRole === 'APP_ADMIN') {
+        nextLegacyRole = 'APP_ADMIN';
+      } else if (nextSysRole === 'DISTRICT_ADMIN') {
+        nextLegacyRole = 'DISTRICT_ADMIN';
+      } else if (nextClubRole === 'CLUB_PRESIDENT') {
+        nextLegacyRole = 'CLUB_PRESIDENT';
+      } else {
+        nextLegacyRole = 'MEMBER';
+      }
+    }
+
+    const wasPres = isClubPresident(target);
+    const isNowPres = nextClubRole === 'CLUB_PRESIDENT' || nextPosition.toLowerCase() === 'president';
+    const becomesPresident = !wasPres && isNowPres;
+    const losesPresidency = wasPres && !isNowPres;
+
+    const updatedUser: AppUser = {
+      ...target,
+      role: nextLegacyRole,
+      system_role: nextSysRole,
+      club_role: nextClubRole,
+      position: nextPosition,
+    };
+
+    setUsers(prev => prev.map(u => (u.id === targetUserId ? updatedUser : u)));
+    db.updateProfileRole(targetUserId, nextLegacyRole, nextSysRole, nextClubRole, nextPosition);
+
+    if (target.club_id && (becomesPresident || losesPresidency)) {
       const presidentId = becomesPresident ? targetUserId : '';
       setClubs(prev => prev.map(c => (c.id === target.club_id
         ? {
@@ -396,8 +460,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
         : c)));
     }
 
-    const label = ROLE_LABELS[newRole];
-    if (actor && target) {
+    const roleSummary = `${nextPosition} (${nextSysRole !== 'NONE' ? nextSysRole : nextClubRole})`;
+    if (actor) {
       const log: AuditLog = {
         id: nextId('audit'),
         target_user_id: targetUserId,
@@ -406,9 +470,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
         category: 'ROLE',
         performed_by_name: actor.full_name,
         performed_by_role: actor.role,
-        previous_status: target.role,
-        new_status: newRole,
-        notes: `Role changed from ${ROLE_LABELS[target.role]} to ${label}`,
+        previous_status: target.position || target.role,
+        new_status: roleSummary,
+        notes: `Updated role to ${roleSummary}`,
         created_at: now(),
       };
       setAuditLogs(prev => [log, ...prev]);
@@ -418,10 +482,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
     pushNotif({
       user_id: targetUserId,
       kind: 'ROLE_ASSIGNED',
-      title: `You are now ${label}`,
+      title: 'Profile Role Updated',
       message: actor
-        ? `${actor.full_name} assigned you the ${label} role.`
-        : `Your role was changed to ${label}.`,
+        ? `${actor.full_name} updated your role to ${roleSummary}.`
+        : `Your role was updated to ${roleSummary}.`,
     });
   }, [users, pushNotif]);
 
@@ -1183,7 +1247,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
    * Returns false when refused, so a caller can react; the database remains the
    * real authority either way.
    */
-  const sendDirectMessage = useCallback((conversationId: string, eventId: string | undefined, senderUser: AppUser, receiverId: string | undefined, receiverName: string, text: string, eventTitle?: string, attachmentPath?: string, mentionedUserIds?: string[], attachmentWidth?: number, attachmentHeight?: number): boolean => {
+  const sendDirectMessage = useCallback((conversationId: string, eventId: string | undefined, senderUser: AppUser, receiverId: string | undefined, receiverName: string, text: string, eventTitle?: string, attachmentPath?: string, mentionedUserIds?: string[], attachmentWidth?: number, attachmentHeight?: number, replyTo?: { id: string; senderName: string; text: string }): boolean => {
     // Group messages carry no single recipient; event membership governs those.
     if (receiverId) {
       const recipient = users.find(u => u.id === receiverId);
@@ -1202,6 +1266,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
       receiver_name: receiverName,
       text,
       created_at: now(),
+      reply_to_message_id: replyTo?.id,
+      reply_to_sender_name: replyTo?.senderName,
+      reply_to_text: replyTo?.text,
       attachment_path: attachmentPath,
       attachment_type: attachmentPath ? 'image' : undefined,
       attachment_width: attachmentWidth,
@@ -1235,15 +1302,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   // Marks the conversation read up to its latest message. Called when the chat is
   // actually visible — one upsert, not a write per message or per render.
-  const markConversationRead = useCallback((conversationId: string, userId: string) => {
-    const convMsgs = messages.filter(m => m.conversation_id === conversationId);
-    const last = convMsgs.length ? convMsgs[convMsgs.length - 1] : undefined;
+  const markConversationRead = useCallback((conversationId: string, userId: string, lastMessageId?: string) => {
+    let targetMsgId = lastMessageId;
+    if (!targetMsgId) {
+      const convMsgs = messages
+        .filter(m => m.conversation_id === conversationId)
+        .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      targetMsgId = convMsgs.length ? convMsgs[convMsgs.length - 1]?.id : undefined;
+    }
     const iso = now();
     setReadCursors(prev => {
       const others = prev.filter(c => !(c.conversation_id === conversationId && c.user_id === userId));
-      return [...others, { conversation_id: conversationId, user_id: userId, last_read_at: iso, last_read_message_id: last?.id }];
+      return [...others, { conversation_id: conversationId, user_id: userId, last_read_at: iso, last_read_message_id: targetMsgId }];
     });
-    db.upsertReadCursor(conversationId, userId, last?.id);
+    db.upsertReadCursor(conversationId, userId, targetMsgId);
     // Reading the thread retires its Android conversation notification and the
     // message history the native builder accumulates for it, so reopening the app
     // never leaves a stale banner behind.
@@ -1305,8 +1377,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // Optimistic local merge + upsert of the caller's OWN row only. RLS makes it
   // impossible to touch the other party's view, so these are always one-sided.
   // ------------------------------------------------------------------
-  const conversationStateFor = useCallback((conversationId: string) => {
-    return conversationStates.find(s => s.conversation_id === conversationId);
+  const conversationStateFor = useCallback((conversationId: string, userId?: string) => {
+    return conversationStates.find(s => s.conversation_id === conversationId && (!userId || s.user_id === userId));
   }, [conversationStates]);
 
   const mergeConversationState = useCallback((conversationId: string, userId: string, updates: Partial<ConversationState>) => {
@@ -1317,6 +1389,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         user_id: userId,
         pinned: existing?.pinned ?? false,
         archived: existing?.archived ?? false,
+        muted: existing?.muted ?? false,
         deleted_at: existing?.deleted_at,
         ...updates,
       };
@@ -1328,6 +1401,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const setConversationPinned = useCallback((conversationId: string, userId: string, pinned: boolean) => {
     mergeConversationState(conversationId, userId, { pinned });
     db.upsertConversationState(conversationId, userId, { pinned });
+  }, [mergeConversationState]);
+
+  const setConversationMuted = useCallback((conversationId: string, userId: string, muted: boolean) => {
+    mergeConversationState(conversationId, userId, { muted });
+    db.upsertConversationState(conversationId, userId, { muted });
+    RotaractNotifications?.setConversationMuted?.(conversationId, muted);
   }, [mergeConversationState]);
 
   const setConversationArchived = useCallback((conversationId: string, userId: string, archived: boolean) => {
@@ -1345,6 +1424,33 @@ export function DataProvider({ children }: { children: ReactNode }) {
     mergeConversationState(conversationId, userId, updates);
     db.upsertConversationState(conversationId, userId, updates);
   }, [mergeConversationState]);
+
+  const reactionsFor = useCallback((messageId: string) => {
+    return reactions.filter(r => r.message_id === messageId);
+  }, [reactions]);
+
+  const toggleMessageReaction = useCallback((messageId: string, userId: string, emoji: string) => {
+    const existing = reactions.find(r => r.message_id === messageId && r.user_id === userId);
+    const isRemoving = existing && existing.emoji === emoji;
+    const reactionId = existing?.id || nextId('react');
+
+    setReactions(prev => {
+      if (isRemoving) {
+        return prev.filter(r => !(r.message_id === messageId && r.user_id === userId));
+      }
+      const updated: MessageReaction = {
+        id: reactionId,
+        message_id: messageId,
+        user_id: userId,
+        emoji,
+        created_at: now(),
+      };
+      const others = prev.filter(r => !(r.message_id === messageId && r.user_id === userId));
+      return [...others, updated];
+    });
+
+    db.toggleReaction(reactionId, messageId, userId, emoji, isRemoving);
+  }, [reactions]);
 
   const sendMessageToOrganizer = useCallback((eventId: string, senderUser: AppUser, text: string) => {
     const ev = events.find(e => e.id === eventId);
@@ -1546,19 +1652,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // whenever any state or action identity actually changes, so consumers stay
   // correct — this only removes the gratuitous re-renders.
   const value = useMemo<DataContextValue>(() => ({
-      users, events: resolvedEvents, participants, invitations, impacts, applications, auditLogs, notifications, clubs, conversations, messages, readCursors, conversationStates,
+      users, events: resolvedEvents, participants, invitations, impacts, applications, auditLogs, notifications, clubs, conversations, messages, readCursors, conversationStates, reactions,
       refresh,
       createEvent, updateEvent, updateEventStatus, resetEventApprovals, cancelEvent, approveEvent, rejectEvent, requestDistrictEventReview,
       joinEvent, leaveEvent, approveParticipant, declineParticipant, markAttendance, checkIn, checkOut, addClub,
-      invite, respondInvitation, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, sendDirectMessage, retryMessage, deleteMessageForMe, unsendMessage, markConversationRead, readCursorsFor, conversationStateFor, setConversationPinned, setConversationArchived, deleteConversationForMe, broadcastToEvent, saveImpact, reviewApplication, resubmitApplication, markNotificationsRead, markNotificationRead, deleteNotification, updateUserRole, removeUser, addApplication,
+      invite, respondInvitation, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, sendDirectMessage, retryMessage, deleteMessageForMe, unsendMessage, markConversationRead, readCursorsFor, conversationStateFor, setConversationPinned, setConversationMuted, setConversationArchived, deleteConversationForMe, reactionsFor, toggleMessageReaction, broadcastToEvent, saveImpact, reviewApplication, resubmitApplication, markNotificationsRead, markNotificationRead, deleteNotification, updateUserRole, removeUser, addApplication,
       participantsFor, invitationFor, participationFor, impactFor, notificationsFor, unreadCountForUser, unreadInboxCountForUser, messagesForConversation, auditFor,
       applicationsForRole, userStats,
   }), [
-    users, resolvedEvents, participants, invitations, impacts, applications, auditLogs, notifications, clubs, conversations, messages, readCursors, conversationStates,
+    users, resolvedEvents, participants, invitations, impacts, applications, auditLogs, notifications, clubs, conversations, messages, readCursors, conversationStates, reactions,
     refresh,
     createEvent, updateEvent, updateEventStatus, resetEventApprovals, cancelEvent, approveEvent, rejectEvent, requestDistrictEventReview,
     joinEvent, leaveEvent, approveParticipant, declineParticipant, markAttendance, checkIn, checkOut, addClub,
-    invite, respondInvitation, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, sendDirectMessage, retryMessage, deleteMessageForMe, unsendMessage, markConversationRead, readCursorsFor, conversationStateFor, setConversationPinned, setConversationArchived, deleteConversationForMe, broadcastToEvent, saveImpact, reviewApplication, resubmitApplication, markNotificationsRead, markNotificationRead, deleteNotification, updateUserRole, removeUser, addApplication,
+    invite, respondInvitation, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, sendDirectMessage, retryMessage, deleteMessageForMe, unsendMessage, markConversationRead, readCursorsFor, conversationStateFor, setConversationPinned, setConversationMuted, setConversationArchived, deleteConversationForMe, reactionsFor, toggleMessageReaction, broadcastToEvent, saveImpact, reviewApplication, resubmitApplication, markNotificationsRead, markNotificationRead, deleteNotification, updateUserRole, removeUser, addApplication,
     participantsFor, invitationFor, participationFor, impactFor, notificationsFor, unreadCountForUser, unreadInboxCountForUser, messagesForConversation, auditFor,
     applicationsForRole, userStats,
   ]);

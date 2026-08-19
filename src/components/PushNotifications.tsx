@@ -92,7 +92,6 @@ export function PushNotifications() {
     if (data.conversation_id) {
       const conv = conversations.find(c => c.id === data.conversation_id);
       if (conv?.is_group) {
-        markConversationRead(conv.id, user.id);
         navigate('Chat', {
           conversationId: conv.id,
           eventId: conv.event_id,
@@ -105,7 +104,6 @@ export function PushNotifications() {
       if (conv) {
         const otherId = conv.participant_user_id === user.id ? conv.organizer_user_id : conv.participant_user_id;
         const other = otherId ? users.find(u => u.id === otherId) : undefined;
-        markConversationRead(conv.id, user.id);
         navigate('Chat', {
           conversationId: conv.id,
           eventId: conv.event_id,

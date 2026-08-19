@@ -75,7 +75,8 @@ export default function ParticipantsScreen({ route, navigation }: Props) {
     );
   };
 
-  const handleStartChat = (target: AppUser, aboutEvent: boolean) => {
+  const handleStartChat = (target: AppUser, aboutEvent?: boolean) => {
+    setSelectedUser(null);
     if (!user) return;
     const ctxEventId = aboutEvent ? event?.id : undefined;
     const conv = getOrCreateConversation(ctxEventId, user, target.id, target.full_name, aboutEvent ? event?.title : undefined);

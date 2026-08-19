@@ -19,24 +19,26 @@ interface SwipeableRowProps {
   onDelete?: () => void;
   /** Ordered right-side actions revealed on swipe (left = first). */
   actions?: SwipeAction[];
+  /** Optional swipe-right gesture to trigger reply on chat messages. */
+  onReply?: () => void;
 }
 
 const ACTION_WIDTH = 76;
 
 /**
  * Horizontal swipe-to-reveal row actions, built on PanResponder (no reanimated
- * dependency). Supports one or more right-side actions; opening snaps to fit them
- * and only horizontal gestures are captured, so vertical scrolling and taps on the
- * row content are unaffected.
+ * dependency). Supports right-side actions on left swipe and instant reply on right swipe;
+ * opening snaps to fit them and only horizontal gestures are captured, so vertical scrolling
+ * and taps on the row content are unaffected.
  */
-export function SwipeableRow({ children, onDelete, actions }: SwipeableRowProps) {
+export function SwipeableRow({ children, onDelete, actions, onReply }: SwipeableRowProps) {
   const resolvedActions: SwipeAction[] = actions && actions.length
     ? actions
     : onDelete
       ? [{ key: 'delete', label: 'Delete', icon: 'trash-outline', color: '#EF4444', onPress: onDelete, destructive: true }]
       : [];
 
-  const openWidth = resolvedActions.length * ACTION_WIDTH;
+  const openWidth = Math.max(resolvedActions.length * ACTION_WIDTH, ACTION_WIDTH);
   const pan = useRef(new Animated.ValueXY()).current;
   const isOpen = useRef(false);
 
@@ -52,10 +54,15 @@ export function SwipeableRow({ children, onDelete, actions }: SwipeableRowProps)
       onPanResponderMove: (_, g) => {
         const startX = isOpen.current ? -openWidth : 0;
         const newX = startX + g.dx;
-        pan.setValue({ x: Math.min(0, Math.max(-openWidth - 40, newX)), y: 0 });
+        const minX = resolvedActions.length > 0 ? -openWidth - 40 : 0;
+        const maxX = onReply ? 64 : 0;
+        pan.setValue({ x: Math.min(maxX, Math.max(minX, newX)), y: 0 });
       },
       onPanResponderRelease: (_, g) => {
-        if (g.dx < -40 || (isOpen.current && g.dx < 20)) {
+        if (onReply && g.dx > 36) {
+          close();
+          onReply();
+        } else if (resolvedActions.length > 0 && (g.dx < -40 || (isOpen.current && g.dx < 20))) {
           isOpen.current = true;
           Animated.spring(pan, { toValue: { x: -openWidth, y: 0 }, useNativeDriver: false, bounciness: 4 }).start();
         } else {
@@ -75,29 +82,52 @@ export function SwipeableRow({ children, onDelete, actions }: SwipeableRowProps)
     }
   };
 
+  const safeMin = -Math.max(openWidth * 0.6, 24);
   const actionsOpacity = pan.x.interpolate({
-    inputRange: [-openWidth * 0.6, -12, 0],
+    inputRange: [safeMin, -12, 0],
     outputRange: [1, 0.2, 0],
     extrapolate: 'clamp',
   });
 
-  if (resolvedActions.length === 0) return <>{children}</>;
+  const replyScale = onReply ? pan.x.interpolate({
+    inputRange: [0, 20, 50],
+    outputRange: [0.5, 0.8, 1.15],
+    extrapolate: 'clamp',
+  }) : 0;
+
+  const replyOpacity = onReply ? pan.x.interpolate({
+    inputRange: [0, 15, 36],
+    outputRange: [0, 0.5, 1],
+    extrapolate: 'clamp',
+  }) : 0;
+
+  if (resolvedActions.length === 0 && !onReply) return <>{children}</>;
 
   return (
     <View style={styles.container}>
-      <Animated.View style={[styles.actionsBackground, { width: openWidth, opacity: actionsOpacity }]}>
-        {resolvedActions.map(action => (
-          <TouchableOpacity
-            key={action.key}
-            style={[styles.actionBtn, { backgroundColor: action.color, width: ACTION_WIDTH }]}
-            onPress={() => runAction(action)}
-            activeOpacity={0.85}
-          >
-            <Ionicons name={action.icon} size={18} color="#fff" />
-            <Text style={styles.actionText}>{action.label}</Text>
-          </TouchableOpacity>
-        ))}
-      </Animated.View>
+      {resolvedActions.length > 0 && (
+        <Animated.View style={[styles.actionsBackground, { width: openWidth, opacity: actionsOpacity }]}>
+          {resolvedActions.map(action => (
+            <TouchableOpacity
+              key={action.key}
+              style={[styles.actionBtn, { backgroundColor: action.color, width: ACTION_WIDTH }]}
+              onPress={() => runAction(action)}
+              activeOpacity={0.85}
+            >
+              <Ionicons name={action.icon} size={18} color="#fff" />
+              <Text style={styles.actionText}>{action.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </Animated.View>
+      )}
+
+      {onReply && (
+        <Animated.View style={[styles.replyBackground, { opacity: replyOpacity, transform: [{ scale: replyScale }] }]}>
+          <View style={styles.replyCircle}>
+            <Ionicons name="arrow-undo" size={16} color="#fff" />
+          </View>
+        </Animated.View>
+      )}
 
       <Animated.View
         style={[{ transform: pan.getTranslateTransform(), zIndex: 1, backgroundColor: 'transparent' }]}
@@ -125,4 +155,26 @@ const styles = StyleSheet.create({
   },
   actionBtn: { height: '100%', justifyContent: 'center', alignItems: 'center', gap: 2 },
   actionText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  replyBackground: {
+    position: 'absolute',
+    left: 12,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 0,
+  },
+  replyCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#007AFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
+  },
 });

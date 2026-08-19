@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -12,18 +12,19 @@ import { RootStackParamList } from '../../navigation/types';
 import { formatDistance, punctuality } from '../../utils/checkIn';
 import { formatTime, formatDate } from '../../utils/timeFormat';
 import { EventParticipant } from '../../types';
-import { exportServiceTranscript } from '../../utils/csvExport';
+import { exportVolunteerCertificatePDF } from '../../utils/pdfCertificate';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ActivityPortfolio'>;
 type FilterMode = 'ATTENDED' | 'JOINED' | 'ORGANIZED';
 
 export default function ActivityPortfolioScreen({ route, navigation }: Props) {
   const { user } = useAuth();
-  const { userStats, events, participants, impacts } = useData();
+  const { userStats, events, participants, impacts, users } = useData();
   const { colors: themeColors } = useTheme();
 
   const initialFilter = route.params?.initialFilter || 'ATTENDED';
   const [filter, setFilter] = useState<FilterMode>(initialFilter);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   useEffect(() => {
     if (route.params?.initialFilter) {
@@ -67,6 +68,53 @@ export default function ActivityPortfolioScreen({ route, navigation }: Props) {
         impact: imp,
       };
     });
+
+  // Comprehensive list of all events where the user earned volunteer service hours or participated
+  const verifiedServiceItems = useMemo(() => {
+    const map = new Map<string, { event: typeof events[0]; participant: EventParticipant; impact?: typeof impacts[0] }>();
+
+    // 1. Attended / joined events
+    allEventsList.forEach(item => {
+      if (!item) return;
+      map.set(item.event.id, item);
+    });
+
+    // 2. Organized events
+    organizedEventsList.forEach(item => {
+      if (!map.has(item.event.id)) {
+        map.set(item.event.id, item);
+      }
+    });
+
+    // Sort by event start_datetime descending (newest first)
+    return Array.from(map.values()).sort(
+      (a, b) => new Date(b.event.start_datetime).getTime() - new Date(a.event.start_datetime).getTime()
+    );
+  }, [allEventsList, organizedEventsList]);
+
+  // Dynamically resolve Club President & DRR from database roles
+  const clubPresident = useMemo(() => {
+    return (
+      users.find(
+        u =>
+          u.club_id === user.club_id &&
+          (u.club_role === 'CLUB_PRESIDENT' || u.role === 'CLUB_PRESIDENT' || u.position?.toLowerCase().includes('president'))
+      ) || null
+    );
+  }, [users, user.club_id]);
+
+  const drrUser = useMemo(() => {
+    return (
+      users.find(
+        u =>
+          u.system_role === 'DISTRICT_ADMIN' ||
+          u.role === 'DISTRICT_ADMIN' ||
+          u.position?.toLowerCase().includes('district admin') ||
+          u.position?.toLowerCase().includes('district rotaract representative') ||
+          u.position?.toLowerCase().includes('drr')
+      ) || null
+    );
+  }, [users]);
 
   const displayList = filter === 'ATTENDED' ? attendedEventsList : filter === 'JOINED' ? allEventsList : organizedEventsList;
 
@@ -150,12 +198,59 @@ export default function ActivityPortfolioScreen({ route, navigation }: Props) {
             <Text style={[styles.statusText, { color: themeColors.primary }]}>Rotaract Activity Portfolio</Text>
           </View>
 
+          {/* Export Action: Official PDF Certificate & Service Transcript */}
+          <View style={styles.exportBtnRow}>
+            <TouchableOpacity
+              style={[styles.exportPdfBtn, { backgroundColor: themeColors.primary }]}
+              disabled={exportingPdf}
+              activeOpacity={0.8}
+              onPress={async () => {
+                setExportingPdf(true);
+                try {
+                  await exportVolunteerCertificatePDF({
+                    user,
+                    attendedItems: verifiedServiceItems as any,
+                    stats,
+                    clubPresidentName: clubPresident?.full_name,
+                    clubPresidentRole: clubPresident
+                      ? `${clubPresident.position || 'Club President'}, ${user.club_name || 'Rotaract Club'}`
+                      : undefined,
+                    clubPresidentSignatureUrl:
+                      user.id === clubPresident?.id ? user.signature_url : clubPresident?.signature_url,
+                    drrName: drrUser?.full_name,
+                    drrRole: drrUser
+                      ? `${drrUser.position || 'District Rotaract Representative'}, RID 3800`
+                      : undefined,
+                    drrSignatureUrl:
+                      user.id === drrUser?.id ? user.signature_url : drrUser?.signature_url,
+                  });
+                } finally {
+                  setExportingPdf(false);
+                }
+              }}
+            >
+              {exportingPdf ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="document-text" size={15} color="#fff" />
+                  <Text style={styles.exportPdfBtnText}>Download PDF Certificate</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Quick Scanner Shortcut */}
           <TouchableOpacity
-            style={[styles.exportTranscriptBtn, { backgroundColor: themeColors.primary }]}
-            onPress={() => exportServiceTranscript(user, attendedEventsList as any, stats)}
+            style={[styles.verifyScannerLink, { backgroundColor: themeColors.surface, borderColor: themeColors.border }]}
+            activeOpacity={0.75}
+            onPress={() => navigation.navigate('CertificateScanner')}
           >
-            <Ionicons name="share-outline" size={15} color="#fff" />
-            <Text style={styles.exportTranscriptBtnText}>Export Service Transcript</Text>
+            <Ionicons name="qr-code-outline" size={15} color={themeColors.primary} />
+            <Text style={[styles.verifyScannerLinkText, { color: themeColors.text }]}>
+              Verify a Certificate <Text style={{ color: themeColors.primary, fontWeight: '800' }}>(Scan QR)</Text>
+            </Text>
+            <Ionicons name="chevron-forward" size={13} color={themeColors.textMuted} />
           </TouchableOpacity>
         </View>
 
@@ -390,8 +485,13 @@ const styles = StyleSheet.create({
   club: { fontSize: 13, marginTop: 2 },
   statusPill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12, marginTop: 8 },
   statusText: { fontSize: 12, fontWeight: '700' },
-  exportTranscriptBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 12, marginTop: 12 },
-  exportTranscriptBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  exportBtnRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 14, width: '100%' },
+  exportPdfBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 12 },
+  exportPdfBtnText: { color: '#fff', fontSize: 12, fontWeight: '800' },
+  exportCsvBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 12, borderWidth: 1 },
+  exportCsvBtnText: { fontSize: 12, fontWeight: '700' },
+  verifyScannerLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 9, borderRadius: 10, borderWidth: 1, width: '100%', marginTop: 10 },
+  verifyScannerLinkText: { fontSize: 12, fontWeight: '600', flex: 1, marginLeft: 8 },
   milestoneCard: { padding: 16, borderRadius: 16, borderWidth: 1, marginBottom: 16 },
   milestoneHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
   milestoneIconWrap: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },

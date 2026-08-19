@@ -20,6 +20,7 @@ try {
 }
 
 const CHIME = require('../../assets/sounds/chime.wav');
+const ALERT = require('../../assets/sounds/alert.wav');
 const ALARM = require('../../assets/sounds/alarm.wav');
 
 let player: AudioPlayer | null = null;
@@ -36,13 +37,14 @@ function ensureAudioMode() {
   }
 }
 
-/** Plays the alert chime (ALERT) or the looping alarm (HIGH). No-op without audio. */
-export function playAlertSound(priority: 'ALERT' | 'HIGH') {
+/** Plays the notification chime (CHIME), organizer alert (ALERT), or looping alarm (HIGH). */
+export function playAlertSound(priority: 'CHIME' | 'ALERT' | 'HIGH' = 'CHIME') {
   if (!audio?.createAudioPlayer) return;
   try {
     stopAlertSound();
     ensureAudioMode();
-    player = audio.createAudioPlayer(priority === 'HIGH' ? ALARM : CHIME);
+    const source = priority === 'HIGH' ? ALARM : priority === 'ALERT' ? ALERT : CHIME;
+    player = audio.createAudioPlayer(source);
     if (player) {
       player.loop = priority === 'HIGH'; // HIGH keeps sounding until stopAlertSound()
       player.volume = 1.0;
@@ -51,6 +53,11 @@ export function playAlertSound(priority: 'ALERT' | 'HIGH') {
   } catch {
     // ignore playback errors (e.g. native module missing)
   }
+}
+
+/** Explicit helper for playing the pleasant chime sound */
+export function playChimeSound() {
+  playAlertSound('CHIME');
 }
 
 /** Stops and releases the current alert sound, if any. */

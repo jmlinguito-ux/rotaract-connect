@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Switch, Alert, Modal, TextInput, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Switch, Alert, Modal, TextInput, ActivityIndicator, KeyboardAvoidingView, Platform, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,8 +10,10 @@ import { usePreferences } from '../../context/PreferencesContext';
 import RoleBadgeIcon from '../../components/RoleBadgeIcon';
 import { VerifiedName } from '../../components/VerifiedCheck';
 import RotaryWheel from '../../components/RotaryWheel';
-import { ROLE_BADGES } from '../../utils/roles';
+import { ROLE_BADGES, getHighestRoleBadge, positionRoleLabel } from '../../utils/roles';
+import { getRotaryYear } from '../../utils/hoursCalculation';
 import TermsAndPrivacyModal from '../../components/TermsAndPrivacyModal';
+import { SignatureModal } from '../../components/SignatureModal';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { useData } from '../../context/DataContext';
 import { useToast } from '../../context/ToastContext';
@@ -125,12 +127,59 @@ export default function SettingsScreen({ navigation }: Props) {
   const [inquiryAlerts, setInquiryAlerts] = useState(true);
   const [joinRequestsAlerts, setJoinRequestsAlerts] = useState(true);
   const [districtAnnouncements, setDistrictAnnouncements] = useState(true);
-
-  
+  const [signatureModalVisible, setSignatureModalVisible] = useState(false);
 
   if (!user) return null;
 
-  const roleBadge = ROLE_BADGES[user.role];
+  const currentRY = getRotaryYear();
+  const roleBadge = getHighestRoleBadge(user);
+
+  const isOfficer =
+    user.role === 'CLUB_PRESIDENT' ||
+    user.role === 'DISTRICT_ADMIN' ||
+    user.role === 'APP_ADMIN' ||
+    user.club_role === 'CLUB_PRESIDENT' ||
+    user.club_role === 'OFFICER' ||
+    user.system_role === 'DISTRICT_ADMIN' ||
+    user.system_role === 'APP_ADMIN' ||
+    user.position?.toLowerCase().includes('president') ||
+    user.position?.toLowerCase().includes('district') ||
+    user.position?.toLowerCase().includes('drr');
+
+  const handleSaveSignature = async (sigUri: string) => {
+    try {
+      await updateProfile({ signature_url: sigUri });
+      showToast({
+        type: 'success',
+        title: 'Signature Updated',
+        message: 'Official digital signature updated successfully!',
+      });
+    } catch (err: any) {
+      Alert.alert('Error', err?.message || 'Failed to update signature.');
+    }
+  };
+
+  const handleRemoveSignature = () => {
+    Alert.alert(
+      'Remove Signature',
+      'Are you sure you want to remove your registered digital signature? Issued certificates will fall back to a formal signature line.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            await updateProfile({ signature_url: undefined });
+            showToast({
+              type: 'info',
+              title: 'Signature Removed',
+              message: 'Digital signature removed.',
+            });
+          },
+        },
+      ]
+    );
+  };
 
   const handleSaveProfile = () => {
     Alert.alert('Settings Saved', 'Your preferences have been updated successfully.');
@@ -157,7 +206,7 @@ export default function SettingsScreen({ navigation }: Props) {
               <Text style={[styles.ryBannerTheme, { color: themeColors.primary }]}>ROTARACT DISTRICT 3800</Text>
             </View>
             <View style={[styles.ryYearBadge, { backgroundColor: themeColors.primary + '18' }]}>
-              <Text style={[styles.ryYearText, { color: themeColors.primary }]}>RY 2025-2026</Text>
+              <Text style={[styles.ryYearText, { color: themeColors.primary }]}>{currentRY.label}</Text>
             </View>
           </View>
 
@@ -165,7 +214,7 @@ export default function SettingsScreen({ navigation }: Props) {
             <View style={{ flex: 1 }}>
               <Text style={[styles.ryClubName, { color: themeColors.text }]}>{user.club_name || 'Rotaract Club'}</Text>
               <Text style={[styles.ryPosition, { color: themeColors.textMuted }]}>
-                {user.position} • {user.verification_status === 'VERIFIED' ? 'Verified Member' : 'Pending Verification'}
+                {positionRoleLabel(user.position, user)} • {user.verification_status === 'VERIFIED' ? 'Verified Member' : 'Pending Verification'}
               </Text>
             </View>
             <View style={styles.ryViewPortfolioBtn}>
@@ -185,7 +234,7 @@ export default function SettingsScreen({ navigation }: Props) {
               </View>
               <View style={{ flex: 1 }}>
                 <VerifiedName user={user} textStyle={titleStyle} checkSize={14} />
-                <Text style={subStyle}>{user.position} • {user.club_name}</Text>
+                <Text style={subStyle}>{positionRoleLabel(user.position, user)} • {user.club_name}</Text>
               </View>
               {roleBadge ? (
                 <View style={[styles.roleChip, { backgroundColor: roleBadge.color + '1F', borderColor: roleBadge.color }]}>
@@ -575,6 +624,83 @@ export default function SettingsScreen({ navigation }: Props) {
               />
             </View>
 
+          </View>
+        </View>
+
+        {/* ✍️ OFFICER TOOLS: OFFICIAL DIGITAL SIGNATURE */}
+        {isOfficer && (
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: themeColors.primary }]}>OFFICER CREDENTIALS & SIGNATURE</Text>
+            <View style={cardStyle}>
+              <View style={styles.row}>
+                <View style={[styles.rowIconWrap, { backgroundColor: themeColors.primary + '1A' }]}>
+                  <Ionicons name="pencil" size={18} color={themeColors.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={titleStyle}>Official Digital Signature</Text>
+                  <Text style={subStyle}>
+                    {user.signature_url
+                      ? 'Active e-signature registered for official certificates'
+                      : 'Add your signature to auto-sign certificates'}
+                  </Text>
+                </View>
+                {user.signature_url ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <TouchableOpacity
+                      style={[styles.smallBtn, { backgroundColor: themeColors.primary + '18' }]}
+                      onPress={() => setSignatureModalVisible(true)}
+                    >
+                      <Text style={[styles.smallBtnText, { color: themeColors.primary }]}>Edit</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.smallBtn, { backgroundColor: '#FEE2E2' }]}
+                      onPress={handleRemoveSignature}
+                    >
+                      <Ionicons name="trash-outline" size={14} color="#DC2626" />
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={[styles.smallBtn, { backgroundColor: themeColors.primary }]}
+                    onPress={() => setSignatureModalVisible(true)}
+                  >
+                    <Text style={[styles.smallBtnText, { color: '#fff' }]}>+ Add</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {user.signature_url && (
+                <View style={{ paddingHorizontal: 12, paddingBottom: 14, paddingTop: 4 }}>
+                  <View style={[styles.signaturePreviewBox, { backgroundColor: themeColors.bg, borderColor: themeColors.border }]}>
+                    <Image source={{ uri: user.signature_url }} style={styles.signaturePreviewImg} resizeMode="contain" />
+                    <View style={styles.signatureBadge}>
+                      <Ionicons name="checkmark-circle" size={12} color="#16A34A" />
+                      <Text style={styles.signatureBadgeText}>Registered Signatory</Text>
+                    </View>
+                  </View>
+                </View>
+              )}
+            </View>
+          </View>
+        )}
+
+        {/* 🛡️ CERTIFICATE VERIFICATION */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: themeColors.primary }]}>CERTIFICATE AUTHENTICITY</Text>
+          <View style={cardStyle}>
+            <TouchableOpacity
+              style={styles.row}
+              onPress={() => navigation.navigate('CertificateScanner')}
+            >
+              <View style={[styles.rowIconWrap, { backgroundColor: themeColors.primary + '1A' }]}>
+                <Ionicons name="qr-code-outline" size={18} color={themeColors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={titleStyle}>Verify Certificate (QR Scanner)</Text>
+                <Text style={subStyle}>Scan District 3800 Volunteer Certificate QR codes</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={themeColors.textMuted} />
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -973,6 +1099,14 @@ export default function SettingsScreen({ navigation }: Props) {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* ✍️ Signature Capture & Upload Modal */}
+      <SignatureModal
+        visible={signatureModalVisible}
+        currentSignature={user.signature_url}
+        onClose={() => setSignatureModalVisible(false)}
+        onSave={handleSaveSignature}
+      />
     </SafeAreaView>
   );
 }
@@ -982,6 +1116,46 @@ const styles = StyleSheet.create({
   container: { padding: 16, paddingBottom: 40 },
   section: { marginBottom: 20 },
   sectionTitle: { fontSize: 11, fontWeight: '800', letterSpacing: 1, marginBottom: 8, marginLeft: 4 },
+  signaturePreviewBox: {
+    borderRadius: 10,
+    borderWidth: 1,
+    padding: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  signaturePreviewImg: {
+    width: '100%',
+    height: 60,
+  },
+  signatureBadge: {
+    position: 'absolute',
+    bottom: 4,
+    right: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  signatureBadgeText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#16A34A',
+  },
+  smallBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  smallBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
   card: { borderRadius: 14, borderWidth: 1, paddingHorizontal: 16, paddingVertical: 4 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
   columnRow: { paddingVertical: 12 },

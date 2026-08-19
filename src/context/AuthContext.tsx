@@ -82,6 +82,7 @@ function profileToAppUser(profile: any, clubName?: string): AppUser {
     role: profile.role as UserRole,
     verification_status: profile.verification_status as VerificationStatus,
     avatar_url: profile.avatar_url,
+    signature_url: profile.signature_url,
     contact_number: profile.contact_number,
     // Older rows predate the column; absent means "allowed", matching the default.
     allow_direct_inquiries: profile.allow_direct_inquiries ?? true,
@@ -538,6 +539,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (updates.username !== undefined) dbUpdates.username = updates.username;
     if (updates.position !== undefined) dbUpdates.position = updates.position;
     if (updates.avatar_url !== undefined) dbUpdates.avatar_url = updates.avatar_url;
+    if (updates.signature_url !== undefined) dbUpdates.signature_url = updates.signature_url;
     if (updates.contact_number !== undefined) dbUpdates.contact_number = updates.contact_number;
     if (updates.club_id !== undefined) {
       dbUpdates.club_id = updates.club_id;

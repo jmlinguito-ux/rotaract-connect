@@ -11,7 +11,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { uploadPublicImage } from '../../services/storage';
 import { useAppRefreshControl } from '../../hooks/useAppRefreshControl';
 import { RootStackParamList } from '../../navigation/types';
-import { ROLE_BADGES } from '../../utils/roles';
+import { getHighestRoleBadge, isAppAdmin, isDistrictAdmin, positionRoleLabel } from '../../utils/roles';
 import UserAvatar from '../../components/UserAvatar';
 import FullImageModal from '../../components/FullImageModal';
 import RoleBadgeIcon from '../../components/RoleBadgeIcon';
@@ -28,7 +28,7 @@ export default function ProfileScreen() {
 
   if (!user) return null;
   const stats = userStats(user.id);
-  const roleBadge = ROLE_BADGES[user.role];
+  const roleBadge = getHighestRoleBadge(user);
 
   const handlePickImage = async () => {
     try {
@@ -104,6 +104,7 @@ export default function ProfileScreen() {
             checkSize={18}
           />
           <Text style={[styles.username, { color: themeColors.textMuted }]}>@{user.username}</Text>
+          <Text style={[styles.roleText, { color: themeColors.primary }]}>{positionRoleLabel(user.position, user)}</Text>
           <View style={[styles.clubPill, { backgroundColor: themeColors.primary + '1A' }]}>
             <Ionicons name="people" size={12} color={themeColors.primary} />
             <Text style={[styles.clubPillText, { color: themeColors.primary }]}>{user.club_name}</Text>
@@ -120,7 +121,7 @@ export default function ProfileScreen() {
           <Row icon="trophy-outline" label="Scoreboard" colors={themeColors} onPress={() => navigation.navigate('Scoreboard')} />
           <Row icon="ribbon-outline" label="Activity Portfolio" colors={themeColors} onPress={() => navigation.navigate('ActivityPortfolio')} />
           <Row icon="analytics-outline" label="District Analytics" colors={themeColors} onPress={() => navigation.navigate('Analytics')} />
-          {user.role === 'APP_ADMIN' && (
+          {(isAppAdmin(user) || isDistrictAdmin(user)) && (
             <Row icon="key-outline" label="Roles & Permissions" colors={themeColors} onPress={() => navigation.navigate('RoleManagement')} />
           )}
           <Row icon="settings-outline" label="Settings" colors={themeColors} onPress={() => navigation.navigate('Settings')} />
@@ -175,7 +176,8 @@ const styles = StyleSheet.create({
   roleBadgePillText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.3 },
   name: { fontSize: 22, fontWeight: '800' },
   username: { fontSize: 14, marginTop: 2 },
-  clubPill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, marginTop: 10 },
+  roleText: { fontSize: 13, fontWeight: '700', marginTop: 4 },
+  clubPill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, marginTop: 8 },
   clubPillText: { fontSize: 12, fontWeight: '700' },
   role: { fontSize: 12, marginTop: 6, letterSpacing: 0.5 },
   statsRow: { flexDirection: 'row', marginHorizontal: 16, borderRadius: 14, borderWidth: 1, padding: 16, marginBottom: 16 },

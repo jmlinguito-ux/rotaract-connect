@@ -15,12 +15,13 @@ import RotaryWheel from '../../components/RotaryWheel';
 import ClubLogo from '../../components/ClubLogo';
 import VerifiedCheck from '../../components/VerifiedCheck';
 import { calculateParticipantHours, getRotaryYear, isDateInRotaryYear } from '../../utils/hoursCalculation';
+import { zones } from '../../data/mockData';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Scoreboard'>;
 type ViewMode = 'INDIVIDUAL' | 'CLUB';
 type FilterTab = 'DISTRICT' | 'ZONE' | 'MY_CLUB';
 type SortMetric = 'POINTS' | 'HOURS' | 'ATTENDED';
-type PeriodFilter = 'RY_2025_2026' | 'RY_2024_2025' | 'ALL_TIME';
+type PeriodFilter = 'RY_2026_2027' | 'RY_2025_2026' | 'ALL_TIME';
 
 export default function ScoreboardScreen({ navigation }: Props) {
   const { user } = useAuth();
@@ -29,7 +30,7 @@ export default function ScoreboardScreen({ navigation }: Props) {
 
   const [viewMode, setViewMode] = useState<ViewMode>('INDIVIDUAL');
   const [tab, setTab] = useState<FilterTab>('DISTRICT');
-  const [period, setPeriod] = useState<PeriodFilter>('RY_2025_2026');
+  const [period, setPeriod] = useState<PeriodFilter>('RY_2026_2027');
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
   const [metric, setMetric] = useState<SortMetric>('POINTS');
   const [search, setSearch] = useState('');
@@ -39,11 +40,15 @@ export default function ScoreboardScreen({ navigation }: Props) {
 
   const currentRY = useMemo(() => getRotaryYear(), []);
 
-  // Available zones extracted from clubs
+  // Available zones extracted from clubs and sorted by zone name
   const availableZones = useMemo(() => {
     const set = new Set<string>();
     clubs.forEach(c => { if (c.zone_id) set.add(c.zone_id); });
-    return Array.from(set).sort();
+    return Array.from(set).sort((a, b) => {
+      const nameA = zones.find(z => z.id === a)?.zone_name || a;
+      const nameB = zones.find(z => z.id === b)?.zone_name || b;
+      return nameA.localeCompare(nameB, undefined, { numeric: true });
+    });
   }, [clubs]);
 
   const userClub = useMemo(() => clubs.find(c => c.id === user?.club_id), [clubs, user]);
@@ -55,13 +60,13 @@ export default function ScoreboardScreen({ navigation }: Props) {
       e => e.status === 'COMPLETED' && impacts.some(i => i.event_id === e.id),
     );
 
-    if (period === 'RY_2025_2026') {
+    if (period === 'RY_2026_2027') {
+      completedEvents = completedEvents.filter(e =>
+        isDateInRotaryYear(e.start_datetime, new Date(2026, 6, 1), new Date(2027, 5, 30, 23, 59, 59))
+      );
+    } else if (period === 'RY_2025_2026') {
       completedEvents = completedEvents.filter(e =>
         isDateInRotaryYear(e.start_datetime, new Date(2025, 6, 1), new Date(2026, 5, 30, 23, 59, 59))
-      );
-    } else if (period === 'RY_2024_2025') {
-      completedEvents = completedEvents.filter(e =>
-        isDateInRotaryYear(e.start_datetime, new Date(2024, 6, 1), new Date(2025, 5, 30, 23, 59, 59))
       );
     }
 
@@ -271,22 +276,22 @@ export default function ScoreboardScreen({ navigation }: Props) {
           {/* Rotary Year Period Selector */}
           <View style={[styles.periodToggleRow, { backgroundColor: themeColors.surface }]}>
             <TouchableOpacity
-              style={[styles.periodBtn, period === 'RY_2025_2026' && { backgroundColor: themeColors.primary }]}
-              onPress={() => setPeriod('RY_2025_2026')}
+              style={[styles.periodBtn, period === 'RY_2026_2027' && { backgroundColor: themeColors.primary }]}
+              onPress={() => setPeriod('RY_2026_2027')}
             >
-              <Ionicons name="calendar-outline" size={13} color={period === 'RY_2025_2026' ? '#fff' : themeColors.textMuted} />
-              <Text style={[styles.periodText, { color: period === 'RY_2025_2026' ? '#fff' : themeColors.textMuted }]}>
-                RY 2025-2026
+              <Ionicons name="calendar-outline" size={13} color={period === 'RY_2026_2027' ? '#fff' : themeColors.textMuted} />
+              <Text style={[styles.periodText, { color: period === 'RY_2026_2027' ? '#fff' : themeColors.textMuted }]}>
+                RY 2026-2027
               </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.periodBtn, period === 'RY_2024_2025' && { backgroundColor: themeColors.primary }]}
-              onPress={() => setPeriod('RY_2024_2025')}
+              style={[styles.periodBtn, period === 'RY_2025_2026' && { backgroundColor: themeColors.primary }]}
+              onPress={() => setPeriod('RY_2025_2026')}
             >
-              <Ionicons name="time-outline" size={13} color={period === 'RY_2024_2025' ? '#fff' : themeColors.textMuted} />
-              <Text style={[styles.periodText, { color: period === 'RY_2024_2025' ? '#fff' : themeColors.textMuted }]}>
-                RY 2024-2025
+              <Ionicons name="time-outline" size={13} color={period === 'RY_2025_2026' ? '#fff' : themeColors.textMuted} />
+              <Text style={[styles.periodText, { color: period === 'RY_2025_2026' ? '#fff' : themeColors.textMuted }]}>
+                RY 2025-2026
               </Text>
             </TouchableOpacity>
 
@@ -339,6 +344,8 @@ export default function ScoreboardScreen({ navigation }: Props) {
               contentContainerStyle={styles.zoneScrollContent}
               renderItem={({ item }) => {
                 const isActive = item === activeZoneId;
+                const zoneObj = zones.find(z => z.id === item);
+                const label = zoneObj ? zoneObj.zone_name : item;
                 return (
                   <TouchableOpacity
                     style={[
@@ -348,7 +355,7 @@ export default function ScoreboardScreen({ navigation }: Props) {
                     onPress={() => setSelectedZoneId(item)}
                   >
                     <Text style={[styles.zonePillText, { color: isActive ? themeColors.primary : themeColors.textMuted, fontWeight: isActive ? '700' : '500' }]}>
-                      {item}
+                      {label}
                     </Text>
                   </TouchableOpacity>
                 );

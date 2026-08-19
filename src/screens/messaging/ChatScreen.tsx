@@ -37,7 +37,8 @@ export default function ChatScreen({ route, navigation }: Props) {
   const { user } = useAuth();
   const {
     messagesForConversation, sendDirectMessage, retryMessage, deleteMessageForMe, unsendMessage, events, users, participantsFor,
-    getOrCreateConversation, markConversationRead, readCursorsFor,
+    getOrCreateConversation, markConversationRead, readCursorsFor, conversationStateFor, setConversationMuted, conversations,
+    reactionsFor, toggleMessageReaction,
   } = useData();
   const { colors: themeColors, isNightMode } = useTheme();
   const { showToast } = useToast();
@@ -72,9 +73,11 @@ export default function ChatScreen({ route, navigation }: Props) {
   const [selectedUserModal, setSelectedUserModal] = useState<any>(null);
   const [fullImageUri, setFullImageUri] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  // Message being replied to / quoted in the composer.
+  const [replyingTo, setReplyingTo] = useState<DirectMessage | null>(null);
   // Message whose "Seen by …" detail is expanded (tap to toggle, group chats).
   const [expandedSeenId, setExpandedSeenId] = useState<string | null>(null);
-  // Message long-pressed to open the delete menu (delete for me / unsend).
+  // Message long-pressed to open the action menu (reactions, reply, delete for me / unsend).
   const [actionMsg, setActionMsg] = useState<DirectMessage | null>(null);
   // Mentions confirmed by tapping a member. Kept as ids so a rename never breaks
   // targeting, and re-checked against the text on send so deleting the name drops it.
@@ -93,8 +96,10 @@ export default function ChatScreen({ route, navigation }: Props) {
   );
   // Inverted list requires newest items first at index 0.
   const reversedMessages = useMemo(() => [...messages].reverse(), [messages]);
-  const event = eventId ? events.find(e => e.id === eventId) : undefined;
-  const isGroupChat = recipientId === 'ALL_PARTICIPANTS' || conversationId.includes('conv_group');
+  const currentConv = conversations.find(c => c.id === conversationId);
+  const isGroupChat = recipientId === 'ALL_PARTICIPANTS' || !!currentConv?.is_group || conversationId.includes('conv_group');
+  const effectiveEventId = eventId || currentConv?.event_id;
+  const event = effectiveEventId ? events.find(e => e.id === effectiveEventId) : undefined;
   const recipientUser = !isGroupChat ? users.find(u => u.id === recipientId || u.full_name === recipientName) : undefined;
   /**
    * Why this thread is read-only, if it is.
@@ -123,7 +128,9 @@ export default function ChatScreen({ route, navigation }: Props) {
   const isOrganizer = !!user && !!event && (
     user.id === event.organizer_user_id ||
     (user.role === 'CLUB_PRESIDENT' && user.club_id === event.organizing_club_id) ||
-    user.role === 'APP_ADMIN'
+    user.role === 'APP_ADMIN' ||
+    user.position === 'App Admin' ||
+    user.role === 'DISTRICT_ADMIN'
   );
 
   const latestAnnouncement = useMemo(() => {
@@ -133,6 +140,9 @@ export default function ChatScreen({ route, navigation }: Props) {
       .reverse()
       .find(m => m.text?.startsWith('📢') && !m.deleted_at);
   }, [isGroupChat, event, messages]);
+
+  const convState = conversationStateFor(conversationId, user?.id);
+  const isMuted = !!convState?.muted;
 
   const [announcementDismissed, setAnnouncementDismissed] = useState(false);
   const [announcementExpanded, setAnnouncementExpanded] = useState(false);
@@ -173,7 +183,7 @@ export default function ChatScreen({ route, navigation }: Props) {
   const lastMsgId = messages.length ? messages[messages.length - 1].id : undefined;
   useEffect(() => {
     if (isFocused && user && conversationId && lastMsgId) {
-      markConversationRead(conversationId, user.id);
+      markConversationRead(conversationId, user.id, lastMsgId);
     }
   }, [isFocused, lastMsgId, conversationId, user?.id, markConversationRead]);
 
@@ -232,10 +242,29 @@ export default function ChatScreen({ route, navigation }: Props) {
     if (val.length === 0) sendTyping(false);
   }, [sendTyping]);
 
+  const scrollToMessage = useCallback((targetId: string) => {
+    const idx = reversedMessages.findIndex(m => m.id === targetId);
+    if (idx !== -1) {
+      listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.5 });
+    } else {
+      showToast({
+        type: 'info',
+        title: 'Message Not Found',
+        message: 'The quoted message is not currently loaded in the chat history.',
+      });
+    }
+  }, [reversedMessages, showToast]);
+
   const handleSend = () => {
     if (!text.trim() || !user || cannotMessage || isArchived) return;
     const finalMentions = mentions.filter(m => text.includes(`@${m.full_name}`));
     const finalText = isAnnouncementMode ? `📢 [ANNOUNCEMENT]\n${text.trim()}` : text.trim();
+    const replyMeta = replyingTo ? {
+      id: replyingTo.id,
+      senderName: replyingTo.sender_name,
+      text: replyingTo.text ? replyingTo.text.replace(/^📢\s*(\[ANNOUNCEMENT\])?\s*/i, '') : (replyingTo.attachment_path ? '📷 Photo' : ''),
+    } : undefined;
+
     sendDirectMessage(
       conversationId,
       eventId,
@@ -246,9 +275,13 @@ export default function ChatScreen({ route, navigation }: Props) {
       eventTitle || event?.title,
       undefined,
       finalMentions.length ? finalMentions.map(m => m.id) : undefined,
+      undefined,
+      undefined,
+      replyMeta,
     );
     setText('');
     setMentions([]);
+    setReplyingTo(null);
     setIsAnnouncementMode(false);
     sendTyping(false);
     listRef.current?.scrollToOffset({ offset: 0, animated: true });
@@ -275,10 +308,17 @@ export default function ChatScreen({ route, navigation }: Props) {
         const path = await uploadImageAsset('chat-media', `${conversationId}/${user.id}`, {
           uri: a.uri, base64: a.base64, mimeType: a.mimeType, fileName: a.fileName,
         });
+        const replyMeta = replyingTo ? {
+          id: replyingTo.id,
+          senderName: replyingTo.sender_name,
+          text: replyingTo.text ? replyingTo.text.replace(/^📢\s*(\[ANNOUNCEMENT\])?\s*/i, '') : (replyingTo.attachment_path ? '📷 Photo' : ''),
+        } : undefined;
+
         sendDirectMessage(
           conversationId, eventId, user, isGroupChat ? undefined : recipientId, recipientName,
-          '', eventTitle || event?.title, path, undefined, a.width, a.height
+          '', eventTitle || event?.title, path, undefined, a.width, a.height, replyMeta,
         );
+        setReplyingTo(null);
         listRef.current?.scrollToOffset({ offset: 0, animated: true });
       } catch (err: any) {
         Alert.alert('Upload Failed', err?.message || 'Could not send the photo. Please try again.');
@@ -305,33 +345,42 @@ export default function ChatScreen({ route, navigation }: Props) {
     return m;
   }, [messages]);
 
-  // How many OTHER participants have read a given one of my messages.
-  const readCountFor = useCallback((msg: DirectMessage): number | null => {
-    if (msg.sender_id !== user?.id) return null;
+  // How many participants (other than the author and current viewer) have read a given message.
+  const readCountFor = useCallback((msg: DirectMessage): number => {
     const myPos = messageIndex.get(msg.id);
-    if (myPos === undefined) return null;
-    const created = new Date(msg.created_at).getTime();
+    const msgTime = new Date(msg.created_at).getTime();
     return cursors.filter(c => {
-      if (c.user_id === user?.id) return false;
-      const readerPos = c.last_read_message_id !== undefined ? messageIndex.get(c.last_read_message_id) : undefined;
-      if (readerPos !== undefined) return readerPos >= myPos;
-      // Fallback for cursors without a message id.
-      return new Date(c.last_read_at).getTime() >= created;
+      if (c.user_id === msg.sender_id || c.user_id === user?.id) return false;
+      // Primary: matched by message order
+      if (c.last_read_message_id) {
+        const readerPos = messageIndex.get(c.last_read_message_id);
+        if (readerPos !== undefined) return readerPos >= (myPos ?? 0);
+      }
+      // Fallback: timestamp check (must be at least 1s after the message creation to prevent local skew)
+      if (c.last_read_at) {
+        const readTime = new Date(c.last_read_at).getTime();
+        return readTime > msgTime + 1000;
+      }
+      return false;
     }).length;
   }, [cursors, messageIndex, user?.id]);
 
-  // The participants (other than the author and me) who have read a given message —
-  // used for the tap-to-reveal "Seen by …" detail in group chats.
+  // The other participants who have read a given message.
   const readersFor = useCallback((msg: DirectMessage) => {
     const myPos = messageIndex.get(msg.id);
-    if (myPos === undefined) return [];
-    const created = new Date(msg.created_at).getTime();
+    const msgTime = new Date(msg.created_at).getTime();
     return cursors
       .filter(c => c.user_id !== msg.sender_id && c.user_id !== user?.id)
       .filter(c => {
-        const rp = c.last_read_message_id !== undefined ? messageIndex.get(c.last_read_message_id) : undefined;
-        if (rp !== undefined) return rp >= myPos;
-        return new Date(c.last_read_at).getTime() >= created;
+        if (c.last_read_message_id) {
+          const rp = messageIndex.get(c.last_read_message_id);
+          if (rp !== undefined) return rp >= (myPos ?? 0);
+        }
+        if (c.last_read_at) {
+          const readTime = new Date(c.last_read_at).getTime();
+          return readTime > msgTime + 1000;
+        }
+        return false;
       })
       .map(c => users.find(u => u.id === c.user_id))
       .filter((u): u is NonNullable<typeof u> => !!u);
@@ -349,8 +398,8 @@ export default function ChatScreen({ route, navigation }: Props) {
 
   // "John is typing…" / "John and Maria are typing…" / "3 people are typing…"
   const typingLabel = typingUsers.length === 0 ? null
-    : typingUsers.length === 1 ? `${typingUsers[0].name.split(' ')[0]} is typing…`
-    : typingUsers.length === 2 ? `${typingUsers[0].name.split(' ')[0]} and ${typingUsers[1].name.split(' ')[0]} are typing…`
+    : typingUsers.length === 1 ? `${typingUsers[0]?.name?.split(' ')?.[0] || 'Someone'} is typing…`
+    : typingUsers.length === 2 ? `${typingUsers[0]?.name?.split(' ')?.[0] || 'Someone'} and ${typingUsers[1]?.name?.split(' ')?.[0] || 'Someone'} are typing…`
     : `${typingUsers.length} people are typing…`;
 
   return (
@@ -389,6 +438,25 @@ export default function ChatScreen({ route, navigation }: Props) {
             {displayPosition} • {displayClub}
           </Text>
         </TouchableOpacity>
+
+        {/* Mute / Unmute bell toggle button */}
+        <TouchableOpacity
+          style={[styles.headerMuteBtn, { backgroundColor: isMuted ? 'rgba(239, 68, 68, 0.12)' : themeColors.surface }]}
+          onPress={() => {
+            if (user && conversationId) {
+              const nextMuted = !isMuted;
+              setConversationMuted(conversationId, user.id, nextMuted);
+              showToast({ title: nextMuted ? 'Conversation muted' : 'Conversation unmuted', type: 'info' });
+            }
+          }}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons
+            name={isMuted ? 'notifications-off' : 'notifications-outline'}
+            size={18}
+            color={isMuted ? '#EF4444' : themeColors.textMuted}
+          />
+        </TouchableOpacity>
       </View>
 
       {isArchived && (
@@ -421,7 +489,7 @@ export default function ChatScreen({ route, navigation }: Props) {
           <View style={styles.announcementTopRow}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
               <Ionicons name="megaphone" size={14} color="#D97706" />
-              <Text style={[styles.announcementTag, { color: '#D97706' }]}>ORGANIZER ANNOUNCEMENT</Text>
+              <Text style={[styles.announcementTag, { color: '#D97706' }]}>OFFICER ANNOUNCEMENT</Text>
             </View>
             <TouchableOpacity onPress={() => setAnnouncementDismissed(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Ionicons name="close" size={16} color={themeColors.textMuted} />
@@ -438,9 +506,41 @@ export default function ChatScreen({ route, navigation }: Props) {
               <Text style={[styles.announcementAuthor, { color: themeColors.textMuted }]}>
                 Pinned by {latestAnnouncement.sender_name} • {formatTime(latestAnnouncement.created_at)}
               </Text>
-              <Text style={[styles.announcementToggleText, { color: themeColors.primary }]}>
-                {announcementExpanded ? 'Show less' : 'Read full'}
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                {(() => {
+                  const readers = readersFor(latestAnnouncement);
+                  const pCount = readers.length;
+                  return (
+                    <TouchableOpacity
+                      onPress={() => setExpandedSeenId(prev => (prev === latestAnnouncement.id ? null : latestAnnouncement.id))}
+                      style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                    >
+                      <Ionicons name="checkmark-done" size={13} color={pCount > 0 ? READ_TICK_COLOR : themeColors.textMuted} />
+                      {pCount > 0 ? (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 2 }}>
+                          {readers.slice(0, 4).map((r, i) => (
+                            <View key={r.id} style={{ marginLeft: i > 0 ? -6 : 0, borderRadius: 9, borderWidth: 1.5, borderColor: themeColors.cardBg }}>
+                              <UserAvatar user={r} size={16} showBadge={false} />
+                            </View>
+                          ))}
+                          {pCount > 4 && (
+                            <Text style={{ fontSize: 10, fontWeight: '700', color: themeColors.textMuted, marginLeft: 4 }}>
+                              +{pCount - 4}
+                            </Text>
+                          )}
+                        </View>
+                      ) : (
+                        <Text style={{ fontSize: 11, fontWeight: '600', color: themeColors.textMuted }}>
+                          Not seen yet
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })()}
+                <Text style={[styles.announcementToggleText, { color: themeColors.primary }]}>
+                  {announcementExpanded ? 'Show less' : 'Read full'}
+                </Text>
+              </View>
             </View>
           </TouchableOpacity>
         </View>
@@ -451,32 +551,56 @@ export default function ChatScreen({ route, navigation }: Props) {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? headerHeight + 10 : headerHeight}
       >
-        <FlatList
-          ref={listRef}
-          data={reversedMessages}
-          inverted
-          keyExtractor={m => m.id}
-          style={{ flex: 1 }}
-          contentContainerStyle={styles.messageList}
-          onScroll={handleScroll}
-          scrollEventThrottle={16}
-          ListEmptyComponent={
-            <View style={{ transform: [{ scaleY: -1 }], paddingVertical: 40, paddingHorizontal: 20 }}>
-              <Text style={[styles.empty, { color: themeColors.textMuted }]}>
-                {isGroupChat ? 'Welcome to the Event Group Chat! Send a message to start communicating.' : `No messages yet. Say hi to ${displayName}!`}
-              </Text>
+        {reversedMessages.length === 0 ? (
+          <View style={[styles.emptyChatWrap, { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 }]}>
+            <View style={[styles.emptyIconCircle, { backgroundColor: themeColors.primary + '18' }]}>
+              <Ionicons name="chatbubbles-outline" size={36} color={themeColors.primary} />
             </View>
-          }
-          renderItem={({ item, index }) => {
+            <Text style={[styles.emptyTitle, { color: themeColors.text }]}>
+              {isGroupChat ? 'Event Group Chat' : displayName}
+            </Text>
+            <Text style={[styles.emptySub, { color: themeColors.textMuted }]}>
+              {isGroupChat ? 'Welcome! Send a message to start communicating with everyone.' : `No messages yet. Say hi to ${displayName}!`}
+            </Text>
+          </View>
+        ) : (
+          <FlatList
+            ref={listRef}
+            data={reversedMessages}
+            inverted
+            keyExtractor={m => m.id}
+            style={{ flex: 1 }}
+            contentContainerStyle={styles.messageList}
+            onScroll={handleScroll}
+            scrollEventThrottle={16}
+            onScrollToIndexFailed={(info) => {
+              listRef.current?.scrollToOffset({ offset: info.highestMeasuredFrameIndex * 50, animated: true });
+            }}
+            renderItem={({ item, index }) => {
             const isMe = item.sender_id === user.id;
+            const isAnnouncement = !!item.is_broadcast || !!item.text?.startsWith('📢');
             const senderUser = users.find(u => u.id === item.sender_id);
-            const readCount = isMe ? (readCountFor(item) ?? 0) : 0;
+            const readCount = readCountFor(item);
             const isRead = readCount > 0;
             // Inverted list: chronological run starts when the older message (index + 1) has a different event_id
             const msgEvent = !isGroupChat && item.event_id ? events.find(e => e.id === item.event_id) : undefined;
             const showEventChip = !!msgEvent && (index === reversedMessages.length - 1 || reversedMessages[index + 1]?.event_id !== item.event_id);
+
+            const msgReactions = reactionsFor(item.id);
+            const reactionMap = new Map<string, { count: number; userReacted: boolean }>();
+            for (const r of msgReactions) {
+              const cur = reactionMap.get(r.emoji) || { count: 0, userReacted: false };
+              cur.count += 1;
+              if (r.user_id === user.id) cur.userReacted = true;
+              reactionMap.set(r.emoji, cur);
+            }
+            const groupedReactions = Array.from(reactionMap.entries()).map(([emoji, data]) => ({ emoji, ...data }));
+
             return (
-              <SwipeableRow onDelete={() => deleteMessageForMe(item.id, user.id)}>
+              <SwipeableRow
+                onDelete={() => deleteMessageForMe(item.id, user.id)}
+                onReply={() => !item.deleted_at && setReplyingTo(item)}
+              >
               <View>
                 <View style={[styles.messageWrapper, isMe ? styles.myWrapper : styles.theirWrapper]}>
                   {!isMe && (
@@ -492,12 +616,20 @@ export default function ChatScreen({ route, navigation }: Props) {
                     delayLongPress={300}
                     style={[
                       styles.bubble,
-                      isMe
+                      isAnnouncement
+                        ? [styles.announcementBubble, { backgroundColor: isNightMode ? '#2B1E05' : '#FFFBEB', borderColor: '#F59E0B' }]
+                        : isMe
                         ? [styles.myBubble, { backgroundColor: themeColors.primary }]
                         : [styles.theirBubble, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }],
                       item.deleted_at && styles.deletedBubble,
                     ]}
                   >
+                    {isAnnouncement && !item.deleted_at && (
+                      <View style={styles.announcementBubbleHeader}>
+                        <Ionicons name="megaphone" size={12} color="#D97706" />
+                        <Text style={styles.announcementBubbleHeaderText}>OFFICER ANNOUNCEMENT</Text>
+                      </View>
+                    )}
                     {showEventChip && msgEvent && (
                       <TouchableOpacity
                         style={[styles.msgEventChip, { backgroundColor: isMe ? 'rgba(255,255,255,0.18)' : themeColors.primary + '18', borderColor: isMe ? 'rgba(255,255,255,0.35)' : themeColors.primary + '40' }]}
@@ -511,11 +643,36 @@ export default function ChatScreen({ route, navigation }: Props) {
                     {!isMe && isGroupChat && (
                       <TouchableOpacity onPress={() => senderUser && setSelectedUserModal(senderUser)}>
                         <View style={styles.senderNameRow}>
-                          <Text style={[styles.senderName, { color: themeColors.primary }]}>
+                          <Text style={[styles.senderName, { color: isAnnouncement ? '#D97706' : themeColors.primary }]}>
                             {item.sender_name} {senderUser ? `(${senderUser.position})` : ''}
                           </Text>
                           <VerifiedCheck user={senderUser} size={12} />
                         </View>
+                      </TouchableOpacity>
+                    )}
+
+                    {/* Quoted / Replied-to message snippet inside the bubble */}
+                    {!!item.reply_to_message_id && !item.deleted_at && (
+                      <TouchableOpacity
+                        style={[
+                          styles.quotedSnippet,
+                          {
+                            borderLeftColor: isMe ? 'rgba(255,255,255,0.9)' : themeColors.primary,
+                            backgroundColor: isMe ? 'rgba(0,0,0,0.14)' : (isNightMode ? '#1F2937' : '#F3F4F6'),
+                          },
+                        ]}
+                        onPress={() => item.reply_to_message_id && scrollToMessage(item.reply_to_message_id)}
+                        activeOpacity={0.8}
+                      >
+                        <View style={styles.quotedSnippetHeader}>
+                          <Ionicons name="arrow-undo" size={11} color={isMe ? 'rgba(255,255,255,0.95)' : themeColors.primary} />
+                          <Text style={[styles.quotedSnippetAuthor, { color: isMe ? '#fff' : themeColors.primary }]} numberOfLines={1}>
+                            {item.reply_to_sender_name || 'Replied Message'}
+                          </Text>
+                        </View>
+                        <Text style={[styles.quotedSnippetText, { color: isMe ? 'rgba(255,255,255,0.85)' : themeColors.textMuted }]} numberOfLines={2}>
+                          {item.reply_to_text || 'Original message'}
+                        </Text>
                       </TouchableOpacity>
                     )}
 
@@ -542,7 +699,12 @@ export default function ChatScreen({ route, navigation }: Props) {
                           />
                         )}
                         {!!item.text && (
-                          <Text style={[styles.messageText, { color: isMe ? '#fff' : themeColors.text }]}>{item.text}</Text>
+                          <Text style={[
+                            styles.messageText,
+                            { color: isAnnouncement ? (isNightMode ? '#FDE68A' : '#78350F') : (isMe ? '#fff' : themeColors.text) }
+                          ]}>
+                            {isAnnouncement ? item.text.replace(/^📢\s*(\[ANNOUNCEMENT\])?\s*/i, '') : item.text}
+                          </Text>
                         )}
                       </TouchableOpacity>
                     )}
@@ -555,7 +717,10 @@ export default function ChatScreen({ route, navigation }: Props) {
                       activeOpacity={isGroupChat ? 0.6 : 1}
                       onPress={isGroupChat ? () => setExpandedSeenId(prev => (prev === item.id ? null : item.id)) : undefined}
                     >
-                      <Text style={[styles.messageTime, { color: isMe ? 'rgba(255,255,255,0.7)' : themeColors.textMuted }]}>
+                      <Text style={[
+                        styles.messageTime,
+                        { color: isAnnouncement ? (isNightMode ? '#FDE68A99' : '#B45309') : (isMe ? 'rgba(255,255,255,0.7)' : themeColors.textMuted) }
+                      ]}>
                         {formatTime(item.created_at)}
                       </Text>
                       {isMe && !item.deleted_at && item.send_status === 'sending' && <Ionicons name="time-outline" size={12} color="rgba(255,255,255,0.7)" />}
@@ -565,58 +730,97 @@ export default function ChatScreen({ route, navigation }: Props) {
                           <Text style={styles.retryText}>Retry</Text>
                         </TouchableOpacity>
                       )}
-                      {/* Delivery/read ticks: ✓ = sent, ✓✓ (colored) = read.
-                          Group chats append the number of readers. */}
+                      {/* Delivery/read ticks: ✓ = sent, ✓✓ (colored) = read. */}
                       {isMe && !item.deleted_at && item.send_status !== 'sending' && item.send_status !== 'failed' && (
                         <View style={styles.receiptRow}>
                           <Ionicons
                             name={isRead ? 'checkmark-done' : 'checkmark'}
                             size={15}
-                            color={isRead ? READ_TICK_COLOR : 'rgba(255,255,255,0.7)'}
+                            color={isRead ? (isAnnouncement ? '#D97706' : READ_TICK_COLOR) : 'rgba(255,255,255,0.7)'}
                           />
-                          {isRead && isGroupChat && (
-                            <Text style={[styles.receiptCount, { color: READ_TICK_COLOR }]}>{readCount}</Text>
-                          )}
                         </View>
                       )}
                     </TouchableOpacity>
                   </TouchableOpacity>
                 </View>
+                {/* Docked reaction chips */}
+                {groupedReactions.length > 0 && !item.deleted_at && (
+                  <View style={[styles.reactionChipsRow, isMe ? styles.reactionChipsRowMe : styles.reactionChipsRowThem]}>
+                    {groupedReactions.map(({ emoji, count, userReacted }) => (
+                      <TouchableOpacity
+                        key={emoji}
+                        style={[
+                          styles.reactionChip,
+                          {
+                            backgroundColor: userReacted ? (isMe ? themeColors.primary + '25' : themeColors.primary + '18') : (isNightMode ? '#1E293B' : '#FFFFFF'),
+                            borderColor: userReacted ? themeColors.primary : (isNightMode ? '#334155' : '#E2E8F0'),
+                          },
+                        ]}
+                        onPress={() => user && toggleMessageReaction(item.id, user.id, emoji)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.reactionChipEmoji}>{emoji}</Text>
+                        {count > 1 && (
+                          <Text style={[styles.reactionChipCount, { color: userReacted ? themeColors.primary : themeColors.textMuted }]}>
+                            {count}
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
                 {isGroupChat && !item.deleted_at && (
                   expandedSeenId === item.id ? (() => {
                     const readers = readersFor(item);
                     return (
-                      <View style={[styles.seenByRow, isMe ? styles.myWrapper : styles.seenByTheir]}>
+                      <TouchableOpacity
+                        style={[styles.seenByRow, isMe ? styles.myWrapper : styles.seenByTheir]}
+                        onPress={() => setExpandedSeenId(null)}
+                      >
                         {readers.length === 0 ? (
                           <Text style={[styles.seenByText, { color: themeColors.textMuted }]}>Not seen yet</Text>
                         ) : (
-                          <>
-                            <Text style={[styles.seenByText, { color: themeColors.textMuted }]}>
-                              Seen by {readers.map(r => r.full_name.split(' ')[0]).join(', ')}
-                            </Text>
-                            <View style={styles.seenByAvatars}>
-                              {readers.slice(0, 6).map(r => (
-                                <View key={r.id} style={styles.seenByAvatar}>
-                                  <UserAvatar user={r} size={16} />
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <View style={styles.compactSeenStack}>
+                              {readers.slice(0, 8).map((r, i) => (
+                                <View key={r.id} style={[styles.compactSeenAvatar, { marginLeft: i > 0 ? -6 : 0, borderColor: themeColors.bg }]}>
+                                  <UserAvatar user={r} size={18} showBadge={false} />
                                 </View>
                               ))}
                             </View>
-                          </>
+                            <Text style={[styles.seenByText, { color: themeColors.textMuted }]}>
+                              Seen by {readers.map(r => r.full_name?.split(' ')?.[0] || 'Member').join(', ')}
+                            </Text>
+                          </View>
                         )}
-                      </View>
+                      </TouchableOpacity>
                     );
                   })() : (
-                    // Always-on summary under YOUR OWN group messages (incl. broadcasts)
-                    // so read status is visible without tapping. Tap to see who.
-                    isMe && readCount > 0 ? (
-                      <TouchableOpacity
-                        style={[styles.seenByRow, styles.myWrapper]}
-                        onPress={() => setExpandedSeenId(item.id)}
-                      >
-                        <Ionicons name="checkmark-done" size={12} color={READ_TICK_COLOR} />
-                        <Text style={[styles.seenByText, { color: themeColors.textMuted }]}>Seen by {readCount}</Text>
-                      </TouchableOpacity>
-                    ) : null
+                    // Compact avatar-only summary under YOUR OWN group messages or ANNOUNCEMENTS
+                    (isMe || isAnnouncement) && readCount > 0 ? (() => {
+                      const readers = readersFor(item);
+                      return (
+                        <TouchableOpacity
+                          style={[styles.seenByRow, isMe ? styles.myWrapper : styles.seenByTheir]}
+                          onPress={() => setExpandedSeenId(item.id)}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons name="checkmark-done" size={12} color={isAnnouncement ? '#D97706' : READ_TICK_COLOR} />
+                          <View style={styles.compactSeenStack}>
+                            {readers.slice(0, 5).map((r, i) => (
+                              <View key={r.id} style={[styles.compactSeenAvatar, { marginLeft: i > 0 ? -6 : 0, borderColor: themeColors.bg }]}>
+                                <UserAvatar user={r} size={16} showBadge={false} />
+                              </View>
+                            ))}
+                            {readers.length > 5 && (
+                              <Text style={{ fontSize: 10, fontWeight: '700', color: themeColors.textMuted, marginLeft: 4 }}>
+                                +{readers.length - 5}
+                              </Text>
+                            )}
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })() : null
                   )
                 )}
               </View>
@@ -624,6 +828,7 @@ export default function ChatScreen({ route, navigation }: Props) {
             );
           }}
         />
+        )}
 
         {typingLabel ? (
           <Text style={[styles.typingLabel, { color: themeColors.textMuted }]}>{typingLabel}</Text>
@@ -695,6 +900,31 @@ export default function ChatScreen({ route, navigation }: Props) {
                 </TouchableOpacity>
               </View>
             )}
+            {/* Quote Preview Bar above composer */}
+            {replyingTo && (
+              <View style={[styles.replyPreviewBar, { backgroundColor: themeColors.cardBg, borderTopColor: themeColors.border }]}>
+                <View style={[styles.replyPreviewAccent, { backgroundColor: themeColors.primary }]} />
+                <View style={styles.replyPreviewContent}>
+                  <View style={styles.replyPreviewHeader}>
+                    <Ionicons name="arrow-undo" size={12} color={themeColors.primary} />
+                    <Text style={[styles.replyPreviewTitle, { color: themeColors.primary }]}>
+                      Replying to {replyingTo.sender_name}
+                    </Text>
+                  </View>
+                  <Text style={[styles.replyPreviewSnippet, { color: themeColors.textMuted }]} numberOfLines={1}>
+                    {replyingTo.text ? replyingTo.text.replace(/^📢\s*(\[ANNOUNCEMENT\])?\s*/i, '') : (replyingTo.attachment_path ? '📷 Photo' : 'Original message')}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.replyPreviewClose}
+                  onPress={() => setReplyingTo(null)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons name="close-circle" size={20} color={themeColors.textMuted} />
+                </TouchableOpacity>
+              </View>
+            )}
+
             <View style={[styles.inputBar, { backgroundColor: themeColors.cardBg, borderTopColor: themeColors.border }]}>
             <TouchableOpacity style={styles.attachBtn} onPress={handleAttachPhoto} disabled={uploading}>
               {uploading ? <ActivityIndicator size="small" color={themeColors.primary} /> : <Ionicons name="image" size={22} color={themeColors.primary} />}
@@ -734,14 +964,57 @@ export default function ChatScreen({ route, navigation }: Props) {
         )}
       </KeyboardAvoidingView>
 
-      {/* Long-press message menu: Messenger-style delete choices. */}
+      {/* Long-press message menu: Quick reactions, reply, copy, and delete choices. */}
       <BottomSheet
         visible={!!actionMsg}
         onClose={() => setActionMsg(null)}
         cardStyle={[styles.menuCard, { backgroundColor: themeColors.cardBg }]}
       >
+        {/* Floating Quick Reaction Bar */}
+        {actionMsg && !actionMsg.deleted_at && (
+          <View style={[styles.quickReactionContainer, { backgroundColor: isNightMode ? '#1E293B' : '#F1F5F9' }]}>
+            {['👍', '❤️', '😂', '😮', '😢', '👏'].map(emoji => {
+              const activeReaction = reactionsFor(actionMsg.id).find(r => r.user_id === user?.id && r.emoji === emoji);
+              return (
+                <TouchableOpacity
+                  key={emoji}
+                  style={[
+                    styles.quickReactionBtn,
+                    activeReaction && { backgroundColor: themeColors.primary + '28', borderColor: themeColors.primary, borderWidth: 1 }
+                  ]}
+                  onPress={() => {
+                    if (user) {
+                      toggleMessageReaction(actionMsg.id, user.id, emoji);
+                    }
+                    setActionMsg(null);
+                  }}
+                  activeOpacity={0.65}
+                >
+                  <Text style={styles.quickReactionEmoji}>{emoji}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
+
         <Text style={[styles.menuTitle, { color: themeColors.textMuted }]}>Message Options</Text>
         
+        {actionMsg && !actionMsg.deleted_at && (
+          <TouchableOpacity
+            style={styles.menuRow}
+            onPress={() => {
+              setReplyingTo(actionMsg);
+              setActionMsg(null);
+            }}
+          >
+            <Ionicons name="arrow-undo-outline" size={20} color={themeColors.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.menuLabel, { color: themeColors.text }]}>Reply</Text>
+              <Text style={[styles.menuSub, { color: themeColors.textMuted }]}>Quote this message in your reply</Text>
+            </View>
+          </TouchableOpacity>
+        )}
+
         {actionMsg && !!actionMsg.text && !actionMsg.deleted_at && (
           <TouchableOpacity
             style={styles.menuRow}
@@ -944,6 +1217,10 @@ const styles = StyleSheet.create({
   sendBtnDisabled: { opacity: 0.5 },
   archivedComposer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 16, borderTopWidth: 1 },
   archivedComposerText: { fontSize: 12, fontWeight: '600' },
+  emptyChatWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
+  emptyIconCircle: { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
+  emptyTitle: { fontSize: 18, fontWeight: '800', textAlign: 'center', marginBottom: 6 },
+  emptySub: { fontSize: 13, textAlign: 'center', lineHeight: 19, paddingHorizontal: 20 },
   empty: { textAlign: 'center', marginTop: 40 },
   menuCard: { borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 16, gap: 4 },
   menuTitle: { fontSize: 11, fontWeight: '800', letterSpacing: 1, marginBottom: 8, marginLeft: 4 },
@@ -982,4 +1259,147 @@ const styles = StyleSheet.create({
   announcementAuthor: { fontSize: 10 },
   announcementToggleText: { fontSize: 11, fontWeight: '700' },
   announcementToggleBtn: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'transparent' },
+  headerMuteBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
+  announcementBubble: {
+    borderWidth: 1.5,
+    borderRadius: 16,
+  },
+  announcementBubbleHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 6,
+    paddingBottom: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#F59E0B66',
+  },
+  announcementBubbleHeaderText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#D97706',
+    letterSpacing: 0.5,
+  },
+  compactSeenStack: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  compactSeenAvatar: {
+    borderRadius: 10,
+    borderWidth: 1.5,
+  },
+  quotedSnippet: {
+    borderLeftWidth: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 6,
+    marginBottom: 6,
+  },
+  quotedSnippetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 2,
+  },
+  quotedSnippetAuthor: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  quotedSnippetText: {
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  reactionChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    marginTop: 3,
+    marginHorizontal: 4,
+  },
+  reactionChipsRowMe: {
+    justifyContent: 'flex-end',
+  },
+  reactionChipsRowThem: {
+    justifyContent: 'flex-start',
+    paddingLeft: 36,
+  },
+  reactionChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 12,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 1.5,
+    elevation: 1,
+  },
+  reactionChipEmoji: {
+    fontSize: 13,
+  },
+  reactionChipCount: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  quickReactionContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    borderRadius: 24,
+    marginBottom: 8,
+  },
+  quickReactionBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  quickReactionEmoji: {
+    fontSize: 24,
+  },
+  replyPreviewBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+  },
+  replyPreviewAccent: {
+    width: 3,
+    height: '100%',
+    borderRadius: 2,
+    marginRight: 10,
+  },
+  replyPreviewContent: {
+    flex: 1,
+  },
+  replyPreviewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  replyPreviewTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  replyPreviewSnippet: {
+    fontSize: 12,
+    marginTop: 1,
+  },
+  replyPreviewClose: {
+    padding: 4,
+    marginLeft: 8,
+  },
 });

@@ -65,7 +65,7 @@
         {
           "icon": "./assets/notification-icon.png",
           "color": "#D41367",
-          "defaultChannel": "general_v3",
+          "defaultChannel": "general_v5",
           "sounds": [
             "./assets/sounds/chime.wav",
             "./assets/sounds/alert.wav"
@@ -80,7 +80,8 @@
           }
         }
       ],
-      "expo-splash-screen"
+      "expo-splash-screen",
+      "expo-sharing"
     ],
     "extra": {
       "eas": {

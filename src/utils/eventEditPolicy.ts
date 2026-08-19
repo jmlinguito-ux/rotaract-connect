@@ -1,5 +1,6 @@
 import type { AppUser, EventParticipant, RotaractEvent } from '../types';
-import { approverClubIdsFor, isDistrictAdmin, isOnOrganizingTeam } from './eventApproval';
+import { approverClubIdsFor, isOnOrganizingTeam } from './eventApproval';
+import { isDistrictAdmin, isClubPresident } from './roles';
 
 /** Fields that can be frozen while the rest of the event stays editable. */
 export interface LockedFields {
@@ -111,12 +112,12 @@ export function eventEditPolicy(
 
   const onTeam = isOnOrganizingTeam(event, user);
   const admin = isDistrictAdmin(user);
-  const organizingClubPresident = user.role === 'CLUB_PRESIDENT' && user.club_id === event.organizing_club_id;
+  const organizingClubPresident = isClubPresident(user, event.organizing_club_id);
 
   // Presidents of partner or co-organizing clubs approve events; they do not edit them.
   if (!onTeam && !admin && !organizingClubPresident) {
     const isApproverPresident =
-      user.role === 'CLUB_PRESIDENT' && approverClubIdsFor(event, users).includes(user.club_id);
+      isClubPresident(user) && approverClubIdsFor(event, users).includes(user.club_id);
     return blocked(
       isApproverPresident
         ? 'Your club is an approver on this event, not its organizer. Only the organizing team, their Club President, and District Administrators can change the details.'

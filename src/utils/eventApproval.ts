@@ -1,4 +1,5 @@
 import type { AppUser, RotaractEvent, EventParticipant } from '../types';
+import { isClubPresident, isDistrictAdmin } from './roles';
 
 /**
  * Clubs whose Presidents must sign off before a pending event can be published.
@@ -24,10 +25,6 @@ export function pendingApproverClubIdsFor(event: RotaractEvent, users: AppUser[]
   return approverClubIdsFor(event, users).filter(id => !approved.includes(id));
 }
 
-export function isDistrictAdmin(user: AppUser | null | undefined): boolean {
-  return user?.role === 'DISTRICT_ADMIN' || user?.role === 'APP_ADMIN';
-}
-
 /** True once every involved club's President has approved. */
 export function isFullyApproved(event: RotaractEvent, users: AppUser[]): boolean {
   return pendingApproverClubIdsFor(event, users).length === 0;
@@ -40,7 +37,7 @@ export function isFullyApproved(event: RotaractEvent, users: AppUser[]): boolean
 export function canApproveEvent(event: RotaractEvent, user: AppUser | null | undefined, users: AppUser[]): boolean {
   if (!user || event.status !== 'PENDING_APPROVAL') return false;
   if (event.event_type === 'DISTRICT_EVENT') return isDistrictAdmin(user);
-  if (user.role !== 'CLUB_PRESIDENT') return false;
+  if (!isClubPresident(user)) return false;
   return pendingApproverClubIdsFor(event, users).includes(user.club_id);
 }
 
@@ -76,7 +73,7 @@ export function canViewEvent(
 
   if (event.status === 'PENDING_APPROVAL') {
     if (event.event_type === 'DISTRICT_EVENT') return false;
-    return user.role === 'CLUB_PRESIDENT' && approverClubIdsFor(event, users).includes(user.club_id);
+    return isClubPresident(user) && approverClubIdsFor(event, users).includes(user.club_id);
   }
 
   return true;

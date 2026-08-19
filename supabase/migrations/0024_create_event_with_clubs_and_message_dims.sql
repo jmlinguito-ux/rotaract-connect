@@ -12,6 +12,9 @@ ALTER TABLE direct_messages
   ADD COLUMN IF NOT EXISTS attachment_width INTEGER,
   ADD COLUMN IF NOT EXISTS attachment_height INTEGER;
 
+DROP FUNCTION IF EXISTS create_event_with_clubs(JSONB, UUID[]);
+DROP FUNCTION IF EXISTS create_event_with_clubs;
+
 CREATE OR REPLACE FUNCTION create_event_with_clubs(
   p_event JSONB,
   p_participating_club_ids UUID[] DEFAULT '{}'

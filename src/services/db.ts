@@ -2,7 +2,7 @@ import { supabase } from './supabase';
 import {
   AppUser, Club, RotaractEvent, EventParticipant, EventInvitation, EventImpact,
   VerificationApplication, AuditLog, AppNotification, Conversation, DirectMessage, ReadCursor,
-  ConversationState,
+  ConversationState, MessageReaction,
 } from '../types';
 
 /**
@@ -33,6 +33,8 @@ export interface LoadedData {
   deletedMessageIds: string[];
   /** The current user's per-conversation inbox state (pin/archive/delete). */
   conversationStates: ConversationState[];
+  /** Emoji reactions left on messages. */
+  reactions: MessageReaction[];
 }
 
 /**
@@ -47,7 +49,7 @@ export async function loadAll(signal?: AbortSignal): Promise<LoadedData> {
 
   const [
     profilesRes, clubsRes, eventsRes, epcRes, partsRes, invRes, impRes,
-    appsRes, auditRes, notifRes, convRes, msgRes, readsRes, delsRes, convStatesRes,
+    appsRes, auditRes, notifRes, convRes, msgRes, readsRes, delsRes, convStatesRes, reactionsRes,
   ] = await Promise.all([
     withSignal(supabase.from('profiles').select('*')),
     withSignal(supabase.from('clubs').select('*')),
@@ -81,6 +83,8 @@ export async function loadAll(signal?: AbortSignal): Promise<LoadedData> {
     // scopes it to the caller's own rows. Kept in the parallel batch so it can't
     // add a serial round-trip that stalls the whole load.
     withSignal(supabase.from('conversation_states').select('*')),
+    // message_reactions may not exist until migration 0029 — tolerate that.
+    withSignal(supabase.from('message_reactions').select('*')),
   ]);
 
   const profiles = profilesRes.data ?? [];
@@ -107,6 +111,8 @@ export async function loadAll(signal?: AbortSignal): Promise<LoadedData> {
     club_name: (p.club_id && clubNameById.get(p.club_id)) || '',
     position: p.position,
     role: p.role,
+    system_role: p.system_role ?? undefined,
+    club_role: p.club_role ?? undefined,
     verification_status: p.verification_status,
     avatar_url: p.avatar_url ?? undefined,
     contact_number: p.contact_number ?? undefined,
@@ -270,6 +276,9 @@ export async function loadAll(signal?: AbortSignal): Promise<LoadedData> {
     receiver_name: (d.receiver_id && nameById.get(d.receiver_id)) || 'Group Chat',
     text: d.text ?? '',
     created_at: d.created_at,
+    reply_to_message_id: d.reply_to_message_id ?? undefined,
+    reply_to_sender_name: d.reply_to_sender_name ?? undefined,
+    reply_to_text: d.reply_to_text ?? undefined,
     attachment_path: d.attachment_path ?? undefined,
     attachment_type: d.attachment_type ?? undefined,
     deleted_at: d.deleted_at ?? undefined,
@@ -289,13 +298,22 @@ export async function loadAll(signal?: AbortSignal): Promise<LoadedData> {
     user_id: s.user_id,
     pinned: !!s.pinned,
     archived: !!s.archived,
+    muted: !!s.muted,
     deleted_at: s.deleted_at ?? undefined,
+  }));
+
+  const reactions: MessageReaction[] = (reactionsRes.data ?? []).map((r: any) => ({
+    id: r.id,
+    message_id: r.message_id,
+    user_id: r.user_id,
+    emoji: r.emoji,
+    created_at: r.created_at,
   }));
 
   return {
     users, clubs: mappedClubs, events: mappedEvents, participants, invitations,
     impacts, applications, auditLogs, notifications, conversations, messages, readCursors,
-    deletedMessageIds, conversationStates,
+    deletedMessageIds, conversationStates, reactions,
   };
 }
 
@@ -495,7 +513,7 @@ export const db = {
   upsertConversationState: async (
     conversationId: string,
     userId: string,
-    updates: { pinned?: boolean; archived?: boolean; deleted_at?: string | null },
+    updates: { pinned?: boolean; archived?: boolean; muted?: boolean; deleted_at?: string | null },
   ) => {
     reportError('upsertConversationState', (await supabase.from('conversation_states').upsert({
       conversation_id: conversationId,
@@ -512,6 +530,20 @@ export const db = {
       last_read_at: new Date().toISOString(),
       last_read_message_id: lastMessageId ?? null,
     }, { onConflict: 'conversation_id,user_id' })).error);
+  },
+  /** Toggles the caller's emoji reaction on a message. */
+  toggleReaction: async (id: string, messageId: string, userId: string, emoji: string, removeOnly: boolean = false) => {
+    if (removeOnly) {
+      reportError('deleteReaction', (await supabase.from('message_reactions').delete().match({ message_id: messageId, user_id: userId })).error);
+    } else {
+      reportError('upsertReaction', (await supabase.from('message_reactions').upsert({
+        id,
+        message_id: messageId,
+        user_id: userId,
+        emoji,
+        created_at: new Date().toISOString(),
+      }, { onConflict: 'message_id,user_id' })).error);
+    }
   },
   /** Authorized organizer banner fan-out to every JOINED participant of an event. */
   broadcastToEvent: async (eventId: string, title: string, message: string, priority: string): Promise<{ ok: boolean; error?: string }> => {
@@ -531,11 +563,34 @@ export const db = {
    * someone else's role never persisted. The RPC enforces the APP_ADMIN check
    * server-side and also syncs the profile position and the club's president.
    */
-  updateProfileRole: async (userId: string, role: string) => {
-    reportError('updateProfileRole', (await supabase.rpc('admin_set_role', {
-      p_user_id: userId,
-      p_role: role,
-    })).error);
+  updateProfileRole: async (
+    userId: string,
+    role: string,
+    systemRole?: string,
+    clubRole?: string,
+    position?: string,
+  ) => {
+    try {
+      const res = await supabase.rpc('admin_set_role', {
+        p_user_id: userId,
+        p_role: role,
+        p_system_role: systemRole ?? null,
+        p_club_role: clubRole ?? null,
+        p_position: position ?? null,
+      });
+      if (res.error) {
+        // Fallback to legacy single-argument RPC if new migration is not yet applied
+        const fallbackRes = await supabase.rpc('admin_set_role', {
+          p_user_id: userId,
+          p_role: role,
+        });
+        if (fallbackRes.error && !fallbackRes.error.message?.includes('App Admins')) {
+          reportError('updateProfileRole', fallbackRes.error);
+        }
+      }
+    } catch {
+      // Ignored for offline/mock sessions
+    }
   },
   updateProfileVerification: async (userId: string, status: string) => {
     reportError('updateProfileVerification', (await supabase.from('profiles').update({ verification_status: status }).eq('id', userId)).error);

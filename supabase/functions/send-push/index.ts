@@ -50,6 +50,9 @@ interface MessageRecord {
   is_broadcast: boolean | null;
   created_at: string | null;
   mentioned_user_ids: string[] | null;
+  reply_to_message_id?: string | null;
+  reply_to_sender_name?: string | null;
+  reply_to_text?: string | null;
 }
 
 interface WebhookPayload {
@@ -69,6 +72,7 @@ interface PushContent {
   image?: string;
   channelId: string;
   categoryId: string;
+  sound: string;
   collapseKey?: string;
   highPriority: boolean;
 }
@@ -159,6 +163,16 @@ async function planFromNotification(
   let senderAvatar: string | undefined;
 
   if (n.conversation_id) {
+    if (rule.respectsMute) {
+      const { data: cState } = await supabase
+        .from('conversation_states')
+        .select('muted')
+        .eq('conversation_id', n.conversation_id)
+        .eq('user_id', n.user_id)
+        .maybeSingle();
+      if (cState?.muted) return null;
+    }
+
     const { data: conv } = await supabase
       .from('conversations')
       .select('is_group, participant_user_id, organizer_user_id')
@@ -210,6 +224,7 @@ async function planFromNotification(
       image,
       channelId: rule.channelId,
       categoryId: rule.categoryId,
+      sound: rule.sound,
       collapseKey: n.conversation_id ?? undefined,
       highPriority: rule.highPriority,
     },
@@ -272,9 +287,26 @@ async function plansFromGroupMessage(
   const mentioned = [...new Set(m.mentioned_user_ids ?? [])]
     .filter((id) => id !== m.sender_id && participants.includes(id));
 
-  // Anyone mentioned gets the MENTION push INSTEAD of the group one — otherwise a
-  // single message would buzz them twice.
-  const groupRecipients = participants.filter((id) => !mentioned.includes(id));
+  // If this message is a direct reply, find the author of the quoted message.
+  let repliedAuthorId: string | null = null;
+  if (m.reply_to_message_id) {
+    const { data: origMsg } = await supabase
+      .from('direct_messages')
+      .select('sender_id')
+      .eq('id', m.reply_to_message_id)
+      .maybeSingle();
+    if (
+      origMsg?.sender_id &&
+      origMsg.sender_id !== m.sender_id &&
+      participants.includes(origMsg.sender_id) &&
+      !mentioned.includes(origMsg.sender_id)
+    ) {
+      repliedAuthorId = origMsg.sender_id;
+    }
+  }
+
+  // Anyone mentioned or replied to gets their dedicated push INSTEAD of the general group one.
+  const groupRecipients = participants.filter((id) => !mentioned.includes(id) && id !== repliedAuthorId);
 
   const sharedData = {
     kind: 'GROUP_MESSAGE',
@@ -291,25 +323,59 @@ async function plansFromGroupMessage(
 
   const plans: Plan[] = [];
 
-  if (groupRecipients.length) {
-    const rule = RULES.chat_message;
+  // Dedicated push for the author being replied to
+  if (repliedAuthorId) {
+    const replySnippet = m.reply_to_text ? ` "${m.reply_to_text.slice(0, 30)}${m.reply_to_text.length > 30 ? '...' : ''}"` : '';
     plans.push({
-      recipients: groupRecipients,
+      recipients: [repliedAuthorId],
       content: {
-        type: 'chat_message',
-        dedupeKey: `msg:${m.id}:group`,
+        type: 'chat',
+        dedupeKey: `msg:${m.id}:reply`,
         title,
-        subtitle: `${senderName} sent a message`,
-        body: m.text?.trim() ? `${firstName}: ${m.text.trim()}` : `${firstName}: ${rawText}`,
-        data: { ...sharedData, type: 'chat_message', message_preview: rawText },
+        subtitle: `${senderName} replied to your message`,
+        body: `${firstName} replied to you${replySnippet}: "${rawText}"`,
+        data: { ...sharedData, type: 'chat', message_preview: rawText },
         image,
         channelId: rule.channelId,
         categoryId: rule.categoryId,
+        sound: rule.sound,
         collapseKey: m.conversation_id,
-        highPriority: rule.highPriority,
+        highPriority: true,
       },
     });
   }
+
+    let activeRecipients = groupRecipients;
+    if (!isAnnouncement && rule.respectsMute) {
+      const { data: mutedStates } = await supabase
+        .from('conversation_states')
+        .select('user_id')
+        .eq('conversation_id', m.conversation_id)
+        .eq('muted', true)
+        .in('user_id', groupRecipients);
+      const mutedIds = new Set((mutedStates ?? []).map((s: any) => s.user_id));
+      activeRecipients = groupRecipients.filter(id => !mutedIds.has(id));
+    }
+
+    if (activeRecipients.length) {
+      plans.push({
+        recipients: activeRecipients,
+        content: {
+          type: notifType,
+          dedupeKey: `msg:${m.id}:group`,
+          title: isAnnouncement ? `📢 Announcement: ${title}` : title,
+          subtitle: isAnnouncement ? `${senderName} posted an announcement` : `${senderName} sent a message`,
+          body: m.text?.trim() ? `${firstName}: ${m.text.trim()}` : `${firstName}: ${rawText}`,
+          data: { ...sharedData, type: notifType, message_preview: rawText },
+          image,
+          channelId: rule.channelId,
+          categoryId: rule.categoryId,
+          sound: rule.sound,
+          collapseKey: m.conversation_id,
+          highPriority: rule.highPriority,
+        },
+      });
+    }
 
   if (mentioned.length) {
     const rule = RULES.mention;
@@ -327,6 +393,7 @@ async function plansFromGroupMessage(
         image,
         channelId: rule.channelId,
         categoryId: rule.categoryId,
+        sound: rule.sound,
         // Its own collapse key so a mention never replaces (or is replaced by) the
         // ordinary group notification.
         collapseKey: `${m.conversation_id}:mention`,
@@ -364,20 +431,21 @@ type PushType =
 interface TypeRule {
   channelId: string;
   categoryId: string;
+  sound: string;
   /** False only for mentions: being addressed directly pierces a muted group. */
   respectsMute: boolean;
   highPriority: boolean;
 }
 
 const RULES: Record<PushType, TypeRule> = {
-  chat_message:    { channelId: 'chat_v4',            categoryId: 'message_actions', respectsMute: true,  highPriority: false },
-  mention:         { channelId: 'mentions_v2',        categoryId: 'message_actions', respectsMute: false, highPriority: false },
-  event_reminder:  { channelId: 'events_v2',          categoryId: 'general_actions', respectsMute: true,  highPriority: false },
-  invitation:      { channelId: 'events_v2',          categoryId: 'general_actions', respectsMute: true,  highPriority: false },
-  join_approved:   { channelId: 'events_v2',          categoryId: 'general_actions', respectsMute: true,  highPriority: false },
-  organizer_high:  { channelId: 'organizer_high_v2',  categoryId: 'general_actions', respectsMute: true,  highPriority: true  },
-  organizer_alert: { channelId: 'organizer_alert_v2', categoryId: 'general_actions', respectsMute: true,  highPriority: true  },
-  announcement:    { channelId: 'general_v4',         categoryId: 'general_actions', respectsMute: true,  highPriority: false },
+  chat_message:    { channelId: 'chat_v5',            categoryId: 'message_actions', sound: 'chime.wav', respectsMute: true,  highPriority: false },
+  mention:         { channelId: 'mentions_v3',        categoryId: 'message_actions', sound: 'chime.wav', respectsMute: false, highPriority: false },
+  event_reminder:  { channelId: 'events_v3',          categoryId: 'general_actions', sound: 'chime.wav', respectsMute: true,  highPriority: false },
+  invitation:      { channelId: 'events_v3',          categoryId: 'general_actions', sound: 'chime.wav', respectsMute: true,  highPriority: false },
+  join_approved:   { channelId: 'events_v3',          categoryId: 'general_actions', sound: 'chime.wav', respectsMute: true,  highPriority: false },
+  organizer_high:  { channelId: 'organizer_high_v2',  categoryId: 'general_actions', sound: 'alarm.wav', respectsMute: true,  highPriority: true  },
+  organizer_alert: { channelId: 'organizer_alert_v3', categoryId: 'general_actions', sound: 'alert.wav', respectsMute: true,  highPriority: true  },
+  announcement:    { channelId: 'general_v5',         categoryId: 'general_actions', sound: 'chime.wav', respectsMute: true,  highPriority: false },
 };
 
 /** Classifies a notification row. Organizer urgency outranks the kind. */
@@ -518,6 +586,7 @@ async function sendViaFcm(tokens: string[], c: PushContent): Promise<string[]> {
     message: c.body,
     body: JSON.stringify(c.data),
     channelId: c.channelId,
+    sound: c.sound,
   };
   if (c.image) data.image = c.image;
 
@@ -684,7 +753,7 @@ async function sendViaExpo(
     ...(c.image ? { richContent: { image: c.image } } : {}),
 
     // --- iOS ---
-    sound: 'default',
+    sound: c.sound,
     subtitle: c.subtitle,
     ...(c.collapseKey ? { collapseId: c.collapseKey, threadId: c.collapseKey } : {}),
     ...(c.highPriority ? { interruptionLevel: 'time-sensitive' } : {}),

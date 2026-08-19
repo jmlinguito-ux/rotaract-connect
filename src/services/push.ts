@@ -56,10 +56,9 @@ export async function configurePushNotifications() {
       'default', 'messages', 'high',            // pre-versioning
       'default_v2', 'high_v2', 'messages_v2',   // no custom sound
       'chat_messages',                          // no custom sound
-      // Previous generation: same names, but their sound was baked in at creation
-      // and pointed at the old chime. A channel cannot be re-sounded, only replaced.
       'chat_v3', 'mentions_v1', 'events_v1', 'general_v3',
       'organizer_high_v1', 'organizer_alert_v1',
+      'chat_v4', 'mentions_v2', 'events_v2', 'general_v4', 'organizer_alert_v2',
     ]) {
       await Notifications.deleteNotificationChannelAsync(retired).catch(() => {});
     }
@@ -73,8 +72,9 @@ export async function configurePushNotifications() {
     // expo-notifications `sounds` array in app.json only applies during
     // `expo prebuild`. Both are kept in step so either path works.
     const chime = 'chime.wav';
+    const alert = 'alert.wav';
 
-    await Notifications.setNotificationChannelAsync('chat_v4', {
+    await Notifications.setNotificationChannelAsync('chat_v5', {
       name: 'Chat Messages',
       description: 'Direct messages and event group chat messages.',
       importance: Notifications.AndroidImportance.HIGH,
@@ -87,7 +87,7 @@ export async function configurePushNotifications() {
 
     // Separate from chat so muting a busy group chat never silences being
     // addressed directly — mentions are the one thing that pierces a mute.
-    await Notifications.setNotificationChannelAsync('mentions_v2', {
+    await Notifications.setNotificationChannelAsync('mentions_v3', {
       name: 'Mentions',
       description: 'When someone @mentions you in a group chat.',
       importance: Notifications.AndroidImportance.HIGH,
@@ -98,7 +98,7 @@ export async function configurePushNotifications() {
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PRIVATE,
     });
 
-    await Notifications.setNotificationChannelAsync('events_v2', {
+    await Notifications.setNotificationChannelAsync('events_v3', {
       name: 'Event Reminders & Invitations',
       description: 'Reminders before an event starts, invitations, and join approvals.',
       importance: Notifications.AndroidImportance.HIGH,
@@ -109,7 +109,7 @@ export async function configurePushNotifications() {
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
     });
 
-    await Notifications.setNotificationChannelAsync('general_v4', {
+    await Notifications.setNotificationChannelAsync('general_v5', {
       name: 'General',
       description: 'Approvals, verification updates, and other app notifications.',
       importance: Notifications.AndroidImportance.DEFAULT,
@@ -137,11 +137,11 @@ export async function configurePushNotifications() {
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
     });
 
-    await Notifications.setNotificationChannelAsync('organizer_alert_v2', {
+    await Notifications.setNotificationChannelAsync('organizer_alert_v3', {
       name: 'Organizer Announcements',
       description: 'Important announcements from event organizers.',
       importance: Notifications.AndroidImportance.MAX,
-      // Left on the system default: distinct from the chime, without the alarm.
+      sound: alert,
       vibrationPattern: [0, 400, 200, 400],
       lightColor: '#D41367',
       showBadge: true,

@@ -40,4 +40,5 @@ export type RootStackParamList = {
   RoleManagement: undefined;
   OrganizerBroadcast: { eventId: string };
   AuditLogs: undefined;
+  CertificateScanner: undefined;
 };

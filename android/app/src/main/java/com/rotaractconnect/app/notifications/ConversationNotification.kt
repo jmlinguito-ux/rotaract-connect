@@ -3,8 +3,11 @@ package com.rotaractconnect.app.notifications
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.ContentResolver
 import android.content.Context
 import android.content.Intent
+import android.media.AudioAttributes
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.core.app.NotificationCompat
@@ -28,7 +31,7 @@ import com.rotaractconnect.app.R
  */
 object ConversationNotification {
 
-  const val CHANNEL_ID = "chat_v4"
+  const val CHANNEL_ID = "chat_v5"
 
   suspend fun build(
     context: Context,
@@ -117,11 +120,11 @@ object ConversationNotification {
     if (manager.getNotificationChannel(channelId) != null) return
 
     val name = when (channelId) {
-      "mentions_v2" -> "Mentions"
-      "events_v2" -> "Event Reminders & Invitations"
-      "general_v4" -> "General"
+      "mentions_v3", "mentions_v2" -> "Mentions"
+      "events_v3", "events_v2" -> "Event Reminders & Invitations"
+      "general_v5", "general_v4" -> "General"
       "organizer_high_v2" -> "Urgent Organizer Alerts"
-      "organizer_alert_v2" -> "Organizer Announcements"
+      "organizer_alert_v3", "organizer_alert_v2" -> "Organizer Announcements"
       else -> "Chat Messages"
     }
     val importance = if (channelId.startsWith("organizer_")) {
@@ -129,7 +132,25 @@ object ConversationNotification {
     } else {
       NotificationManager.IMPORTANCE_HIGH
     }
-    manager.createNotificationChannel(NotificationChannel(channelId, name, importance))
+    val channel = NotificationChannel(channelId, name, importance)
+    if (channelId.startsWith("organizer_alert")) {
+      val soundUri = Uri.parse("${ContentResolver.SCHEME_ANDROID_RESOURCE}://${context.packageName}/raw/alert")
+      val audioAttributes = AudioAttributes.Builder()
+        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+        .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+        .build()
+      channel.setSound(soundUri, audioAttributes)
+    } else if (channelId != "organizer_high_v2") {
+      val soundUri = Uri.parse("${ContentResolver.SCHEME_ANDROID_RESOURCE}://${context.packageName}/raw/chime")
+      val audioAttributes = AudioAttributes.Builder()
+        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+        .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+        .build()
+      channel.setSound(soundUri, audioAttributes)
+    }
+    channel.enableVibration(true)
+    channel.lightColor = 0xFFD41367.toInt()
+    manager.createNotificationChannel(channel)
   }
 
   fun show(context: Context, notificationKey: String, notification: android.app.Notification) {

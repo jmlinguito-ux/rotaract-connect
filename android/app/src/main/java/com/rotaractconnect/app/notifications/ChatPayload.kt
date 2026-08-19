@@ -53,7 +53,7 @@ data class ChatPayload(
         // Server-declared, but only ever RELAXES muting for mentions; a payload can
         // never ask to be silenced, so a bad value cannot suppress a notification.
         respectsMute = data.optString("respects_mute") != "false",
-        channelId = data.optString("channelId").ifEmpty { "chat_v3" }
+        channelId = data.optString("channelId").ifEmpty { "chat_v5" }
       )
     }
 

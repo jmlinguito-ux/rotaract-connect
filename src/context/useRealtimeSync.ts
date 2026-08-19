@@ -1,9 +1,10 @@
 import { useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
 import {
-  AppUser, AppNotification, DirectMessage, ReadCursor, ConversationState,
+  AppUser, AppNotification, DirectMessage, ReadCursor, ConversationState, MessageReaction,
 } from '../types';
 import { supabase } from '../services/supabase';
+import { playAlertSound } from '../services/sound';
 
 export interface RealtimeSyncArgs {
   isAuthenticated: boolean;
@@ -16,6 +17,7 @@ export interface RealtimeSyncArgs {
   setReadCursors: React.Dispatch<React.SetStateAction<ReadCursor[]>>;
   setDeletedMessageIds: React.Dispatch<React.SetStateAction<string[]>>;
   setConversationStates: React.Dispatch<React.SetStateAction<ConversationState[]>>;
+  setReactions: React.Dispatch<React.SetStateAction<MessageReaction[]>>;
 }
 
 export function useRealtimeSync({
@@ -28,6 +30,7 @@ export function useRealtimeSync({
   setReadCursors,
   setDeletedMessageIds,
   setConversationStates,
+  setReactions,
 }: RealtimeSyncArgs) {
 
   // Keep a live reference to `users` for realtime row-mapping without making the
@@ -55,11 +58,15 @@ export function useRealtimeSync({
         receiver_name: receiverName,
         text: d.text ?? '',
         created_at: d.created_at,
+        reply_to_message_id: d.reply_to_message_id ?? undefined,
+        reply_to_sender_name: d.reply_to_sender_name ?? undefined,
+        reply_to_text: d.reply_to_text ?? undefined,
         attachment_path: d.attachment_path ?? undefined,
         attachment_type: d.attachment_type ?? undefined,
         attachment_width: d.attachment_width ?? undefined,
         attachment_height: d.attachment_height ?? undefined,
         deleted_at: d.deleted_at ?? undefined,
+        is_broadcast: d.is_broadcast ?? undefined,
       };
     };
 
@@ -91,7 +98,15 @@ export function useRealtimeSync({
       .channel('rt-messages')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'direct_messages' }, payload => {
         const msg = mapMessage(payload.new);
-        setMessages(prev => (prev.some(m => m.id === msg.id) ? prev : [...prev, msg]));
+        setMessages(prev => {
+          if (prev.some(m => m.id === msg.id)) return prev;
+          if (authUser?.id && msg.sender_id !== authUser.id) {
+            if (msg.is_broadcast || msg.text?.startsWith('📢')) {
+              playAlertSound('ALERT');
+            }
+          }
+          return [...prev, msg];
+        });
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'direct_messages' }, payload => {
         const msg = mapMessage(payload.new);
@@ -115,7 +130,17 @@ export function useRealtimeSync({
           conversation_id: n.conversation_id ?? undefined, is_read: n.is_read,
           created_at: n.created_at, priority: n.priority ?? undefined,
         };
-        setNotifications(prev => (prev.some(x => x.id === notif.id) ? prev : [notif, ...prev]));
+        setNotifications(prev => {
+          if (prev.some(x => x.id === notif.id)) return prev;
+          if (notif.priority === 'ALERT') {
+            playAlertSound('ALERT');
+          } else if (notif.priority === 'HIGH') {
+            playAlertSound('HIGH');
+          } else {
+            playAlertSound('CHIME');
+          }
+          return [notif, ...prev];
+        });
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'notifications', filter: `user_id=eq.${uid}` }, payload => {
         const n = payload.new as any;
@@ -179,7 +204,7 @@ export function useRealtimeSync({
         if (!r?.conversation_id) return;
         const state: ConversationState = {
           conversation_id: r.conversation_id, user_id: r.user_id,
-          pinned: !!r.pinned, archived: !!r.archived, deleted_at: r.deleted_at ?? undefined,
+          pinned: !!r.pinned, archived: !!r.archived, muted: !!r.muted, deleted_at: r.deleted_at ?? undefined,
         };
         setConversationStates(prev => {
           const others = prev.filter(s => !(s.conversation_id === state.conversation_id && s.user_id === state.user_id));
@@ -187,6 +212,33 @@ export function useRealtimeSync({
         });
       })
       .subscribe(logStatus('conv-states'));
+
+    // Realtime emoji reactions on chat messages.
+    const reactionsChannel = supabase
+      .channel('rt-message-reactions')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'message_reactions' }, payload => {
+        if (payload.eventType === 'DELETE') {
+          const r = payload.old as any;
+          if (r?.id || (r?.message_id && r?.user_id)) {
+            setReactions(prev => prev.filter(rx => !(r.id ? rx.id === r.id : (rx.message_id === r.message_id && rx.user_id === r.user_id))));
+          }
+          return;
+        }
+        const r = payload.new as any;
+        if (!r?.message_id || !r?.user_id) return;
+        const reaction: MessageReaction = {
+          id: r.id,
+          message_id: r.message_id,
+          user_id: r.user_id,
+          emoji: r.emoji,
+          created_at: r.created_at || new Date().toISOString(),
+        };
+        setReactions(prev => {
+          const others = prev.filter(rx => !(rx.message_id === reaction.message_id && rx.user_id === reaction.user_id));
+          return [...others, reaction];
+        });
+      })
+      .subscribe(logStatus('reactions'));
 
     // Conversations move fast enough (last_message updates) to merge directly, so
     // the Inbox reorders live; heavier tables just schedule a reload. Each table
@@ -216,6 +268,7 @@ export function useRealtimeSync({
       supabase.removeChannel(readsChannel);
       supabase.removeChannel(deletionsChannel);
       supabase.removeChannel(convStateChannel);
+      supabase.removeChannel(reactionsChannel);
       tableReloadChannels.forEach(ch => supabase.removeChannel(ch));
     };
   }, [isAuthenticated, authUser, applySnapshot]);

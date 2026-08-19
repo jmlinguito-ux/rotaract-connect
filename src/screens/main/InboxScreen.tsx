@@ -76,6 +76,7 @@ export default function InboxScreen() {
     markConversationRead,
     conversationStateFor,
     setConversationPinned,
+    setConversationMuted,
     setConversationArchived,
     deleteConversationForMe,
   } = useData();
@@ -121,7 +122,7 @@ export default function InboxScreen() {
       .map(c => {
         const msgs = messagesForConversation(c.id, user.id);
         const last = msgs[msgs.length - 1];
-        const state = conversationStateFor(c.id);
+        const state = conversationStateFor(c.id, user.id);
         return { conv: c, last, state };
       })
       .filter(x => !!x.last) // no thread until at least one message exists
@@ -170,7 +171,6 @@ export default function InboxScreen() {
     if (!conv || !user) return;
     const otherId = conv.participant_user_id === user.id ? conv.organizer_user_id : conv.participant_user_id;
     const other = otherId ? users.find(u => u.id === otherId) : undefined;
-    markConversationRead(conversationId, user.id);
     navigation.navigate('Chat', {
       conversationId,
       eventId: conv.event_id,
@@ -182,7 +182,6 @@ export default function InboxScreen() {
 
   const openGroupChat = (ev: RotaractEvent) => {
     const groupConv = getOrCreateEventGroupConversation(ev.id);
-    if (user) markConversationRead(groupConv.id, user.id);
     navigation.navigate('Chat', {
       conversationId: groupConv.id,
       eventId: ev.id,
@@ -298,6 +297,7 @@ export default function InboxScreen() {
       : 'Say hi 👋';
     const preview = `${isMine ? 'You: ' : ''}${previewText}`;
     const pinned = !!state?.pinned;
+    const muted = !!state?.muted;
 
     const actions: SwipeAction[] = archived
       ? [
@@ -306,6 +306,7 @@ export default function InboxScreen() {
         ]
       : [
           { key: 'pin', label: pinned ? 'Unpin' : 'Pin', icon: pinned ? 'star' : 'star-outline', color: themeColors.secondary, onPress: () => setConversationPinned(conv.id, user.id, !pinned) },
+          { key: 'mute', label: muted ? 'Unmute' : 'Mute', icon: muted ? 'notifications-outline' : 'notifications-off-outline', color: muted ? themeColors.success : themeColors.textMuted, onPress: () => setConversationMuted(conv.id, user.id, !muted) },
           { key: 'archive', label: 'Archive', icon: 'archive-outline', color: themeColors.info, onPress: () => setConversationArchived(conv.id, user.id, true) },
           { key: 'delete', label: 'Delete', icon: 'trash-outline', color: themeColors.danger, onPress: () => deleteConversationForMe(conv.id, user.id), destructive: true },
         ];
@@ -325,6 +326,7 @@ export default function InboxScreen() {
             <View style={styles.dmTopRow}>
               <View style={[styles.inlineRow, { flexShrink: 1 }]}>
                 {pinned && <Ionicons name="star" size={12} color={themeColors.secondary} />}
+                {muted && <Ionicons name="notifications-off" size={12} color={themeColors.textMuted} />}
                 <Text style={[styles.rowTitle, { color: themeColors.text, flexShrink: 1 }]} numberOfLines={1}>{name}</Text>
                 <VerifiedCheck user={other} size={12} />
               </View>
@@ -349,6 +351,8 @@ export default function InboxScreen() {
     const last = msgs[msgs.length - 1];
     const partsCount = participantsFor(ev.id).filter(p => p.status === 'JOINED').length;
     const archived = ev.status === 'COMPLETED' || ev.status === 'CANCELLED';
+    const groupState = groupConv && user ? conversationStateFor(groupConv.id, user.id) : undefined;
+    const groupMuted = !!groupState?.muted;
 
     let unreadCount = 0;
     if (groupConv && user && last) {
@@ -362,40 +366,52 @@ export default function InboxScreen() {
       ? (last.deleted_at ? 'This message was deleted' : (last.attachment_path && !last.text ? '📷 Photo' : last.text))
       : `${partsCount} participant${partsCount === 1 ? '' : 's'} • Tap to chat`;
 
+    const groupActions: SwipeAction[] = groupConv && user ? [
+      {
+        key: 'mute',
+        label: groupMuted ? 'Unmute' : 'Mute',
+        icon: groupMuted ? 'notifications-outline' : 'notifications-off-outline',
+        color: groupMuted ? themeColors.success : themeColors.textMuted,
+        onPress: () => setConversationMuted(groupConv.id, user.id, !groupMuted),
+      },
+    ] : [];
+
     return (
-      <TouchableOpacity
-        key={`chat_${ev.id}`}
-        style={[styles.card, styles.cardTopRow, { backgroundColor: unreadCount ? themeColors.primary + '0F' : themeColors.cardBg, borderColor: unreadCount ? themeColors.primary + '3D' : themeColors.border }]}
-        activeOpacity={0.8}
-        onPress={() => openGroupChat(ev)}
-      >
-        <View style={[styles.iconCircle, { backgroundColor: archived ? themeColors.textMuted : themeColors.primary }]}>
-          <Ionicons name={archived ? 'archive' : 'chatbubbles'} size={18} color="#fff" />
-        </View>
-        <View style={{ flex: 1 }}>
-          <View style={styles.dmTopRow}>
-            <View style={[styles.inlineRow, { flexShrink: 1 }]}>
-              <Text style={[styles.rowTitle, { color: themeColors.text, flexShrink: 1 }]} numberOfLines={1}>{ev.title}</Text>
-              {archived && (
-                <View style={[styles.archivedPill, { backgroundColor: themeColors.textMuted + '22' }]}>
-                  <Text style={[styles.archivedPillText, { color: themeColors.textMuted }]}>Archived</Text>
-                </View>
-              )}
+      <SwipeableRow key={`chat_${ev.id}`} actions={groupActions}>
+        <TouchableOpacity
+          style={[styles.card, styles.cardTopRow, styles.swipeCard, { backgroundColor: unreadCount ? themeColors.primary + '0F' : themeColors.cardBg, borderColor: unreadCount ? themeColors.primary + '3D' : themeColors.border }]}
+          activeOpacity={0.8}
+          onPress={() => openGroupChat(ev)}
+        >
+          <View style={[styles.iconCircle, { backgroundColor: archived ? themeColors.textMuted : themeColors.primary }]}>
+            <Ionicons name={archived ? 'archive' : 'chatbubbles'} size={18} color="#fff" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <View style={styles.dmTopRow}>
+              <View style={[styles.inlineRow, { flexShrink: 1 }]}>
+                {groupMuted && <Ionicons name="notifications-off" size={12} color={themeColors.textMuted} />}
+                <Text style={[styles.rowTitle, { color: themeColors.text, flexShrink: 1 }]} numberOfLines={1}>{ev.title}</Text>
+                {archived && (
+                  <View style={[styles.archivedPill, { backgroundColor: themeColors.textMuted + '22' }]}>
+                    <Text style={[styles.archivedPillText, { color: themeColors.textMuted }]}>Archived</Text>
+                  </View>
+                )}
+              </View>
+              {last ? <Text style={[styles.rowTime, { color: themeColors.textMuted }]}>{relativeTime(last.created_at)}</Text> : null}
             </View>
-            {last ? <Text style={[styles.rowTime, { color: themeColors.textMuted }]}>{relativeTime(last.created_at)}</Text> : null}
+            <Text style={[styles.rowMeta, { color: unreadCount ? themeColors.text : themeColors.textMuted, fontWeight: unreadCount ? '700' : '400' }]} numberOfLines={1}>
+              {senderName ? `${senderName}: ${lastPreview}` : lastPreview}
+            </Text>
           </View>
-          <Text style={[styles.rowMeta, { color: unreadCount ? themeColors.text : themeColors.textMuted, fontWeight: unreadCount ? '700' : '400' }]} numberOfLines={1}>
-            {senderName ? `${senderName}: ${lastPreview}` : lastPreview}
-          </Text>
-        </View>
-        {unreadCount > 0 ? (
-          <View style={[styles.countBadge, { backgroundColor: themeColors.primary }]}>
-            <Text style={styles.countBadgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
-          </View>
-        ) : (
-          <Ionicons name="chevron-forward" size={16} color={themeColors.textMuted} />
-        )}
-      </TouchableOpacity>
+          {unreadCount > 0 ? (
+            <View style={[styles.countBadge, { backgroundColor: themeColors.primary }]}>
+              <Text style={styles.countBadgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+            </View>
+          ) : (
+            <Ionicons name="chevron-forward" size={16} color={themeColors.textMuted} />
+          )}
+        </TouchableOpacity>
+      </SwipeableRow>
     );
   };
 
