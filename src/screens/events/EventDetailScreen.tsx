@@ -292,6 +292,13 @@ export default function EventDetailScreen({ route, navigation }: Props) {
   });
 
   optionsMenuItems.push({
+    label: 'Duplicate as New Event',
+    sub: 'Use this event as a template to create a new project.',
+    icon: 'copy-outline',
+    run: () => navigation.navigate('CreateEvent', { templateEvent: event }),
+  });
+
+  optionsMenuItems.push({
     label: 'Attendance',
     sub: 'Mark who showed up and verify check-ins.',
     icon: 'checkbox-outline',

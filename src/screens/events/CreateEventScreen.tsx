@@ -28,14 +28,15 @@ defaultStart.setHours(9, 0, 0, 0);
 const defaultEnd = new Date(defaultStart);
 defaultEnd.setHours(13, 0, 0, 0);
 
-export default function CreateEventScreen({ navigation }: Props) {
+export default function CreateEventScreen({ route, navigation }: Props) {
+  const template = route.params?.templateEvent;
   const { user } = useAuth();
   const { createEvent, users, clubs } = useData();
   const { colors: themeColors, isNightMode } = useTheme();
 
-  const [title, setTitle] = useState('');
-  const [desc, setDesc] = useState('');
-  const [type, setType] = useState<EventType>('SERVICE_PROJECT');
+  const [title, setTitle] = useState(template ? `${template.title} (Copy)` : '');
+  const [desc, setDesc] = useState(template?.description ?? '');
+  const [type, setType] = useState<EventType>(template?.event_type ?? 'SERVICE_PROJECT');
   const [selectedCoOrganizers, setSelectedCoOrganizers] = useState<string[]>([]);
   const [coOrgQuery, setCoOrgQuery] = useState('');
   const [isCoOrgFocused, setIsCoOrgFocused] = useState(false);
@@ -44,21 +45,46 @@ export default function CreateEventScreen({ navigation }: Props) {
   const [selectedPartnerClubs, setSelectedPartnerClubs] = useState<string[]>([]);
   const [partnerClubQuery, setPartnerClubQuery] = useState('');
   const [isPartnerClubFocused, setIsPartnerClubFocused] = useState(false);
-  const [location, setLocation] = useState<LocationValue>(DEFAULT_LOCATION);
-  const [areasOfFocus, setAreasOfFocus] = useState<AreaOfFocus[]>([]);
-  const [coverPhoto, setCoverPhoto] = useState<string | undefined>();
-  const [maxP, setMaxP] = useState('50');
-  const [visibility, setVisibility] = useState<EventVisibility>('VERIFIED_ROTARACTORS');
-  const [requiresApproval, setRequiresApproval] = useState(false);
-  const [allowInvites, setAllowInvites] = useState(true);
+  const [location, setLocation] = useState<LocationValue>(
+    template
+      ? {
+          address: template.address,
+          city: template.city,
+          latitude: template.latitude,
+          longitude: template.longitude,
+        }
+      : DEFAULT_LOCATION,
+  );
+  const [areasOfFocus, setAreasOfFocus] = useState<AreaOfFocus[]>(template?.areas_of_focus ?? []);
+  const [coverPhoto, setCoverPhoto] = useState<string | undefined>(template?.cover_photo);
+  const [maxP, setMaxP] = useState(template ? String(template.max_participants) : '50');
+  const [visibility, setVisibility] = useState<EventVisibility>(template?.visibility ?? 'VERIFIED_ROTARACTORS');
+  const [requiresApproval, setRequiresApproval] = useState(template?.requires_approval ?? false);
+  const [allowInvites, setAllowInvites] = useState(template?.allow_participant_invites ?? true);
   const [contactNumber, setContactNumber] = useState(user?.contact_number ?? '0917 123 4567');
   const [contactEmail, setContactEmail] = useState(user?.email ?? '');
   const [lockCutoffHours, setLockCutoffHours] = useState<number>(24);
 
   // Single Date & Initial --:-- -- Times state
   const [eventDate, setEventDate] = useState<Date>(defaultStart);
-  const [startTime, setStartTime] = useState<Date | null>(null);
-  const [endTime, setEndTime] = useState<Date | null>(null);
+  const [startTime, setStartTime] = useState<Date | null>(() => {
+    if (template) {
+      const orig = new Date(template.start_datetime);
+      const d = new Date(defaultStart);
+      d.setHours(orig.getHours(), orig.getMinutes(), 0, 0);
+      return d;
+    }
+    return null;
+  });
+  const [endTime, setEndTime] = useState<Date | null>(() => {
+    if (template) {
+      const orig = new Date(template.end_datetime);
+      const d = new Date(defaultStart);
+      d.setHours(orig.getHours(), orig.getMinutes(), 0, 0);
+      return d;
+    }
+    return null;
+  });
   const [startTimeError, setStartTimeError] = useState<string | null>(null);
   const [endTimeError, setEndTimeError] = useState<string | null>(null);
 

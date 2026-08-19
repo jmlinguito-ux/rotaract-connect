@@ -1,4 +1,5 @@
 import { NavigatorScreenParams } from '@react-navigation/native';
+import { RotaractEvent } from '../types';
 
 export type AuthStackParamList = {
   Login: undefined;
@@ -22,7 +23,7 @@ export type RootStackParamList = {
   Main: NavigatorScreenParams<MainTabParamList>;
   EventDetail: { eventId: string };
   ClubDetail: { clubId: string };
-  CreateEvent: undefined;
+  CreateEvent: { templateEvent?: RotaractEvent } | undefined;
   EditEvent: { eventId: string };
   InvitePicker: { eventId: string };
   Participants: { eventId: string };

@@ -21,7 +21,7 @@ export default function ParticipantsScreen({ route, navigation }: Props) {
   const { eventId } = route.params;
   const { user } = useAuth();
   const { colors: themeColors, isNightMode } = useTheme();
-  const { events, users, participantsFor, approveParticipant, declineParticipant, getOrCreateConversation } = useData();
+  const { events, users, participantsFor, approveParticipant, declineParticipant, checkIn, getOrCreateConversation } = useData();
   const event = events.find(e => e.id === eventId);
   const all = participantsFor(eventId);
   const joined = all.filter(p => p.status === 'JOINED');
@@ -49,6 +49,30 @@ export default function ParticipantsScreen({ route, navigation }: Props) {
     declineParticipant(declineTarget.participantId, user, reason);
     setDeclineTarget(null);
     Alert.alert('Declined', 'Join request declined and reason sent to participant inbox.');
+  };
+
+  const handleManualCheckIn = (participantId: string, participantName: string) => {
+    Alert.alert(
+      'Manual Check-In Override',
+      `Confirm manual attendance for ${participantName}? This records verified on-site participation on their service portfolio.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Confirm Check-In',
+          style: 'default',
+          onPress: () => {
+            checkIn(participantId, {
+              checkedInAt: new Date().toISOString(),
+              latitude: event?.latitude ?? 0,
+              longitude: event?.longitude ?? 0,
+              distanceMeters: 0,
+              recordedBy: 'ORGANIZER',
+            });
+            Alert.alert('Checked In', `${participantName} marked as attended.`);
+          },
+        },
+      ],
+    );
   };
 
   const handleStartChat = (target: AppUser, aboutEvent: boolean) => {
@@ -154,6 +178,14 @@ export default function ParticipantsScreen({ route, navigation }: Props) {
                     <Ionicons name="close" size={14} color={colors.danger} />
                   </TouchableOpacity>
                 </View>
+              ) : isOrganizer && p.status === 'JOINED' && !isCheckedIn ? (
+                <TouchableOpacity
+                  style={[styles.manualCheckInBtn, { backgroundColor: themeColors.primary + '18', borderColor: themeColors.primary }]}
+                  onPress={() => handleManualCheckIn(p.id, u?.full_name ?? 'Participant')}
+                >
+                  <Ionicons name="checkbox-outline" size={14} color={themeColors.primary} />
+                  <Text style={[styles.manualCheckInText, { color: themeColors.primary }]}>Check In</Text>
+                </TouchableOpacity>
               ) : (
                 <Ionicons name="chevron-forward" size={16} color={themeColors.textMuted} />
               )}
@@ -197,7 +229,9 @@ const styles = StyleSheet.create({
   attendance: { fontSize: 11, fontWeight: '800', marginTop: 3, letterSpacing: 0.5 },
   checkInBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
   checkInBadgeText: { fontSize: 11, fontWeight: '700', color: colors.success },
-  approveBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.success, alignItems: 'center', justifyContent: 'center' },
-  declineBtn: { width: 34, height: 34, borderRadius: 17, borderWidth: 1, borderColor: colors.danger, alignItems: 'center', justifyContent: 'center' },
-  empty: { textAlign: 'center', color: colors.textMuted, marginTop: 40 },
+  approveBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.success, alignItems: 'center', justifyContent: 'center' },
+  declineBtn: { width: 32, height: 32, borderRadius: 16, borderWidth: 1, borderColor: colors.danger, alignItems: 'center', justifyContent: 'center' },
+  manualCheckInBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1 },
+  manualCheckInText: { fontSize: 12, fontWeight: '700' },
+  empty: { textAlign: 'center', marginTop: 40, fontSize: 13 },
 });

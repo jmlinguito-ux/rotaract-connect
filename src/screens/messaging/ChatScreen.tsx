@@ -39,7 +39,7 @@ export default function ChatScreen({ route, navigation }: Props) {
     messagesForConversation, sendDirectMessage, retryMessage, deleteMessageForMe, unsendMessage, events, users, participantsFor,
     getOrCreateConversation, markConversationRead, readCursorsFor,
   } = useData();
-  const { colors: themeColors } = useTheme();
+  const { colors: themeColors, isNightMode } = useTheme();
   const { showToast } = useToast();
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
@@ -120,6 +120,23 @@ export default function ChatScreen({ route, navigation }: Props) {
   // readable, but no new messages are allowed. Derived from the event's status so
   // a realtime status change flips the chat to read-only without an app restart.
   const isArchived = !!event && (event.status === 'COMPLETED' || event.status === 'CANCELLED');
+  const isOrganizer = !!user && !!event && (
+    user.id === event.organizer_user_id ||
+    (user.role === 'CLUB_PRESIDENT' && user.club_id === event.organizing_club_id) ||
+    user.role === 'APP_ADMIN'
+  );
+
+  const latestAnnouncement = useMemo(() => {
+    if (!isGroupChat || !event) return null;
+    return messages
+      .slice()
+      .reverse()
+      .find(m => m.text?.startsWith('📢') && !m.deleted_at);
+  }, [isGroupChat, event, messages]);
+
+  const [announcementDismissed, setAnnouncementDismissed] = useState(false);
+  const [announcementExpanded, setAnnouncementExpanded] = useState(false);
+  const [isAnnouncementMode, setIsAnnouncementMode] = useState(false);
 
   // Presence + typing over an ephemeral realtime channel (no DB writes).
   const me = user ? { id: user.id, name: user.full_name } : null;
@@ -216,18 +233,24 @@ export default function ChatScreen({ route, navigation }: Props) {
   }, [sendTyping]);
 
   const handleSend = () => {
-    if (!text.trim() || !user || isArchived || cannotMessage) return;
-    const body = text.trim();
-    const stillMentioned = mentions.filter(m => body.includes(`@${m.full_name}`));
+    if (!text.trim() || !user || cannotMessage || isArchived) return;
+    const finalMentions = mentions.filter(m => text.includes(`@${m.full_name}`));
+    const finalText = isAnnouncementMode ? `📢 [ANNOUNCEMENT]\n${text.trim()}` : text.trim();
     sendDirectMessage(
-      conversationId, eventId, user, isGroupChat ? undefined : recipientId, recipientName,
-      body, eventTitle || event?.title, undefined,
-      [...new Set(stillMentioned.map(m => m.id))],
+      conversationId,
+      eventId,
+      user,
+      isGroupChat ? undefined : recipientId,
+      recipientName,
+      finalText,
+      eventTitle || event?.title,
+      undefined,
+      finalMentions.length ? finalMentions.map(m => m.id) : undefined,
     );
-    setMentions([]);
     setText('');
-    sendTyping(false); // typing indicator disappears immediately on send
-    typingThrottle.current = 0;
+    setMentions([]);
+    setIsAnnouncementMode(false);
+    sendTyping(false);
     listRef.current?.scrollToOffset({ offset: 0, animated: true });
   };
 
@@ -385,12 +408,43 @@ export default function ChatScreen({ route, navigation }: Props) {
           onPress={() => navigation.navigate('EventDetail', { eventId })}
         >
           <Ionicons name="calendar" size={14} color={themeColors.primary} />
-          <Text style={[styles.eventBannerText, { color: themeColors.primary }]} numberOfLines={1}>
+          <Text style={[styles.eventBannerText, { color: themeColors.primary }]}>
             View event details: {eventTitle || event?.title}
           </Text>
           <Ionicons name="chevron-forward" size={14} color={themeColors.primary} />
         </TouchableOpacity>
       ) : null}
+
+      {/* 📢 Pinned Organizer Announcement Banner */}
+      {isGroupChat && latestAnnouncement && !announcementDismissed && (
+        <View style={[styles.announcementBanner, { backgroundColor: isNightMode ? themeColors.cardBg : '#FFFBEB', borderColor: '#F59E0B' }]}>
+          <View style={styles.announcementTopRow}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+              <Ionicons name="megaphone" size={14} color="#D97706" />
+              <Text style={[styles.announcementTag, { color: '#D97706' }]}>ORGANIZER ANNOUNCEMENT</Text>
+            </View>
+            <TouchableOpacity onPress={() => setAnnouncementDismissed(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="close" size={16} color={themeColors.textMuted} />
+            </TouchableOpacity>
+          </View>
+          <TouchableOpacity onPress={() => setAnnouncementExpanded(prev => !prev)} activeOpacity={0.8}>
+            <Text
+              style={[styles.announcementText, { color: themeColors.text }]}
+              numberOfLines={announcementExpanded ? undefined : 2}
+            >
+              {latestAnnouncement.text.replace(/^📢\s*(\[ANNOUNCEMENT\])?\s*/i, '')}
+            </Text>
+            <View style={styles.announcementMetaRow}>
+              <Text style={[styles.announcementAuthor, { color: themeColors.textMuted }]}>
+                Pinned by {latestAnnouncement.sender_name} • {formatTime(latestAnnouncement.created_at)}
+              </Text>
+              <Text style={[styles.announcementToggleText, { color: themeColors.primary }]}>
+                {announcementExpanded ? 'Show less' : 'Read full'}
+              </Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+      )}
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
@@ -645,9 +699,23 @@ export default function ChatScreen({ route, navigation }: Props) {
             <TouchableOpacity style={styles.attachBtn} onPress={handleAttachPhoto} disabled={uploading}>
               {uploading ? <ActivityIndicator size="small" color={themeColors.primary} /> : <Ionicons name="image" size={22} color={themeColors.primary} />}
             </TouchableOpacity>
+            {isOrganizer && isGroupChat && (
+              <TouchableOpacity
+                style={[
+                  styles.announcementToggleBtn,
+                  isAnnouncementMode && { backgroundColor: '#F59E0B' + '22', borderColor: '#F59E0B' },
+                ]}
+                onPress={() => setIsAnnouncementMode(prev => !prev)}
+              >
+                <Ionicons name="megaphone" size={18} color={isAnnouncementMode ? '#D97706' : themeColors.textMuted} />
+              </TouchableOpacity>
+            )}
             <TextInput
-              style={[styles.textInput, { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text }]}
-              placeholder={isGroupChat ? 'Message group chat...' : 'Type a message...'}
+              style={[
+                styles.textInput,
+                { backgroundColor: themeColors.surface, borderColor: isAnnouncementMode ? '#F59E0B' : themeColors.border, color: themeColors.text },
+              ]}
+              placeholder={isAnnouncementMode ? 'Broadcast pinned announcement...' : isGroupChat ? 'Message group chat...' : 'Type a message...'}
               placeholderTextColor={themeColors.textMuted}
               value={text}
               onChangeText={handleTextChange}
@@ -655,7 +723,7 @@ export default function ChatScreen({ route, navigation }: Props) {
               multiline
             />
             <TouchableOpacity
-              style={[styles.sendBtn, { backgroundColor: themeColors.primary }, !text.trim() && styles.sendBtnDisabled]}
+              style={[styles.sendBtn, { backgroundColor: isAnnouncementMode ? '#D97706' : themeColors.primary }, !text.trim() && styles.sendBtnDisabled]}
               disabled={!text.trim()}
               onPress={handleSend}
             >
@@ -906,4 +974,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
+  announcementBanner: { padding: 12, borderBottomWidth: 1, borderWidth: 1, marginHorizontal: 12, marginTop: 6, borderRadius: 12 },
+  announcementTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
+  announcementTag: { fontSize: 11, fontWeight: '900', letterSpacing: 0.5 },
+  announcementText: { fontSize: 13, lineHeight: 18 },
+  announcementMetaRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 },
+  announcementAuthor: { fontSize: 10 },
+  announcementToggleText: { fontSize: 11, fontWeight: '700' },
+  announcementToggleBtn: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'transparent' },
 });
