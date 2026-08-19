@@ -598,7 +598,6 @@ export default function ChatScreen({ route, navigation }: Props) {
 
             return (
               <SwipeableRow
-                onDelete={() => deleteMessageForMe(item.id, user.id)}
                 onReply={() => !item.deleted_at && setReplyingTo(item)}
               >
               <View>

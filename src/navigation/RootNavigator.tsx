@@ -88,7 +88,7 @@ export default function RootNavigator() {
             <Stack.Screen name="ActivityPortfolio" component={ActivityPortfolioScreen} options={{ title: 'Activity Portfolio' }} />
             <Stack.Screen name="Analytics" component={AnalyticsScreen} options={{ title: 'Analytics Dashboard' }} />
             <Stack.Screen name="Scoreboard" component={ScoreboardScreen} options={{ title: 'Member Scoreboard' }} />
-            <Stack.Screen name="Chat" component={ChatScreen} options={({ route }) => ({ title: route.params.recipientName || 'Chat' })} />
+            <Stack.Screen name="Chat" component={ChatScreen} options={({ route }) => ({ title: route.params.recipientName || 'Chat', gestureEnabled: false })} />
             <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: 'Settings & Preferences' }} />
             <Stack.Screen name="RoleManagement" component={RoleManagementScreen} options={{ title: 'Roles & Permissions' }} />
             <Stack.Screen name="OrganizerBroadcast" component={OrganizerBroadcastScreen} options={{ title: 'Send Banner Notification' }} />

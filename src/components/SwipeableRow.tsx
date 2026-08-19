@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { View, Animated, PanResponder, TouchableOpacity, Text, StyleSheet } from 'react-native';
+import { View, Animated, PanResponder, TouchableOpacity, Text, StyleSheet, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 export interface SwipeAction {
@@ -19,7 +19,7 @@ interface SwipeableRowProps {
   onDelete?: () => void;
   /** Ordered right-side actions revealed on swipe (left = first). */
   actions?: SwipeAction[];
-  /** Optional swipe-right gesture to trigger reply on chat messages. */
+  /** Optional swipe-to-reply gesture for chat messages (swipe left). */
   onReply?: () => void;
 }
 
@@ -27,9 +27,9 @@ const ACTION_WIDTH = 76;
 
 /**
  * Horizontal swipe-to-reveal row actions, built on PanResponder (no reanimated
- * dependency). Supports right-side actions on left swipe and instant reply on right swipe;
- * opening snaps to fit them and only horizontal gestures are captured, so vertical scrolling
- * and taps on the row content are unaffected.
+ * dependency). Supports right-side actions on left swipe and instant reply on left swipe
+ * (WhatsApp/Telegram style); opening snaps to fit them and only horizontal gestures are captured,
+ * avoiding vertical scrolling and iOS edge-back navigation conflicts.
  */
 export function SwipeableRow({ children, onDelete, actions, onReply }: SwipeableRowProps) {
   const resolvedActions: SwipeAction[] = actions && actions.length
@@ -38,6 +38,7 @@ export function SwipeableRow({ children, onDelete, actions, onReply }: Swipeable
       ? [{ key: 'delete', label: 'Delete', icon: 'trash-outline', color: '#EF4444', onPress: onDelete, destructive: true }]
       : [];
 
+  const isReplyMode = !resolvedActions.length && !!onReply;
   const openWidth = Math.max(resolvedActions.length * ACTION_WIDTH, ACTION_WIDTH);
   const pan = useRef(new Animated.ValueXY()).current;
   const isOpen = useRef(false);
@@ -50,18 +51,29 @@ export function SwipeableRow({ children, onDelete, actions, onReply }: Swipeable
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 8 && Math.abs(g.dy) < 12,
+      onMoveShouldSetPanResponder: (_, g) => {
+        return Math.abs(g.dx) > 8 && Math.abs(g.dy) < 12;
+      },
       onPanResponderMove: (_, g) => {
-        const startX = isOpen.current ? -openWidth : 0;
-        const newX = startX + g.dx;
-        const minX = resolvedActions.length > 0 ? -openWidth - 40 : 0;
-        const maxX = onReply ? 64 : 0;
-        pan.setValue({ x: Math.min(maxX, Math.max(minX, newX)), y: 0 });
+        if (isReplyMode) {
+          // Bidirectional swipe to reply: allow both left and right drag
+          const newX = Math.max(-64, Math.min(64, g.dx));
+          pan.setValue({ x: newX, y: 0 });
+        } else {
+          const startX = isOpen.current ? -openWidth : 0;
+          const newX = startX + g.dx;
+          const minX = resolvedActions.length > 0 ? -openWidth - 40 : 0;
+          pan.setValue({ x: Math.min(0, Math.max(minX, newX)), y: 0 });
+        }
       },
       onPanResponderRelease: (_, g) => {
-        if (onReply && g.dx > 36) {
-          close();
-          onReply();
+        if (isReplyMode) {
+          if (g.dx > 36 || g.dx < -36) {
+            close();
+            onReply?.();
+          } else {
+            close();
+          }
         } else if (resolvedActions.length > 0 && (g.dx < -40 || (isOpen.current && g.dx < 20))) {
           isOpen.current = true;
           Animated.spring(pan, { toValue: { x: -openWidth, y: 0 }, useNativeDriver: false, bounciness: 4 }).start();
@@ -89,15 +101,29 @@ export function SwipeableRow({ children, onDelete, actions, onReply }: Swipeable
     extrapolate: 'clamp',
   });
 
-  const replyScale = onReply ? pan.x.interpolate({
+  // Right-swipe (swiping right -> badge on left)
+  const replyScaleLeft = isReplyMode ? pan.x.interpolate({
     inputRange: [0, 20, 50],
     outputRange: [0.5, 0.8, 1.15],
     extrapolate: 'clamp',
   }) : 0;
 
-  const replyOpacity = onReply ? pan.x.interpolate({
+  const replyOpacityLeft = isReplyMode ? pan.x.interpolate({
     inputRange: [0, 15, 36],
     outputRange: [0, 0.5, 1],
+    extrapolate: 'clamp',
+  }) : 0;
+
+  // Left-swipe (swiping left -> badge on right)
+  const replyScaleRight = isReplyMode ? pan.x.interpolate({
+    inputRange: [-50, -20, 0],
+    outputRange: [1.15, 0.8, 0.5],
+    extrapolate: 'clamp',
+  }) : 0;
+
+  const replyOpacityRight = isReplyMode ? pan.x.interpolate({
+    inputRange: [-36, -15, 0],
+    outputRange: [1, 0.5, 0],
     extrapolate: 'clamp',
   }) : 0;
 
@@ -121,12 +147,19 @@ export function SwipeableRow({ children, onDelete, actions, onReply }: Swipeable
         </Animated.View>
       )}
 
-      {onReply && (
-        <Animated.View style={[styles.replyBackground, { opacity: replyOpacity, transform: [{ scale: replyScale }] }]}>
-          <View style={styles.replyCircle}>
-            <Ionicons name="arrow-undo" size={16} color="#fff" />
-          </View>
-        </Animated.View>
+      {isReplyMode && (
+        <>
+          <Animated.View style={[styles.replyBackgroundLeft, { opacity: replyOpacityLeft, transform: [{ scale: replyScaleLeft }] }]}>
+            <View style={styles.replyCircle}>
+              <Ionicons name="arrow-undo" size={16} color="#fff" />
+            </View>
+          </Animated.View>
+          <Animated.View style={[styles.replyBackgroundRight, { opacity: replyOpacityRight, transform: [{ scale: replyScaleRight }] }]}>
+            <View style={styles.replyCircle}>
+              <Ionicons name="arrow-undo" size={16} color="#fff" />
+            </View>
+          </Animated.View>
+        </>
       )}
 
       <Animated.View
@@ -140,8 +173,6 @@ export function SwipeableRow({ children, onDelete, actions, onReply }: Swipeable
 }
 
 const styles = StyleSheet.create({
-  // Owns the inter-row spacing so the swiped child card carries no bottom margin
-  // of its own — that keeps the revealed action buttons exactly the card's height.
   container: { position: 'relative', marginBottom: 8, borderRadius: 12, overflow: 'hidden' },
   actionsBackground: {
     position: 'absolute',
@@ -155,9 +186,18 @@ const styles = StyleSheet.create({
   },
   actionBtn: { height: '100%', justifyContent: 'center', alignItems: 'center', gap: 2 },
   actionText: { color: '#fff', fontSize: 11, fontWeight: '700' },
-  replyBackground: {
+  replyBackgroundLeft: {
     position: 'absolute',
-    left: 12,
+    left: 14,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 0,
+  },
+  replyBackgroundRight: {
+    position: 'absolute',
+    right: 14,
     top: 0,
     bottom: 0,
     justifyContent: 'center',
