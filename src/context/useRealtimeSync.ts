@@ -1,25 +1,10 @@
 import { useEffect, useRef } from 'react';
+import { AppState } from 'react-native';
 import {
   AppUser, AppNotification, DirectMessage, ReadCursor, ConversationState,
 } from '../types';
 import { supabase } from '../services/supabase';
 
-/**
- * The app's realtime subscription layer, extracted from DataContext so the
- * provider stays readable and this concern can be reasoned about (and changed) on
- * its own.
- *
- * A single subscription layer keeps every device in sync without reopening the
- * app. High-frequency, latency-sensitive tables (messages, notifications) are
- * merged row-by-row so the UI updates instantly and cheaply. Lower-frequency
- * tables trigger a debounced snapshot reload — far simpler than re-deriving the
- * display fields (club/organizer names, participating-club lists) row by row, and
- * infrequent enough that the extra fetch is negligible. Rows are keyed by id, so
- * an incoming INSERT that matches an optimistic local row is de-duped.
- *
- * Behavior is unchanged from the original inline effect; the state setters and
- * the snapshot reloader are passed in so this hook owns no state of its own.
- */
 export interface RealtimeSyncArgs {
   isAuthenticated: boolean;
   authUser: { id: string } | null | undefined;
@@ -50,16 +35,6 @@ export function useRealtimeSync({
   const usersRef = useRef<AppUser[]>(users);
   useEffect(() => { usersRef.current = users; }, [users]);
 
-  // ------------------------------------------------------------------
-  // REALTIME LAYER
-  // ------------------------------------------------------------------
-  // A single subscription layer keeps every device in sync without reopening the
-  // app. High-frequency, latency-sensitive tables (messages, notifications) are
-  // merged row-by-row so the UI updates instantly and cheaply. Lower-frequency
-  // tables trigger a debounced snapshot reload — far simpler than re-deriving the
-  // display fields (club/organizer names, participating-club lists) row by row,
-  // and infrequent enough that the extra fetch is negligible. Rows are keyed by
-  // id, so an incoming INSERT that matches an optimistic local row is de-duped.
   useEffect(() => {
     if (!isAuthenticated || !authUser) return;
     const uid = authUser.id;
@@ -82,22 +57,33 @@ export function useRealtimeSync({
         created_at: d.created_at,
         attachment_path: d.attachment_path ?? undefined,
         attachment_type: d.attachment_type ?? undefined,
+        attachment_width: d.attachment_width ?? undefined,
+        attachment_height: d.attachment_height ?? undefined,
         deleted_at: d.deleted_at ?? undefined,
       };
     };
 
-    // Debounced full reload for the lower-frequency tables.
+    // Debounced full reload for snapshot reconciliation.
     let reloadTimer: ReturnType<typeof setTimeout> | null = null;
     const scheduleReload = () => {
       if (reloadTimer) clearTimeout(reloadTimer);
       reloadTimer = setTimeout(() => { applySnapshot().catch(() => {}); }, 400);
     };
 
+    // Re-sync whenever the app returns from background
+    const appStateSub = AppState.addEventListener('change', state => {
+      if (state === 'active') {
+        scheduleReload();
+      }
+    });
+
     // Surface channel health in the Metro console. A CHANNEL_ERROR usually means a
     // bound table is not in the `supabase_realtime` publication.
     const logStatus = (name: string) => (status: string, err?: Error) => {
       if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
         console.warn(`[realtime] ${name}: ${status}`, err?.message ?? '');
+      } else if (status === 'SUBSCRIBED') {
+        scheduleReload();
       }
     };
 
@@ -224,6 +210,7 @@ export function useRealtimeSync({
 
     return () => {
       if (reloadTimer) clearTimeout(reloadTimer);
+      appStateSub.remove();
       supabase.removeChannel(messagesChannel);
       supabase.removeChannel(notifChannel);
       supabase.removeChannel(readsChannel);

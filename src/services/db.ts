@@ -387,8 +387,10 @@ export const db = {
   insertParticipant: async (p: EventParticipant) => {
     reportError('insertParticipant', (await supabase.from('event_participants').upsert(p, { onConflict: 'event_id,user_id' })).error);
   },
-  updateParticipant: async (id: string, updates: Partial<EventParticipant>) => {
-    reportError('updateParticipant', (await supabase.from('event_participants').update(updates).eq('id', id)).error);
+  updateParticipant: async (id: string, updates: Partial<EventParticipant>): Promise<boolean> => {
+    const { error } = await supabase.from('event_participants').update(updates).eq('id', id);
+    reportError('updateParticipant', error);
+    return !error;
   },
   deleteParticipant: async (eventId: string, userId: string) => {
     reportError('deleteParticipant', (await supabase.from('event_participants').delete().eq('event_id', eventId).eq('user_id', userId)).error);

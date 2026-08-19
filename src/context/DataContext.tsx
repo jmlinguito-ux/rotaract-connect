@@ -5,6 +5,7 @@ import {
   VerificationStatus, AttendanceStatus, AppUser, UserRole, Club,
   Conversation, DirectMessage, ReadCursor, NotificationPriority, ConversationState,
 } from '../types';
+import { AppState } from 'react-native';
 import { loadAll, db } from '../services/db';
 import { canMessageUser } from '../utils/messaging';
 import RotaractNotifications from '../../modules/rotaract-notifications';
@@ -15,6 +16,7 @@ import { getEffectiveEventStatus } from '../utils/eventUtils';
 import { approverClubIdsFor, pendingApproverClubIdsFor } from '../utils/eventApproval';
 import { ROLE_LABELS } from '../utils/roles';
 import { useRealtimeSync } from './useRealtimeSync';
+import { enqueueOfflineCheckIn, drainOfflineCheckIns } from '../services/offlineQueue';
 
 export type CheckInRecord = {
   checkedInAt: string;
@@ -289,6 +291,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
     applySnapshot(cancelledRef).catch(e => console.warn('Failed to load data from Supabase', e));
     return () => { cancelledRef.current = true; };
   }, [isAuthenticated, applySnapshot]);
+
+  // Drain offline check-in queue on mount, auth ready, and app resume
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const tryDrain = () => {
+      drainOfflineCheckIns();
+    };
+    tryDrain();
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') tryDrain();
+    });
+    return () => sub.remove();
+  }, [isAuthenticated]);
 
   // Realtime sync (messages, notifications, read cursors, deletions, conversation
   // state, plus debounced reloads for lower-frequency tables) lives in its own
@@ -870,7 +885,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
       check_in_method: at.recordedBy ?? 'SELF_GPS',
     };
     setParticipants(prev => prev.map(p => (p.id === participantId ? { ...p, ...updates } : p)));
-    db.updateParticipant(participantId, updates);
+    db.updateParticipant(participantId, updates).then(ok => {
+      if (!ok) {
+        enqueueOfflineCheckIn(participantId, updates);
+      }
+    });
   }, []);
 
   const invite = useCallback((eventId: string, invitedUserId: string, byUser: AppUser) => {
