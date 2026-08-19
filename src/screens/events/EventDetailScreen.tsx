@@ -19,6 +19,7 @@ import UserAvatar from '../../components/UserAvatar';
 import VerifiedCheck from '../../components/VerifiedCheck';
 import { BottomSheet } from '../../components/BottomSheet';
 import { callNumber, sendEmail, openMaps } from '../../utils/contactLinks';
+import { openNavigationApp } from '../../utils/navigationLauncher';
 import { AppUser } from '../../types';
 import { areaOfFocusIcon, areaOfFocusLabel } from '../../data/areasOfFocus';
 import { formatTime, formatDate } from '../../utils/timeFormat';
@@ -928,10 +929,17 @@ export default function EventDetailScreen({ route, navigation }: Props) {
             <InfoRow
               icon="location-outline"
               text={event.address}
-              onPress={() => openMaps(event.latitude, event.longitude, event.address)}
+              onPress={() => openNavigationApp(event.latitude, event.longitude, event.title, event.address)}
               hideOpenIcon
             />
             <InfoRow icon="business-outline" text={event.city} />
+            <TouchableOpacity
+              style={[styles.directionsBtn, { backgroundColor: themeColors.primary + '15', borderColor: themeColors.primary }]}
+              onPress={() => openNavigationApp(event.latitude, event.longitude, event.title, event.address)}
+            >
+              <Ionicons name="navigate" size={15} color={themeColors.primary} />
+              <Text style={[styles.directionsBtnText, { color: themeColors.primary }]}>Get Directions</Text>
+            </TouchableOpacity>
           </Section>
 
           <Section title="Organizer & Team Members">
@@ -1657,6 +1665,8 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 12, fontWeight: '800', color: colors.primary, letterSpacing: 1, marginBottom: 8 },
   infoRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },
   infoText: { fontSize: 14, color: colors.text },
+  directionsBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 10, borderWidth: 1, marginTop: 8, alignSelf: 'flex-start' },
+  directionsBtnText: { fontSize: 12, fontWeight: '700' },
   partRow: { flexDirection: 'row', alignItems: 'center' },
   viewLink: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   viewLinkText: { fontSize: 12, fontWeight: '700', color: colors.primary },

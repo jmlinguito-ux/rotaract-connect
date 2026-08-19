@@ -26,20 +26,26 @@ export default function AnalyticsScreen({ navigation }: Props) {
   const filteredEvents = useMemo(() => {
     if (selectedZone === 'ALL') return events;
     const clubIds = new Set(filteredClubs.map(c => c.id));
-    return events.filter(e => clubIds.has(e.organizing_club_id));
+    return events.filter(e => clubIds.has(e.organizing_club_id) || e.participating_club_ids?.some(id => clubIds.has(id)));
   }, [events, filteredClubs, selectedZone]);
 
+  const filteredImpacts = useMemo(() => {
+    if (selectedZone === 'ALL') return impacts;
+    const eventIds = new Set(filteredEvents.map(e => e.id));
+    return impacts.filter(i => eventIds.has(i.event_id));
+  }, [impacts, filteredEvents, selectedZone]);
+
   const totalVolunteerHours = useMemo(() => {
-    return impacts.reduce((acc, imp) => acc + imp.volunteer_hours, 0);
-  }, [impacts]);
+    return filteredImpacts.reduce((acc, imp) => acc + imp.volunteer_hours, 0);
+  }, [filteredImpacts]);
 
   const totalBeneficiaries = useMemo(() => {
-    return impacts.reduce((acc, imp) => acc + imp.beneficiaries, 0);
-  }, [impacts]);
+    return filteredImpacts.reduce((acc, imp) => acc + imp.beneficiaries, 0);
+  }, [filteredImpacts]);
 
   const totalFunds = useMemo(() => {
-    return impacts.reduce((acc, imp) => acc + imp.funds_raised, 0);
-  }, [impacts]);
+    return filteredImpacts.reduce((acc, imp) => acc + imp.funds_raised, 0);
+  }, [filteredImpacts]);
 
   const totalVerifiedMembers = useMemo(() => {
     return users.filter(u => u.verification_status === 'VERIFIED').length;

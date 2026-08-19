@@ -82,6 +82,9 @@ export default function NotificationsScreen({ navigation }: Props) {
   const notifs = notificationsFor(user.id);
 
   const handleRowPress = (item: AppNotification) => {
+    if (!item.is_read) {
+      markNotificationsRead(item.id);
+    }
     if (item.conversation_id) {
       const senderName = item.title.replace('Inquiry from ', '');
       navigation.navigate('Chat', {

@@ -13,6 +13,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { canMessageUser, inquiryBlockedMessage } from '../../utils/messaging';
+import { openNavigationApp } from '../../utils/navigationLauncher';
 import { AppUser } from '../../types';
 import { UserProfileModal } from '../../components/UserProfileModal';
 import UserAvatar from '../../components/UserAvatar';
@@ -87,6 +88,14 @@ export default function ClubDetailScreen({ route }: Props) {
 
           <Text style={[styles.meta, { color: themeColors.textMuted }]}>{zone?.zone_name} • {club.city}, {club.province}</Text>
           <Text style={[styles.clubId, { color: themeColors.textMuted }]}>{club.club_code}</Text>
+
+          <TouchableOpacity
+            style={[styles.clubDirectionsBtn, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}
+            onPress={() => openNavigationApp(club.latitude, club.longitude, club.club_name, `${club.city}, ${club.province}`)}
+          >
+            <Ionicons name="navigate-outline" size={13} color={themeColors.primary} />
+            <Text style={[styles.clubDirectionsBtnText, { color: themeColors.primary }]}>Get Directions</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={[styles.statsRow, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}>
@@ -220,6 +229,8 @@ const styles = StyleSheet.create({
   charterBadgeText: { fontSize: 11, fontWeight: '700' },
   meta: { fontSize: 13, marginTop: 6 },
   clubId: { fontSize: 11, marginTop: 4, letterSpacing: 0.5 },
+  clubDirectionsBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, borderWidth: 1, marginTop: 10 },
+  clubDirectionsBtnText: { fontSize: 11, fontWeight: '700' },
   statsRow: { flexDirection: 'row', margin: 16, borderRadius: 14, borderWidth: 1, padding: 16 },
   stat: { flex: 1, alignItems: 'center' },
   statValue: { fontSize: 22, fontWeight: '800' },
