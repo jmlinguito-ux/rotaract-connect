@@ -16,8 +16,9 @@ import { DeclineReasonModal } from '../../components/DeclineReasonModal';
 import { ConfirmRulesModal } from '../../components/ConfirmRulesModal';
 import { UserProfileModal } from '../../components/UserProfileModal';
 import UserAvatar from '../../components/UserAvatar';
-import VerifiedCheck from '../../components/VerifiedCheck';
+import VerifiedCheck, { VerifiedName } from '../../components/VerifiedCheck';
 import { BottomSheet } from '../../components/BottomSheet';
+import RotaryWheel from '../../components/RotaryWheel';
 import { callNumber, sendEmail, openMaps } from '../../utils/contactLinks';
 import { openNavigationApp } from '../../utils/navigationLauncher';
 import { exportEventToCalendar } from '../../utils/calendarExport';
@@ -65,6 +66,7 @@ export default function EventDetailScreen({ route, navigation }: Props) {
   const [rejectModalVisible, setRejectModalVisible] = useState(false);
   const [lateLeaveModalVisible, setLateLeaveModalVisible] = useState(false);
   const [districtReviewSent, setDistrictReviewSent] = useState(false);
+  const [passModalVisible, setPassModalVisible] = useState(false);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
 
   useEffect(() => {
@@ -996,6 +998,33 @@ export default function EventDetailScreen({ route, navigation }: Props) {
             <View style={[styles.progressBar, { backgroundColor: isNightMode ? themeColors.surface : '#E2E8F0' }]}>
               <View style={[styles.progressFill, { backgroundColor: themeColors.primary, width: `${Math.min(100, (joinedParticipantsCount / event.max_participants) * 100)}%` }]} />
             </View>
+
+            {/* 🎟️ Digital Event Pass Button for Joined/Attended Members */}
+            {user && (isJoined || userParticipation?.attendance_status === 'ATTENDED') && userParticipation && (
+              <TouchableOpacity
+                style={[
+                  styles.passCardBtn,
+                  {
+                    backgroundColor: isNightMode ? themeColors.cardBg : '#FDF2F7',
+                    borderColor: isNightMode ? themeColors.border : '#F9D6E5',
+                  },
+                ]}
+                onPress={() => setPassModalVisible(true)}
+              >
+                <View style={[styles.passIconWrap, { backgroundColor: themeColors.primary }]}>
+                  <Ionicons name="ticket" size={18} color="#fff" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.passCardTitle, { color: themeColors.text }]}>Digital Event Pass</Text>
+                  <Text style={[styles.passCardSub, { color: themeColors.textMuted }]}>
+                    {userParticipation.attendance_status === 'ATTENDED' || userParticipation.checked_in_at
+                      ? '✓ On-site attendance verified • Tap to view pass'
+                      : '🎟️ Confirmed attendee • Tap to display check-in ticket'}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color={themeColors.primary} />
+              </TouchableOpacity>
+            )}
           </Section>
 
           {/* Unified Communication & Community Section */}
@@ -1547,13 +1576,126 @@ export default function EventDetailScreen({ route, navigation }: Props) {
         }}
         onCancel={() => setLateLeaveModalVisible(false)}
       />
-          <ConfirmDialog
+      <ConfirmDialog
         visible={!!blockedName}
         title="Messaging unavailable"
         message={blockedName ? inquiryBlockedMessage(blockedName) : undefined}
         onClose={() => setBlockedName(null)}
         confirmLabel="OK"
       />
+
+      {/* 🎟️ Digital Event Pass Modal */}
+      <BottomSheet
+        visible={passModalVisible}
+        onClose={() => setPassModalVisible(false)}
+        cardStyle={[styles.passModalCard, { backgroundColor: themeColors.cardBg }]}
+      >
+        <View style={styles.passModalHeader}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <RotaryWheel size={24} />
+            <Text style={[styles.passDistrictTitle, { color: themeColors.primary }]}>ROTARACT DISTRICT 3800</Text>
+          </View>
+          <TouchableOpacity onPress={() => setPassModalVisible(false)}>
+            <Ionicons name="close" size={22} color={themeColors.textMuted} />
+          </TouchableOpacity>
+        </View>
+
+        {user && userParticipation && (
+          <View style={[styles.passTicketBody, { backgroundColor: themeColors.surface, borderColor: themeColors.border }]}>
+            {/* Event Name & Type */}
+            <View style={styles.passEventHeader}>
+              <View style={[styles.passTypePill, { backgroundColor: themeColors.primary + '1A' }]}>
+                <Text style={[styles.passTypeText, { color: themeColors.primary }]}>{event.event_type.replace(/_/g, ' ')}</Text>
+              </View>
+              <Text style={[styles.passEventTitle, { color: themeColors.text }]}>{event.title}</Text>
+            </View>
+
+            {/* Schedule & Venue Info */}
+            <View style={styles.passInfoGrid}>
+              <View style={styles.passInfoItem}>
+                <Text style={[styles.passInfoLabel, { color: themeColors.textMuted }]}>DATE & TIME</Text>
+                <Text style={[styles.passInfoVal, { color: themeColors.text }]}>
+                  {formatDate(start)} • {formatTime(start)}
+                </Text>
+              </View>
+              <View style={styles.passInfoItem}>
+                <Text style={[styles.passInfoLabel, { color: themeColors.textMuted }]}>VENUE</Text>
+                <Text style={[styles.passInfoVal, { color: themeColors.text }]} numberOfLines={2}>
+                  {event.address}, {event.city}
+                </Text>
+              </View>
+            </View>
+
+            {/* Jagged / Dashed Divider */}
+            <View style={[styles.passDashedLine, { borderColor: themeColors.border }]} />
+
+            {/* Attendee Profile */}
+            <View style={styles.passAttendeeRow}>
+              <UserAvatar user={user} size={50} />
+              <View style={{ flex: 1 }}>
+                <VerifiedName
+                  user={user}
+                  textStyle={[styles.passAttendeeName, { color: themeColors.text }]}
+                  checkSize={16}
+                />
+                <Text style={[styles.passAttendeeClub, { color: themeColors.textMuted }]}>
+                  {user.position} • {user.club_name}
+                </Text>
+              </View>
+            </View>
+
+            {/* Pass Token & Check-In Status */}
+            <View style={[styles.passTokenBox, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}>
+              <View style={styles.passTokenLeft}>
+                <Text style={[styles.passTokenLabel, { color: themeColors.textMuted }]}>PASS TOKEN</Text>
+                <Text style={[styles.passTokenVal, { color: themeColors.primary }]}>
+                  #RC-{userParticipation.id.replace(/[^a-zA-Z0-9]/g, '').slice(-8).toUpperCase()}
+                </Text>
+              </View>
+              <View
+                style={[
+                  styles.passStatusBadge,
+                  {
+                    backgroundColor:
+                      userParticipation.attendance_status === 'ATTENDED' || userParticipation.checked_in_at
+                        ? themeColors.success + '20'
+                        : themeColors.primary + '20',
+                  },
+                ]}
+              >
+                <Ionicons
+                  name={
+                    userParticipation.attendance_status === 'ATTENDED' || userParticipation.checked_in_at
+                      ? 'checkmark-circle'
+                      : 'ticket'
+                  }
+                  size={14}
+                  color={
+                    userParticipation.attendance_status === 'ATTENDED' || userParticipation.checked_in_at
+                      ? themeColors.success
+                      : themeColors.primary
+                  }
+                />
+                <Text
+                  style={[
+                    styles.passStatusBadgeText,
+                    {
+                      color:
+                        userParticipation.attendance_status === 'ATTENDED' || userParticipation.checked_in_at
+                          ? themeColors.success
+                          : themeColors.primary,
+                    },
+                  ]}
+                >
+                  {userParticipation.attendance_status === 'ATTENDED' || userParticipation.checked_in_at
+                    ? 'VERIFIED'
+                    : 'REGISTERED'}
+                </Text>
+              </View>
+            </View>
+          </View>
+        )}
+      </BottomSheet>
 </SafeAreaView>
   );
 }
@@ -1755,4 +1897,32 @@ const styles = StyleSheet.create({
   stalledText: { fontSize: 12, lineHeight: 17, marginBottom: 8 },
   stalledBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, alignSelf: 'flex-start' },
   stalledBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+
+  // Digital Event Pass Styles
+  passCardBtn: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: 14, borderWidth: 1, marginTop: 12 },
+  passIconWrap: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  passCardTitle: { fontSize: 13, fontWeight: '800' },
+  passCardSub: { fontSize: 11, marginTop: 2 },
+  passModalCard: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 36 },
+  passModalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  passDistrictTitle: { fontSize: 13, fontWeight: '900', letterSpacing: 0.8 },
+  passTicketBody: { borderRadius: 18, borderWidth: 1, padding: 16 },
+  passEventHeader: { marginBottom: 12 },
+  passTypePill: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, marginBottom: 6 },
+  passTypeText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
+  passEventTitle: { fontSize: 18, fontWeight: '800' },
+  passInfoGrid: { flexDirection: 'row', justifyContent: 'space-between', gap: 12, marginVertical: 8 },
+  passInfoItem: { flex: 1 },
+  passInfoLabel: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5, marginBottom: 2 },
+  passInfoVal: { fontSize: 12, fontWeight: '600' },
+  passDashedLine: { borderStyle: 'dashed', borderWidth: 1, marginVertical: 14 },
+  passAttendeeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14 },
+  passAttendeeName: { fontSize: 15, fontWeight: '800' },
+  passAttendeeClub: { fontSize: 12, marginTop: 2 },
+  passTokenBox: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12, borderRadius: 12, borderWidth: 1 },
+  passTokenLeft: { gap: 2 },
+  passTokenLabel: { fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
+  passTokenVal: { fontSize: 14, fontWeight: '900', letterSpacing: 1 },
+  passStatusBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 8 },
+  passStatusBadgeText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
 });
