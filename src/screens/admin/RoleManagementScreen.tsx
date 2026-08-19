@@ -154,6 +154,17 @@ export default function RoleManagementScreen({ navigation }: Props) {
         )}
       </View>
 
+      <TouchableOpacity
+        style={[styles.auditBanner, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}
+        onPress={() => navigation.navigate('AuditLogs')}
+      >
+        <View style={styles.auditBannerLeft}>
+          <Ionicons name="finger-print" size={18} color={themeColors.primary} />
+          <Text style={[styles.auditBannerText, { color: themeColors.text }]}>Audit & Governance Log</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={16} color={themeColors.textMuted} />
+      </TouchableOpacity>
+
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -346,4 +357,17 @@ const styles = StyleSheet.create({
   roleIcon: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   roleLabel: { fontSize: 14, fontWeight: '700' },
   roleDesc: { fontSize: 11, marginTop: 2, lineHeight: 15 },
+  auditBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginHorizontal: 16,
+    marginBottom: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  auditBannerLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  auditBannerText: { fontSize: 13, fontWeight: '700' },
 });

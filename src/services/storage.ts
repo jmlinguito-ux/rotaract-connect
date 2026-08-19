@@ -90,8 +90,15 @@ export async function uploadImageAsset(
     body = await res.arrayBuffer();
   }
 
-  if ((body as Uint8Array).byteLength === 0) {
+  const byteLength = (body as Uint8Array).byteLength ?? (body as ArrayBuffer).byteLength ?? 0;
+  if (byteLength === 0) {
     throw new Error('Selected image was empty — please try another photo.');
+  }
+
+  // 5MB hard limit check
+  const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
+  if (byteLength > MAX_FILE_SIZE_BYTES) {
+    throw new Error('Image exceeds the 5MB size limit. Please choose a smaller photo or crop it before uploading.');
   }
 
   const { error } = await supabase.storage

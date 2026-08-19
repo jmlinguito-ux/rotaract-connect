@@ -31,6 +31,7 @@ import ChatScreen from '../screens/messaging/ChatScreen';
 import SettingsScreen from '../screens/profile/SettingsScreen';
 import RoleManagementScreen from '../screens/admin/RoleManagementScreen';
 import OrganizerBroadcastScreen from '../screens/events/OrganizerBroadcastScreen';
+import AuditLogsScreen from '../screens/admin/AuditLogsScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -89,6 +90,7 @@ export default function RootNavigator() {
             <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: 'Settings & Preferences' }} />
             <Stack.Screen name="RoleManagement" component={RoleManagementScreen} options={{ title: 'Roles & Permissions' }} />
             <Stack.Screen name="OrganizerBroadcast" component={OrganizerBroadcastScreen} options={{ title: 'Send Banner Notification' }} />
+            <Stack.Screen name="AuditLogs" component={AuditLogsScreen} options={{ title: 'Audit & Governance' }} />
           </>
         ) : (
           <Stack.Screen name="Auth" component={AuthStack} options={{ headerShown: false }} />

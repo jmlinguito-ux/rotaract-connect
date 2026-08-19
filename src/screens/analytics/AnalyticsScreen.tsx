@@ -8,6 +8,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { zones } from '../../data/mockData';
 import { RootStackParamList } from '../../navigation/types';
+import { exportDistrictImpactCSV } from '../../utils/csvExport';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Analytics'>;
 
@@ -57,6 +58,27 @@ export default function AnalyticsScreen({ navigation }: Props) {
         <View style={styles.header}>
           <Text style={[styles.title, { color: themeColors.text }]}>District Analytics</Text>
           <Text style={[styles.subtitle, { color: themeColors.textMuted }]}>District 3800 • Impact & Performance Overview</Text>
+        </View>
+
+        {/* Quick Action Toolbar */}
+        <View style={styles.actionToolbar}>
+          <TouchableOpacity
+            style={[styles.exportBtn, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}
+            onPress={() => exportDistrictImpactCSV(filteredEvents, impacts, clubs)}
+          >
+            <Ionicons name="share-outline" size={16} color={themeColors.primary} />
+            <Text style={[styles.exportBtnText, { color: themeColors.primary }]}>Export Impact (CSV)</Text>
+          </TouchableOpacity>
+
+          {(user?.role === 'DISTRICT_ADMIN' || user?.role === 'APP_ADMIN') && (
+            <TouchableOpacity
+              style={[styles.exportBtn, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}
+              onPress={() => navigation.navigate('AuditLogs')}
+            >
+              <Ionicons name="finger-print" size={16} color={themeColors.primary} />
+              <Text style={[styles.exportBtnText, { color: themeColors.primary }]}>Audit Logs</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         <TouchableOpacity
@@ -164,9 +186,22 @@ function MetricCard({ title, value, icon, color, colors: c }: { title: string; v
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   container: { padding: 20, paddingBottom: 40 },
-  header: { marginBottom: 16 },
-  title: { fontSize: 26, fontWeight: '800' },
-  subtitle: { fontSize: 13, marginTop: 2 },
+  header: { marginBottom: 12 },
+  title: { fontSize: 24, fontWeight: '800' },
+  subtitle: { fontSize: 13, marginTop: 4 },
+  actionToolbar: { flexDirection: 'row', gap: 10, marginBottom: 12 },
+  exportBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  exportBtnText: { fontSize: 12, fontWeight: '700' },
   scoreboardBanner: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 14, borderWidth: 1, marginBottom: 16 },
   scoreboardIconWrap: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#FFFDF0', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#FFD700' },
   scoreboardTitle: { fontSize: 14, fontWeight: '800' },

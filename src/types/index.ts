@@ -180,12 +180,16 @@ export interface VerificationApplication {
 
 export interface AuditLog {
   id: string;
-  application_id: string;
+  application_id?: string;
+  event_id?: string;
+  target_user_id?: string;
+  target_name?: string;
   action: string;
+  category?: 'ROLE' | 'EVENT' | 'VERIFICATION' | 'ATTENDANCE' | 'SYSTEM';
   performed_by_name: string;
   performed_by_role: UserRole;
-  previous_status: VerificationStatus;
-  new_status: VerificationStatus;
+  previous_status?: string;
+  new_status?: string;
   notes: string;
   created_at: string;
 }

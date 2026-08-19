@@ -27,6 +27,7 @@ import * as Location from 'expo-location';
 import { usePreferences } from '../../context/PreferencesContext';
 import { checkInWindow, distanceMeters, formatDistance, CHECK_IN_RADIUS_M } from '../../utils/checkIn';
 import { eventEditPolicy, editLockRulesForApproval } from '../../utils/eventEditPolicy';
+import { exportEventAttendanceCSV } from '../../utils/csvExport';
 import {
   approverClubIdsFor,
   pendingApproverClubIdsFor,
@@ -315,6 +316,16 @@ export default function EventDetailScreen({ route, navigation }: Props) {
       icon: 'close-circle-outline',
       destructive: true,
       run: () => handleConfirmCancelEvent(),
+    });
+  }
+
+  // Export Attendance CSV for organizers and admins
+  if (isOrganizer) {
+    optionsMenuItems.push({
+      label: 'Export Attendance (CSV)',
+      sub: 'Export member roster, check-in GPS & hours to CSV',
+      icon: 'share-outline',
+      run: () => exportEventAttendanceCSV(event, participantsFor(eventId), users, clubs),
     });
   }
 

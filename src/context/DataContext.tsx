@@ -397,6 +397,24 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
 
     const label = ROLE_LABELS[newRole];
+    if (actor && target) {
+      const log: AuditLog = {
+        id: nextId('audit'),
+        target_user_id: targetUserId,
+        target_name: target.full_name,
+        action: 'ROLE_CHANGED',
+        category: 'ROLE',
+        performed_by_name: actor.full_name,
+        performed_by_role: actor.role,
+        previous_status: target.role,
+        new_status: newRole,
+        notes: `Role changed from ${ROLE_LABELS[target.role]} to ${label}`,
+        created_at: now(),
+      };
+      setAuditLogs(prev => [log, ...prev]);
+      db.insertAuditLog(log);
+    }
+
     pushNotif({
       user_id: targetUserId,
       kind: 'ROLE_ASSIGNED',
@@ -635,6 +653,24 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setEvents(prev => prev.map(e => (e.id === eventId ? { ...e, status: 'CANCELLED', cancellation_reason: reasonText } : e)));
     db.updateEvent(eventId, { status: 'CANCELLED', cancellation_reason: reasonText });
 
+    if (actor) {
+      const log: AuditLog = {
+        id: nextId('audit'),
+        event_id: eventId,
+        target_name: ev.title,
+        action: 'EVENT_CANCELLED',
+        category: 'EVENT',
+        performed_by_name: actor.full_name,
+        performed_by_role: actor.role,
+        previous_status: ev.status,
+        new_status: 'CANCELLED',
+        notes: reasonText,
+        created_at: now(),
+      };
+      setAuditLogs(prev => [log, ...prev]);
+      db.insertAuditLog(log);
+    }
+
     const joinedParts = participants.filter(p => p.event_id === eventId && p.status === 'JOINED');
     const userIdsToNotify = new Set<string>([
       ...joinedParts.map(p => p.user_id),
@@ -684,6 +720,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
     // the organising club's President write to events, so this silently no-opped for
     // every other approver and reverted on the next refetch.
     db.approveEvent(eventId);
+
+    const log: AuditLog = {
+      id: nextId('audit'),
+      event_id: eventId,
+      target_name: ev.title,
+      action: published ? 'EVENT_PUBLISHED' : 'EVENT_APPROVED',
+      category: 'EVENT',
+      performed_by_name: actor.full_name,
+      performed_by_role: actor.role,
+      previous_status: ev.status,
+      new_status: newStatus,
+      notes: published ? 'All required club approvals collected' : `Approved by ${actor.club_name ?? 'Club President'}`,
+      created_at: now(),
+    };
+    setAuditLogs(prev => [log, ...prev]);
+    db.insertAuditLog(log);
 
     pushNotif({
       user_id: ev.organizer_user_id,
