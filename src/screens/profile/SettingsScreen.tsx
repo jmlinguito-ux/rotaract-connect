@@ -11,13 +11,25 @@ import RoleBadgeIcon from '../../components/RoleBadgeIcon';
 import { VerifiedName } from '../../components/VerifiedCheck';
 import { ROLE_BADGES } from '../../utils/roles';
 import TermsAndPrivacyModal from '../../components/TermsAndPrivacyModal';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
+import { useData } from '../../context/DataContext';
+import { useToast } from '../../context/ToastContext';
+import { Club } from '../../types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
 
 export default function SettingsScreen({ navigation }: Props) {
   const { user, changePassword, updateProfile, requestEmailChange, confirmEmailChange } = useAuth();
+  const { clubs } = useData();
+  const { showToast } = useToast();
   const { isNightMode, setNightMode, colors: themeColors } = useTheme();
   const { pushEnabled, setPushEnabled, showActiveStatus, setShowActiveStatus, highAccuracyGps, setHighAccuracyGps, autoCheckIn, setAutoCheckIn } = usePreferences();
+
+  // Club transfer state
+  const [clubModalVisible, setClubModalVisible] = useState(false);
+  const [clubSearch, setClubSearch] = useState('');
+  const [pendingClubTransfer, setPendingClubTransfer] = useState<Club | null>(null);
+  const [confirmTransferVisible, setConfirmTransferVisible] = useState(false);
 
   // Legal modal state
   const [legalModalVisible, setLegalModalVisible] = useState(false);
@@ -193,6 +205,25 @@ export default function SettingsScreen({ navigation }: Props) {
               <View style={{ flex: 1 }}>
                 <Text style={titleStyle}>Email Address</Text>
                 <Text style={subStyle}>{user.email}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={themeColors.textMuted} />
+            </TouchableOpacity>
+
+            <View style={dividerStyle} />
+
+            <TouchableOpacity
+              style={styles.row}
+              onPress={() => {
+                setClubSearch('');
+                setClubModalVisible(true);
+              }}
+            >
+              <View style={[styles.rowIconWrap, { backgroundColor: themeColors.primary + '1A' }]}>
+                <Ionicons name="business-outline" size={18} color={themeColors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={titleStyle}>Club Affiliation</Text>
+                <Text style={subStyle}>{user.club_name || 'Select Club'}</Text>
               </View>
               <Ionicons name="chevron-forward" size={16} color={themeColors.textMuted} />
             </TouchableOpacity>
@@ -450,6 +481,101 @@ export default function SettingsScreen({ navigation }: Props) {
         </TouchableOpacity>
 
       </ScrollView>
+
+      {/* Club Transfer Confirmation Dialog */}
+      <ConfirmDialog
+        visible={confirmTransferVisible}
+        title="Transfer Club Affiliation?"
+        message={
+          user?.verification_status === 'VERIFIED'
+            ? `Transfer to ${pendingClubTransfer?.club_name}? Because your account is currently verified, transferring clubs will set your status to "Awaiting Club Validation" until your new Club President validates your roster membership.`
+            : `Transfer your club affiliation to ${pendingClubTransfer?.club_name}?`
+        }
+        confirmLabel="Confirm Transfer"
+        cancelLabel="Cancel"
+        onConfirm={async () => {
+          if (pendingClubTransfer && user) {
+            setConfirmTransferVisible(false);
+            await updateProfile({
+              club_id: pendingClubTransfer.id,
+              club_name: pendingClubTransfer.club_name,
+              verification_status: 'AWAITING_CLUB_VALIDATION',
+            });
+            showToast({
+              type: 'info',
+              title: 'Club Affiliation Updated',
+              message: `Transferred to ${pendingClubTransfer.club_name}. Your new Club President has been notified.`,
+            });
+            setPendingClubTransfer(null);
+          }
+        }}
+        onClose={() => {
+          setConfirmTransferVisible(false);
+          setPendingClubTransfer(null);
+        }}
+      />
+
+      {/* Club Selection Modal */}
+      <Modal visible={clubModalVisible} transparent animationType="slide" onRequestClose={() => setClubModalVisible(false)}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: themeColors.cardBg, maxHeight: '80%', borderColor: themeColors.border }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: themeColors.text }]}>Select Club</Text>
+              <TouchableOpacity onPress={() => setClubModalVisible(false)}>
+                <Ionicons name="close" size={22} color={themeColors.textMuted} />
+              </TouchableOpacity>
+            </View>
+            <TextInput
+              style={[styles.pwInput, { backgroundColor: themeColors.surface, color: themeColors.text, borderColor: themeColors.border, minHeight: 44, marginVertical: 12 }]}
+              placeholder="Search clubs by name, city, province..."
+              placeholderTextColor={themeColors.textMuted}
+              value={clubSearch}
+              onChangeText={setClubSearch}
+            />
+            <ScrollView style={{ maxHeight: 300 }}>
+              {clubs
+                .filter(c =>
+                  !clubSearch.trim() ||
+                  c.club_name.toLowerCase().includes(clubSearch.toLowerCase()) ||
+                  c.city.toLowerCase().includes(clubSearch.toLowerCase()) ||
+                  c.province.toLowerCase().includes(clubSearch.toLowerCase())
+                )
+                .map(c => {
+                  const isCurrent = c.id === user?.club_id;
+                  return (
+                    <TouchableOpacity
+                      key={c.id}
+                      style={[
+                        styles.row,
+                        {
+                          paddingVertical: 12,
+                          borderBottomWidth: StyleSheet.hairlineWidth,
+                          borderBottomColor: themeColors.border,
+                          backgroundColor: isCurrent ? themeColors.primary + '14' : 'transparent',
+                        },
+                      ]}
+                      onPress={() => {
+                        setClubModalVisible(false);
+                        if (c.id !== user?.club_id) {
+                          setPendingClubTransfer(c);
+                          setConfirmTransferVisible(true);
+                        }
+                      }}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={[titleStyle, isCurrent && { color: themeColors.primary, fontWeight: '700' }]}>
+                          {c.club_name}
+                        </Text>
+                        <Text style={subStyle}>{c.city}, {c.province}</Text>
+                      </View>
+                      {isCurrent && <Ionicons name="checkmark-circle" size={18} color={themeColors.primary} />}
+                    </TouchableOpacity>
+                  );
+                })}
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
 
       {/* 📜 TERMS & PRIVACY MODAL */}
       <TermsAndPrivacyModal

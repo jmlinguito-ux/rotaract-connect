@@ -82,7 +82,8 @@ interface DataContextValue {
   rejectEvent: (eventId: string, actor: AppUser, reason?: string) => void;
 
   joinEvent: (eventId: string, userId: string, opts?: { skipApproval?: boolean }) => void;
-  leaveEvent: (eventId: string, userId: string) => void;
+  leaveEvent: (eventId: string, userId: string, reason?: string) => void;
+  requestDistrictEventReview: (eventId: string, requester: AppUser) => void;
   approveParticipant: (participantId: string, actor: AppUser) => void;
   declineParticipant: (participantId: string, actor: AppUser, reason?: string) => void;
   markAttendance: (participantId: string, status: AttendanceStatus) => void;
@@ -814,10 +815,46 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   }, [events, users, participants, pushNotif]);
 
-  const leaveEvent = useCallback((eventId: string, userId: string) => {
+  const leaveEvent = useCallback((eventId: string, userId: string, reason?: string) => {
     setParticipants(prev => prev.filter(p => !(p.event_id === eventId && p.user_id === userId)));
     db.deleteParticipant(eventId, userId);
-  }, []);
+
+    if (reason?.trim()) {
+      const ev = events.find(e => e.id === eventId);
+      const userLeaving = users.find(u => u.id === userId);
+      if (ev) {
+        pushNotif({
+          user_id: ev.organizer_user_id,
+          kind: 'EVENT_UPDATE',
+          title: 'Participant Left (Late Notice)',
+          message: `${userLeaving?.full_name ?? 'A participant'} cancelled their attendance for "${ev.title}". Reason: ${reason.trim()}`,
+          event_id: ev.id,
+        });
+      }
+    }
+  }, [events, users, pushNotif]);
+
+  const requestDistrictEventReview = useCallback((eventId: string, requester: AppUser) => {
+    const ev = events.find(e => e.id === eventId);
+    if (!ev) return;
+    const pendingClubIds = pendingApproverClubIdsFor(ev, users);
+    const pendingClubNames = clubs
+      .filter(c => pendingClubIds.includes(c.id))
+      .map(c => c.club_name)
+      .join(', ');
+
+    const districtAdmins = users.filter(u => u.role === 'DISTRICT_ADMIN' || u.role === 'APP_ADMIN');
+    for (const admin of districtAdmins) {
+      pushNotif({
+        user_id: admin.id,
+        kind: 'EVENT_APPROVAL_REQUEST',
+        title: 'Approval Stalled (Review Requested)',
+        message: `${requester.full_name} requested District Admin review for "${ev.title}". Pending approval from: ${pendingClubNames || 'Partner clubs'}.`,
+        event_id: ev.id,
+        priority: 'HIGH',
+      });
+    }
+  }, [events, users, clubs, pushNotif]);
 
   const approveParticipant = useCallback((participantId: string, actor: AppUser) => {
     setParticipants(prev => prev.map(p => (p.id === participantId ? { ...p, status: 'JOINED' } : p)));
@@ -1415,7 +1452,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const value = useMemo<DataContextValue>(() => ({
       users, events: resolvedEvents, participants, invitations, impacts, applications, auditLogs, notifications, clubs, conversations, messages, readCursors, conversationStates,
       refresh,
-      createEvent, updateEvent, updateEventStatus, resetEventApprovals, cancelEvent, approveEvent, rejectEvent,
+      createEvent, updateEvent, updateEventStatus, resetEventApprovals, cancelEvent, approveEvent, rejectEvent, requestDistrictEventReview,
       joinEvent, leaveEvent, approveParticipant, declineParticipant, markAttendance, checkIn, addClub,
       invite, respondInvitation, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, sendDirectMessage, retryMessage, deleteMessageForMe, unsendMessage, markConversationRead, readCursorsFor, conversationStateFor, setConversationPinned, setConversationArchived, deleteConversationForMe, broadcastToEvent, saveImpact, reviewApplication, resubmitApplication, markNotificationsRead, markNotificationRead, deleteNotification, updateUserRole, removeUser, addApplication,
       participantsFor, invitationFor, participationFor, impactFor, notificationsFor, unreadCountForUser, unreadInboxCountForUser, messagesForConversation, auditFor,
@@ -1423,7 +1460,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }), [
     users, resolvedEvents, participants, invitations, impacts, applications, auditLogs, notifications, clubs, conversations, messages, readCursors, conversationStates,
     refresh,
-    createEvent, updateEvent, updateEventStatus, resetEventApprovals, cancelEvent, approveEvent, rejectEvent,
+    createEvent, updateEvent, updateEventStatus, resetEventApprovals, cancelEvent, approveEvent, rejectEvent, requestDistrictEventReview,
     joinEvent, leaveEvent, approveParticipant, declineParticipant, markAttendance, checkIn, addClub,
     invite, respondInvitation, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, sendDirectMessage, retryMessage, deleteMessageForMe, unsendMessage, markConversationRead, readCursorsFor, conversationStateFor, setConversationPinned, setConversationArchived, deleteConversationForMe, broadcastToEvent, saveImpact, reviewApplication, resubmitApplication, markNotificationsRead, markNotificationRead, deleteNotification, updateUserRole, removeUser, addApplication,
     participantsFor, invitationFor, participationFor, impactFor, notificationsFor, unreadCountForUser, unreadInboxCountForUser, messagesForConversation, auditFor,

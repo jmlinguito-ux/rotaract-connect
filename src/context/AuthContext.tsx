@@ -539,7 +539,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (updates.position !== undefined) dbUpdates.position = updates.position;
     if (updates.avatar_url !== undefined) dbUpdates.avatar_url = updates.avatar_url;
     if (updates.contact_number !== undefined) dbUpdates.contact_number = updates.contact_number;
-    if (updates.club_id !== undefined) dbUpdates.club_id = updates.club_id;
+    if (updates.club_id !== undefined) {
+      dbUpdates.club_id = updates.club_id;
+      if (updates.club_id !== user.club_id && user.verification_status === 'VERIFIED') {
+        dbUpdates.verification_status = 'AWAITING_CLUB_VALIDATION';
+        updates.verification_status = 'AWAITING_CLUB_VALIDATION';
+      }
+    }
+    if (updates.verification_status !== undefined) dbUpdates.verification_status = updates.verification_status;
     if (updates.allow_direct_inquiries !== undefined) dbUpdates.allow_direct_inquiries = updates.allow_direct_inquiries;
 
     if (Object.keys(dbUpdates).length > 0) {

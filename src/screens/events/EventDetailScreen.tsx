@@ -46,7 +46,7 @@ export default function EventDetailScreen({ route, navigation }: Props) {
   // padding never reaches it. Read the inset directly and pad the footer with it,
   // so its buttons clear the Android gesture/nav bar instead of sitting under it.
   const insets = useSafeAreaInsets();
-  const { events, clubs, users, notifications, participantsFor, participationFor, joinEvent, leaveEvent, checkIn, impactFor, approveEvent, rejectEvent, cancelEvent, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, approveParticipant, declineParticipant, invitationFor, respondInvitation, refresh } = useData();
+  const { events, clubs, users, notifications, participantsFor, participationFor, joinEvent, leaveEvent, checkIn, impactFor, approveEvent, rejectEvent, cancelEvent, requestDistrictEventReview, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, approveParticipant, declineParticipant, invitationFor, respondInvitation, refresh } = useData();
 
   const [messageModalVisible, setMessageModalVisible] = useState(false);
   const [messageText, setMessageText] = useState('');
@@ -60,6 +60,8 @@ export default function EventDetailScreen({ route, navigation }: Props) {
   const [approvalConfirmVisible, setApprovalConfirmVisible] = useState(false);
   const [cancelModalVisible, setCancelModalVisible] = useState(false);
   const [rejectModalVisible, setRejectModalVisible] = useState(false);
+  const [lateLeaveModalVisible, setLateLeaveModalVisible] = useState(false);
+  const [districtReviewSent, setDistrictReviewSent] = useState(false);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
 
   useEffect(() => {
@@ -429,36 +431,15 @@ export default function EventDetailScreen({ route, navigation }: Props) {
     if (event.status === 'COMPLETED' || event.status === 'CANCELLED') return;
 
     if (isLeaveLocked) {
-      Alert.alert(
-        'Leave Policy Locked',
-        `You cannot leave "${event.title}" within ${cutoffHours} hours of the event start time.\n\nPlease contact the event organizer directly if you have an emergency.`,
-        [
-          { text: 'OK', style: 'cancel' },
-          {
-            text: 'Message Organizer',
-            onPress: () => {
-              const conv = getOrCreateConversation(
-                eventId,
-                user,
-                event.organizer_user_id,
-                organizingClub?.club_name ?? event.organizing_club_name,
-                event.title,
-              );
-              navigation.navigate('Chat', {
-                conversationId: conv.id,
-                eventId: event.id,
-                recipientId: event.organizer_user_id,
-                recipientName: organizingClub?.club_name ?? event.organizing_club_name,
-                eventTitle: event.title,
-              });
-            },
-          },
-        ],
-      );
+      setLateLeaveModalVisible(true);
       return;
     }
 
     if (isJoined || isPending) {
+      if (isJoined && isLeaveLocked) {
+        setLateLeaveModalVisible(true);
+        return;
+      }
       Alert.alert(
         isJoined ? 'Leave Event' : 'Cancel Join Request',
         isJoined
@@ -727,6 +708,34 @@ export default function EventDetailScreen({ route, navigation }: Props) {
                 <Text style={[styles.approvalSub, { color: themeColors.textMuted }]}>
                   You have already approved on behalf of {clubNameFor(user!.club_id)}.
                 </Text>
+              )}
+
+              {isOrganizer && awaitingClubIds.length > 0 && (
+                <View style={[styles.stalledBox, { backgroundColor: isNightMode ? themeColors.primary + '18' : '#EFF6FF', borderColor: themeColors.primary + '33' }]}>
+                  <View style={styles.stalledHeader}>
+                    <Ionicons name="time-outline" size={16} color={themeColors.primary} />
+                    <Text style={[styles.stalledTitle, { color: themeColors.primary }]}>Approval Stalled?</Text>
+                  </View>
+                  <Text style={[styles.stalledText, { color: themeColors.textMuted }]}>
+                    If partner club Presidents are unresponsive, you can escalate this event for District Admin review.
+                  </Text>
+                  <TouchableOpacity
+                    style={[styles.stalledBtn, { backgroundColor: districtReviewSent ? themeColors.success : themeColors.primary }]}
+                    disabled={districtReviewSent}
+                    onPress={() => {
+                      if (user) {
+                        requestDistrictEventReview(event.id, user);
+                        setDistrictReviewSent(true);
+                        Alert.alert('District Review Requested', 'A high-priority review notification was broadcast to all District Administrators.');
+                      }
+                    }}
+                  >
+                    <Ionicons name={districtReviewSent ? 'checkmark-circle' : 'shield-checkmark-outline'} size={15} color="#fff" />
+                    <Text style={styles.stalledBtnText}>
+                      {districtReviewSent ? 'Review Requested' : 'Request District Admin Review'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               )}
 
               {canApprove && (
@@ -1449,6 +1458,20 @@ export default function EventDetailScreen({ route, navigation }: Props) {
         }}
         onCancel={() => setRejectModalVisible(false)}
       />
+
+      <DeclineReasonModal
+        visible={lateLeaveModalVisible}
+        title="Late Cancellation Notice"
+        description={`"${event.title}" starts in less than ${cutoffHours} hours. Please provide an emergency reason for cancelling your reserved spot so the organizer is informed.`}
+        onConfirm={(reason) => {
+          if (user) {
+            leaveEvent(eventId, user.id, reason);
+            setLateLeaveModalVisible(false);
+            Alert.alert('Attendance Cancelled', 'Your emergency cancellation notice and reason were sent to the organizer.');
+          }
+        }}
+        onCancel={() => setLateLeaveModalVisible(false)}
+      />
           <ConfirmDialog
         visible={!!blockedName}
         title="Messaging unavailable"
@@ -1649,4 +1672,10 @@ const styles = StyleSheet.create({
   inlineApproveBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.success, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6 },
   inlineApproveText: { color: '#fff', fontSize: 11, fontWeight: '700' },
   inlineDeclineBtn: { width: 28, height: 28, borderRadius: 14, borderWidth: 1, borderColor: colors.danger, alignItems: 'center', justifyContent: 'center' },
+  stalledBox: { marginTop: 12, padding: 12, borderRadius: 12, borderWidth: 1 },
+  stalledHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
+  stalledTitle: { fontSize: 13, fontWeight: '700' },
+  stalledText: { fontSize: 12, lineHeight: 17, marginBottom: 8 },
+  stalledBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, alignSelf: 'flex-start' },
+  stalledBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
 });
