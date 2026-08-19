@@ -17,6 +17,7 @@ import { approverClubIdsFor, pendingApproverClubIdsFor } from '../utils/eventApp
 import { ROLE_LABELS } from '../utils/roles';
 import { useRealtimeSync } from './useRealtimeSync';
 import { enqueueOfflineCheckIn, drainOfflineCheckIns } from '../services/offlineQueue';
+import { calculateParticipantHours } from '../utils/hoursCalculation';
 
 export type CheckInRecord = {
   checkedInAt: string;
@@ -25,6 +26,14 @@ export type CheckInRecord = {
   distanceMeters: number;
   /** Who produced this record — the attendee's own verified GPS check-in, or the organizer manually. */
   recordedBy?: 'SELF_GPS' | 'ORGANIZER';
+};
+
+export type CheckOutRecord = {
+  checkedOutAt: string;
+  latitude?: number;
+  longitude?: number;
+  distanceMeters?: number;
+  recordedBy?: 'SELF_GPS' | 'AUTO_PERIMETER_LEAVE' | 'ORGANIZER';
 };
 
 /**
@@ -88,6 +97,7 @@ interface DataContextValue {
   declineParticipant: (participantId: string, actor: AppUser, reason?: string) => void;
   markAttendance: (participantId: string, status: AttendanceStatus) => void;
   checkIn: (participantId: string, at: CheckInRecord) => void;
+  checkOut: (participantId: string, at: CheckOutRecord) => void;
 
   invite: (eventId: string, invitedUserId: string, byUser: AppUser) => void;
   respondInvitation: (invitationId: string, accept: boolean, user: AppUser, reason?: string) => void;
@@ -929,6 +939,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const checkOut = useCallback((participantId: string, at: CheckOutRecord) => {
+    const updates: Partial<EventParticipant> = {
+      checked_out_at: at.checkedOutAt,
+      check_out_latitude: at.latitude,
+      check_out_longitude: at.longitude,
+      check_out_distance_m: at.distanceMeters,
+      check_out_method: at.recordedBy ?? 'SELF_GPS',
+    };
+    setParticipants(prev => prev.map(p => (p.id === participantId ? { ...p, ...updates } : p)));
+    db.updateParticipant(participantId, updates).then(ok => {
+      if (!ok) {
+        enqueueOfflineCheckIn(participantId, updates);
+      }
+    });
+  }, []);
+
   const invite = useCallback((eventId: string, invitedUserId: string, byUser: AppUser) => {
     const dup = invitations.find(i => i.event_id === eventId && i.invited_user_id === invitedUserId && i.status === 'PENDING');
     if (!dup) {
@@ -1424,11 +1450,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     // Scoreboard from telling two different stories.
     const hours = evs.reduce((sum, e) => {
       const p = mine.find(part => part.event_id === e.id);
-      const isAttended = p?.attendance_status === 'ATTENDED' || !!p?.checked_in_at;
-      if (!isAttended) return sum;
-      const start = new Date(e.start_datetime).getTime();
-      const end = new Date(e.end_datetime).getTime();
-      return sum + Math.max(1, Math.round((end - start) / 3600000));
+      return sum + calculateParticipantHours(p, e);
     }, 0);
     const clubIds = new Set<string>();
     evs.forEach(e => { clubIds.add(e.organizing_club_id); e.participating_club_ids.forEach(c => clubIds.add(c)); });
@@ -1453,7 +1475,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       users, events: resolvedEvents, participants, invitations, impacts, applications, auditLogs, notifications, clubs, conversations, messages, readCursors, conversationStates,
       refresh,
       createEvent, updateEvent, updateEventStatus, resetEventApprovals, cancelEvent, approveEvent, rejectEvent, requestDistrictEventReview,
-      joinEvent, leaveEvent, approveParticipant, declineParticipant, markAttendance, checkIn, addClub,
+      joinEvent, leaveEvent, approveParticipant, declineParticipant, markAttendance, checkIn, checkOut, addClub,
       invite, respondInvitation, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, sendDirectMessage, retryMessage, deleteMessageForMe, unsendMessage, markConversationRead, readCursorsFor, conversationStateFor, setConversationPinned, setConversationArchived, deleteConversationForMe, broadcastToEvent, saveImpact, reviewApplication, resubmitApplication, markNotificationsRead, markNotificationRead, deleteNotification, updateUserRole, removeUser, addApplication,
       participantsFor, invitationFor, participationFor, impactFor, notificationsFor, unreadCountForUser, unreadInboxCountForUser, messagesForConversation, auditFor,
       applicationsForRole, userStats,
@@ -1461,7 +1483,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     users, resolvedEvents, participants, invitations, impacts, applications, auditLogs, notifications, clubs, conversations, messages, readCursors, conversationStates,
     refresh,
     createEvent, updateEvent, updateEventStatus, resetEventApprovals, cancelEvent, approveEvent, rejectEvent, requestDistrictEventReview,
-    joinEvent, leaveEvent, approveParticipant, declineParticipant, markAttendance, checkIn, addClub,
+    joinEvent, leaveEvent, approveParticipant, declineParticipant, markAttendance, checkIn, checkOut, addClub,
     invite, respondInvitation, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, sendDirectMessage, retryMessage, deleteMessageForMe, unsendMessage, markConversationRead, readCursorsFor, conversationStateFor, setConversationPinned, setConversationArchived, deleteConversationForMe, broadcastToEvent, saveImpact, reviewApplication, resubmitApplication, markNotificationsRead, markNotificationRead, deleteNotification, updateUserRole, removeUser, addApplication,
     participantsFor, invitationFor, participationFor, impactFor, notificationsFor, unreadCountForUser, unreadInboxCountForUser, messagesForConversation, auditFor,
     applicationsForRole, userStats,

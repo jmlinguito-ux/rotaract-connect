@@ -46,7 +46,7 @@ export default function EventDetailScreen({ route, navigation }: Props) {
   // padding never reaches it. Read the inset directly and pad the footer with it,
   // so its buttons clear the Android gesture/nav bar instead of sitting under it.
   const insets = useSafeAreaInsets();
-  const { events, clubs, users, notifications, participantsFor, participationFor, joinEvent, leaveEvent, checkIn, impactFor, approveEvent, rejectEvent, cancelEvent, requestDistrictEventReview, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, approveParticipant, declineParticipant, invitationFor, respondInvitation, refresh } = useData();
+  const { events, clubs, users, notifications, participantsFor, participationFor, joinEvent, leaveEvent, checkIn, checkOut, impactFor, approveEvent, rejectEvent, cancelEvent, requestDistrictEventReview, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, approveParticipant, declineParticipant, invitationFor, respondInvitation, refresh } = useData();
 
   const [messageModalVisible, setMessageModalVisible] = useState(false);
   const [messageText, setMessageText] = useState('');
@@ -330,29 +330,51 @@ export default function EventDetailScreen({ route, navigation }: Props) {
   const windowState = checkInWindow(event);
   const isCheckInOpen = isJoined && windowState.state === 'OPEN';
   const hasCheckedIn = !!userParticipation?.checked_in_at || userParticipation?.attendance_status === 'ATTENDED';
+  const hasCheckedOut = !!userParticipation?.checked_out_at;
+
+  const handleCheckOut = async () => {
+    if (!user || !userParticipation) return;
+    Alert.alert(
+      'Check Out of Event',
+      `Are you ready to check out of "${event.title}"? This will record your departure time and finalize your volunteer hours for the scoreboard.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Check Out Now',
+          onPress: async () => {
+            let lat: number | undefined;
+            let lng: number | undefined;
+            let dist: number | undefined;
+            try {
+              const { status } = await Location.getForegroundPermissionsAsync();
+              if (status === 'granted') {
+                const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+                lat = pos.coords.latitude;
+                lng = pos.coords.longitude;
+                dist = distanceMeters(pos.coords, { latitude: event.latitude, longitude: event.longitude });
+              }
+            } catch {}
+
+            checkOut(userParticipation.id, {
+              checkedOutAt: new Date().toISOString(),
+              latitude: lat,
+              longitude: lng,
+              distanceMeters: dist,
+              recordedBy: 'SELF_GPS',
+            });
+            Alert.alert('Checked Out', `You have checked out of ${event.title}. Your volunteer hours have been recorded!`);
+          },
+        },
+      ],
+    );
+  };
 
   const handleCheckIn = async () => {
     if (!user) return;
     // A completed/cancelled event is a locked record — no further check-ins.
     if (event.status === 'COMPLETED' || event.status === 'CANCELLED') return;
 
-    // Unverified members cannot check-in directly. Treat check-in attempt as join request.
     if (user.verification_status !== 'VERIFIED') {
-      if (!isJoined && !isPending) {
-        Alert.alert(
-          'Verification Required for Check-In',
-          'Unverified members cannot check in directly. Tapping check-in will submit a join request for organizer review.',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            {
-              text: 'Submit Join Request',
-              onPress: () => handleLeaveOrJoinEvent(),
-            },
-          ],
-        );
-        return;
-      }
-
       Alert.alert(
         'Check-In Restricted for Unverified Members',
         'Unverified members cannot check in to events until club membership verification is approved.',
@@ -361,11 +383,17 @@ export default function EventDetailScreen({ route, navigation }: Props) {
     }
 
     if (!userParticipation) return;
+
+    if (hasCheckedOut) {
+      Alert.alert(
+        'Attendance Completed',
+        `You checked in at ${formatTime(userParticipation.checked_in_at)} and checked out at ${formatTime(userParticipation.checked_out_at)}. Thank you for your service!`,
+      );
+      return;
+    }
+
     if (hasCheckedIn) {
-      const checkInTime = userParticipation.checked_in_at
-        ? formatTime(userParticipation.checked_in_at)
-        : 'Verified';
-      Alert.alert('Attendance Verified', `You checked in at ${checkInTime}. Thank you for volunteering!`);
+      handleCheckOut();
       return;
     }
 
@@ -1078,18 +1106,21 @@ export default function EventDetailScreen({ route, navigation }: Props) {
             style={[
               styles.primaryBtn,
               { flex: 1, backgroundColor: themeColors.primary },
-              hasCheckedIn && { backgroundColor: colors.success },
+              hasCheckedIn && !hasCheckedOut && { backgroundColor: '#0284C7' },
+              hasCheckedOut && { backgroundColor: colors.success },
               isCheckInOpen && !hasCheckedIn && { backgroundColor: colors.success },
-              isLeaveLocked && !isCheckInOpen && { backgroundColor: isNightMode ? '#334155' : '#475569' },
-              !isLeaveLocked && !isCheckInOpen && isJoined && styles.joinedBtn,
+              isLeaveLocked && !isCheckInOpen && !hasCheckedIn && { backgroundColor: isNightMode ? '#334155' : '#475569' },
+              !isLeaveLocked && !isCheckInOpen && isJoined && !hasCheckedIn && styles.joinedBtn,
               isPending && styles.pendingBtn,
             ]}
-            onPress={handleToggleJoin}
+            onPress={hasCheckedIn && !hasCheckedOut ? handleCheckOut : handleToggleJoin}
           >
             <Ionicons
               name={
-                hasCheckedIn
-                  ? 'checkmark-circle'
+                hasCheckedOut
+                  ? 'checkmark-done-circle'
+                  : hasCheckedIn
+                  ? 'log-out-outline'
                   : isCheckInOpen
                   ? 'location'
                   : isLeaveLocked
@@ -1106,8 +1137,10 @@ export default function EventDetailScreen({ route, navigation }: Props) {
               color="#fff"
             />
             <Text style={styles.primaryBtnText} numberOfLines={1}>
-              {hasCheckedIn
-                ? 'Checked In'
+              {hasCheckedOut
+                ? 'Checked Out'
+                : hasCheckedIn
+                ? 'Check Out'
                 : isCheckInOpen
                 ? 'Check In'
                 : isLeaveLocked
@@ -1126,7 +1159,8 @@ export default function EventDetailScreen({ route, navigation }: Props) {
             style={[
               styles.arrowUpBtn,
               { backgroundColor: themeColors.primary + 'E6' },
-              hasCheckedIn && { backgroundColor: colors.success + 'CC' },
+              hasCheckedIn && !hasCheckedOut && { backgroundColor: '#0284C7CC' },
+              hasCheckedOut && { backgroundColor: colors.success + 'CC' },
               isCheckInOpen && !hasCheckedIn && { backgroundColor: colors.success + 'CC' },
               isLeaveLocked && !isCheckInOpen && { backgroundColor: isNightMode ? '#1E293B' : '#334155' },
               !isLeaveLocked && !isCheckInOpen && isJoined && { backgroundColor: colors.success + 'CC' },

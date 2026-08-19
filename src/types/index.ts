@@ -134,6 +134,12 @@ export interface EventParticipant {
   check_in_distance_m?: number;
   /** Who produced the check-in record: the attendee's own GPS check-in, or the organizer manually (no GPS proof). */
   check_in_method?: 'SELF_GPS' | 'ORGANIZER';
+  /** Set once the participant checks out (manual or 60m perimeter auto-leave) */
+  checked_out_at?: string;
+  check_out_latitude?: number;
+  check_out_longitude?: number;
+  check_out_distance_m?: number;
+  check_out_method?: 'SELF_GPS' | 'AUTO_PERIMETER_LEAVE' | 'ORGANIZER';
 }
 
 export interface EventInvitation {
