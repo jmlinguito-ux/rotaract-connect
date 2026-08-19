@@ -43,38 +43,25 @@ export default function ChatScreen({ route, navigation }: Props) {
   const headerHeight = useHeaderHeight();
   const isFocused = useIsFocused();
   const listRef = useRef<FlatList>(null);
-  // Whether the list is parked at the newest message. Auto-scrolling is gated on
-  // this: without it, every content-size change (a row re-measuring, a chat image
-  // finishing its load) dragged the user back down mid-scroll.
+  // In an inverted list, y=0 is the newest message at the bottom.
   const atBottom = useRef(true);
-  // True only once the conversation has settled at the newest message. Until then
-  // every layout pass (text, then async images) is pinned to the bottom regardless
-  // of atBottom — otherwise the opening scroll races image loads and lands midway.
-  const didInitialScroll = useRef(false);
-
-  // Reset when switching conversations, and end the settle window shortly after so
-  // later scrolls respect where the user actually is.
-  useEffect(() => {
-    didInitialScroll.current = false;
-    atBottom.current = true;
-    listRef.current?.scrollToEnd({ animated: false });
-    const t = setTimeout(() => { didInitialScroll.current = true; }, 600);
-    return () => clearTimeout(t);
-  }, [conversationId]);
+  const [showNewMsgPill, setShowNewMsgPill] = useState(false);
 
   const handleScroll = useCallback((e: any) => {
-    // Ignore programmatic frames during the opening settle — they would flip
-    // atBottom to false mid-scroll and defeat the pin.
-    if (!didInitialScroll.current) return;
-    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-    atBottom.current = contentSize.height - (contentOffset.y + layoutMeasurement.height) < 80;
+    const { contentOffset } = e.nativeEvent;
+    const isAtBottom = contentOffset.y < 50;
+    atBottom.current = isAtBottom;
+    if (isAtBottom) {
+      setShowNewMsgPill(false);
+    }
   }, []);
 
   useEffect(() => {
     const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const showSub = Keyboard.addListener(showEvt, () => {
-      if (!atBottom.current) return;   // don't yank someone out of the backlog
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 80);
+      if (atBottom.current) {
+        listRef.current?.scrollToOffset({ offset: 0, animated: true });
+      }
     });
     return () => { showSub.remove(); };
   }, []);
@@ -102,6 +89,8 @@ export default function ChatScreen({ route, navigation }: Props) {
     () => messagesForConversation(conversationId, user?.id),
     [messagesForConversation, conversationId, user?.id],
   );
+  // Inverted list requires newest items first at index 0.
+  const reversedMessages = useMemo(() => [...messages].reverse(), [messages]);
   const event = eventId ? events.find(e => e.id === eventId) : undefined;
   const isGroupChat = recipientId === 'ALL_PARTICIPANTS' || conversationId.includes('conv_group');
   const recipientUser = !isGroupChat ? users.find(u => u.id === recipientId || u.full_name === recipientName) : undefined;
@@ -169,17 +158,18 @@ export default function ChatScreen({ route, navigation }: Props) {
     }
   }, [isFocused, lastMsgId, conversationId, user?.id, markConversationRead]);
 
-  // Follow new messages only when already at the newest one — or when the new
-  // message is our own, since sending always implies wanting to see it.
+  // When a new message lands: if user is at the bottom or it is their own message,
+  // stay anchored at y=0; otherwise show the "New messages ↓" pill.
   useEffect(() => {
     if (!messages.length) return;
-    const settling = !didInitialScroll.current;
     const mine = messages[messages.length - 1]?.sender_id === user?.id;
-    if (!settling && !atBottom.current && !mine) return;
-    const t = setTimeout(() => listRef.current?.scrollToEnd({ animated: !settling }), 80);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lastMsgId]);
+    if (mine || atBottom.current) {
+      listRef.current?.scrollToOffset({ offset: 0, animated: true });
+      setShowNewMsgPill(false);
+    } else {
+      setShowNewMsgPill(true);
+    }
+  }, [lastMsgId, user?.id, messages]);
 
   // Members who can be @mentioned: the event's JOINED participants, minus me.
   const mentionableMembers = useMemo(() => {
@@ -236,6 +226,7 @@ export default function ChatScreen({ route, navigation }: Props) {
     setText('');
     sendTyping(false); // typing indicator disappears immediately on send
     typingThrottle.current = 0;
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
   };
 
   const handleAttachPhoto = async () => {
@@ -259,7 +250,11 @@ export default function ChatScreen({ route, navigation }: Props) {
         const path = await uploadImageAsset('chat-media', `${conversationId}/${user.id}`, {
           uri: a.uri, base64: a.base64, mimeType: a.mimeType, fileName: a.fileName,
         });
-        sendDirectMessage(conversationId, eventId, user, isGroupChat ? undefined : recipientId, recipientName, '', eventTitle || event?.title, path);
+        sendDirectMessage(
+          conversationId, eventId, user, isGroupChat ? undefined : recipientId, recipientName,
+          '', eventTitle || event?.title, path, undefined, a.width, a.height
+        );
+        listRef.current?.scrollToOffset({ offset: 0, animated: true });
       } catch (err: any) {
         Alert.alert('Upload Failed', err?.message || 'Could not send the photo. Please try again.');
       } finally {
@@ -402,29 +397,28 @@ export default function ChatScreen({ route, navigation }: Props) {
       >
         <FlatList
           ref={listRef}
-          data={messages}
+          data={reversedMessages}
+          inverted
           keyExtractor={m => m.id}
           style={{ flex: 1 }}
           contentContainerStyle={styles.messageList}
           onScroll={handleScroll}
           scrollEventThrottle={16}
-          onContentSizeChange={() => {
-            // During the opening settle, always pin to the newest message so async
-            // image heights cannot leave the view stranded midway. After that, only
-            // follow when the user is already at the bottom.
-            if (!didInitialScroll.current || atBottom.current) {
-              listRef.current?.scrollToEnd({ animated: false });
-            }
-          }}
+          ListEmptyComponent={
+            <View style={{ transform: [{ scaleY: -1 }], paddingVertical: 40, paddingHorizontal: 20 }}>
+              <Text style={[styles.empty, { color: themeColors.textMuted }]}>
+                {isGroupChat ? 'Welcome to the Event Group Chat! Send a message to start communicating.' : `No messages yet. Say hi to ${displayName}!`}
+              </Text>
+            </View>
+          }
           renderItem={({ item, index }) => {
             const isMe = item.sender_id === user.id;
             const senderUser = users.find(u => u.id === item.sender_id);
             const readCount = isMe ? (readCountFor(item) ?? 0) : 0;
             const isRead = readCount > 0;
-            // Attach the event reference to the FIRST message of a run about that
-            // event (1-on-1 only; group chats have the header banner instead).
+            // Inverted list: chronological run starts when the older message (index + 1) has a different event_id
             const msgEvent = !isGroupChat && item.event_id ? events.find(e => e.id === item.event_id) : undefined;
-            const showEventChip = !!msgEvent && (index === 0 || messages[index - 1]?.event_id !== item.event_id);
+            const showEventChip = !!msgEvent && (index === reversedMessages.length - 1 || reversedMessages[index + 1]?.event_id !== item.event_id);
             return (
               <SwipeableRow onDelete={() => deleteMessageForMe(item.id, user.id)}>
               <View>
@@ -479,7 +473,13 @@ export default function ChatScreen({ route, navigation }: Props) {
                     ) : (
                       <>
                         {item.attachment_path && item.attachment_type === 'image' && (
-                          <ChatImage path={item.attachment_path} onPress={setFullImageUri} onLongPress={() => setActionMsg(item)} />
+                          <ChatImage
+                            path={item.attachment_path}
+                            width={item.attachment_width}
+                            height={item.attachment_height}
+                            onPress={setFullImageUri}
+                            onLongPress={() => setActionMsg(item)}
+                          />
                         )}
                         {!!item.text && (
                           <Text style={[styles.messageText, { color: isMe ? '#fff' : themeColors.text }]}>{item.text}</Text>
@@ -563,11 +563,6 @@ export default function ChatScreen({ route, navigation }: Props) {
               </SwipeableRow>
             );
           }}
-          ListEmptyComponent={
-            <Text style={[styles.empty, { color: themeColors.textMuted }]}>
-              {isGroupChat ? 'Welcome to the Event Group Chat! Send a message to start communicating.' : `No messages yet. Say hi to ${displayName}!`}
-            </Text>
-          }
         />
 
         {typingLabel ? (
@@ -625,7 +620,22 @@ export default function ChatScreen({ route, navigation }: Props) {
               </View>
             )}
 
-          <View style={[styles.inputBar, { backgroundColor: themeColors.cardBg, borderTopColor: themeColors.border }]}>
+            {showNewMsgPill && (
+              <View style={styles.newMsgPillWrap} pointerEvents="box-none">
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  style={[styles.newMsgPill, { backgroundColor: themeColors.primary }]}
+                  onPress={() => {
+                    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+                    setShowNewMsgPill(false);
+                  }}
+                >
+                  <Ionicons name="arrow-down" size={13} color="#fff" />
+                  <Text style={styles.newMsgPillText}>New messages</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            <View style={[styles.inputBar, { backgroundColor: themeColors.cardBg, borderTopColor: themeColors.border }]}>
             <TouchableOpacity style={styles.attachBtn} onPress={handleAttachPhoto} disabled={uploading}>
               {uploading ? <ActivityIndicator size="small" color={themeColors.primary} /> : <Ionicons name="image" size={22} color={themeColors.primary} />}
             </TouchableOpacity>
@@ -734,20 +744,50 @@ export default function ChatScreen({ route, navigation }: Props) {
   );
 }
 
-/** Renders a chat photo, resolving a signed URL for the private chat-media bucket. */
-function ChatImage({ path, onPress, onLongPress }: { path: string; onPress: (uri: string) => void; onLongPress?: () => void }) {
+/** Renders a chat photo, resolving a signed URL with pre-reserved aspect ratio to eliminate layout shifts. */
+function ChatImage({
+  path,
+  width,
+  height,
+  onPress,
+  onLongPress,
+}: {
+  path: string;
+  width?: number;
+  height?: number;
+  onPress: (uri: string) => void;
+  onLongPress?: () => void;
+}) {
   const uri = useSignedUrl('chat-media', path);
   const { colors } = useTheme();
+
+  const MAX_WIDTH = 220;
+  const MAX_HEIGHT = 280;
+  const aspectRatio = width && height && width > 0 && height > 0 ? width / height : 4 / 3;
+  let displayWidth = MAX_WIDTH;
+  let displayHeight = displayWidth / aspectRatio;
+  if (displayHeight > MAX_HEIGHT) {
+    displayHeight = MAX_HEIGHT;
+    displayWidth = displayHeight * aspectRatio;
+  }
+
+  const imageStyle = {
+    width: displayWidth,
+    height: displayHeight,
+    borderRadius: 12,
+    marginBottom: 4,
+  };
+
   if (!uri) {
     return (
-      <View style={[styles.chatImage, styles.chatImageLoading, { backgroundColor: colors.surface }]}>
+      <View style={[imageStyle, styles.chatImageLoading, { backgroundColor: colors.surface }]}>
         <ActivityIndicator color={colors.primary} />
       </View>
     );
   }
   return (
     <TouchableOpacity activeOpacity={0.9} onPress={() => onPress(uri)} onLongPress={onLongPress} delayLongPress={300}>
-      <Image source={{ uri }} style={styles.chatImage} resizeMode="cover" />
+      <Image source={{ uri }} style={imageStyle} resizeMode="cover" />
     </TouchableOpacity>
   );
 }
@@ -813,4 +853,27 @@ const styles = StyleSheet.create({
   menuLabel: { fontSize: 15, fontWeight: '700' },
   menuSub: { fontSize: 12, marginTop: 1 },
   menuCancel: { justifyContent: 'center', marginTop: 4 },
+  newMsgPillWrap: {
+    position: 'absolute',
+    bottom: 60,
+    alignSelf: 'center',
+    zIndex: 10,
+  },
+  newMsgPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  newMsgPillText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
 });

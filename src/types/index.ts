@@ -231,6 +231,9 @@ export interface DirectMessage {
   attachment_path?: string;
   /** Attachment kind — currently only 'image'. */
   attachment_type?: string;
+  /** Pre-calculated width and height of the image attachment to eliminate layout shifts. */
+  attachment_width?: number;
+  attachment_height?: number;
   /** Set when the message was unsent ("deleted for everyone") — render a tombstone. */
   deleted_at?: string;
   /**

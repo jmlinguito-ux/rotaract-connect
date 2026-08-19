@@ -93,7 +93,7 @@ interface DataContextValue {
   getOrCreateEventGroupConversation: (eventId: string) => Conversation;
   canAccessEventGroupChat: (eventId: string, userId: string) => boolean;
   /** Returns false when the recipient does not accept inquiries from this sender. */
-  sendDirectMessage: (conversationId: string, eventId: string | undefined, senderUser: AppUser, receiverId: string | undefined, receiverName: string, text: string, eventTitle?: string, attachmentPath?: string, mentionedUserIds?: string[]) => boolean;
+  sendDirectMessage: (conversationId: string, eventId: string | undefined, senderUser: AppUser, receiverId: string | undefined, receiverName: string, text: string, eventTitle?: string, attachmentPath?: string, mentionedUserIds?: string[], attachmentWidth?: number, attachmentHeight?: number) => boolean;
   /** Re-sends a message whose persistence failed, without duplicating it. */
   retryMessage: (messageId: string) => void;
   /** Hides a message from the current user's own view only (others still see it). */
@@ -1027,7 +1027,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
    * Returns false when refused, so a caller can react; the database remains the
    * real authority either way.
    */
-  const sendDirectMessage = useCallback((conversationId: string, eventId: string | undefined, senderUser: AppUser, receiverId: string | undefined, receiverName: string, text: string, eventTitle?: string, attachmentPath?: string, mentionedUserIds?: string[]): boolean => {
+  const sendDirectMessage = useCallback((conversationId: string, eventId: string | undefined, senderUser: AppUser, receiverId: string | undefined, receiverName: string, text: string, eventTitle?: string, attachmentPath?: string, mentionedUserIds?: string[], attachmentWidth?: number, attachmentHeight?: number): boolean => {
     // Group messages carry no single recipient; event membership governs those.
     if (receiverId) {
       const recipient = users.find(u => u.id === receiverId);
@@ -1048,6 +1048,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       created_at: now(),
       attachment_path: attachmentPath,
       attachment_type: attachmentPath ? 'image' : undefined,
+      attachment_width: attachmentWidth,
+      attachment_height: attachmentHeight,
       mentioned_user_ids: mentionedUserIds?.length ? mentionedUserIds : undefined,
     };
     persistMessage(msg, true);

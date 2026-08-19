@@ -7,6 +7,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import './src/services/push';
 import { ThemeProvider } from './src/context/ThemeContext';
 import { PreferencesProvider } from './src/context/PreferencesContext';
+import { ToastProvider } from './src/context/ToastContext';
 import { AuthProvider } from './src/context/AuthContext';
 import { DataProvider } from './src/context/DataContext';
 import RootNavigator from './src/navigation/RootNavigator';
@@ -23,13 +24,15 @@ export default function App() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <ThemeProvider>
-          <PreferencesProvider>
-            <AuthProvider>
-              <DataProvider>
-                <RootNavigator />
-              </DataProvider>
-            </AuthProvider>
-          </PreferencesProvider>
+          <ToastProvider>
+            <PreferencesProvider>
+              <AuthProvider>
+                <DataProvider>
+                  <RootNavigator />
+                </DataProvider>
+              </AuthProvider>
+            </PreferencesProvider>
+          </ToastProvider>
         </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

@@ -320,17 +320,42 @@ function reportError(op: string, error: unknown) {
 export const db = {
   insertEvent: async (e: RotaractEvent): Promise<boolean> => {
     const { participating_club_ids, organizing_club_name, ...row } = e;
-    const { error } = await supabase.from('events').insert(row);
-    reportError('insertEvent', error);
-    // Children (participants, notifications, invitations) FK to events.id — if the
-    // event itself did not land, signal that so the caller skips them rather than
-    // firing a cascade of foreign-key violations.
-    if (error) return false;
-    if (participating_club_ids?.length) {
-      reportError('insertEventClubs', (await supabase.from('event_participating_clubs')
-        .insert(participating_club_ids.map(cid => ({ event_id: e.id, club_id: cid })))).error);
+    
+    // 1. Attempt atomic creation via create_event_with_clubs RPC
+    const rpcRes = await supabase.rpc('create_event_with_clubs', {
+      p_event: row,
+      p_participating_club_ids: participating_club_ids || [],
+    });
+
+    if (!rpcRes.error) {
+      return true;
     }
-    return true;
+
+    // 2. If the RPC function is missing (e.g. migration pending), fall back to sequential inserts
+    const isRpcMissing =
+      rpcRes.error.code === 'PGRST202' ||
+      rpcRes.error.code === '42883' ||
+      /function.*does not exist/i.test(rpcRes.error.message || '');
+
+    if (isRpcMissing) {
+      const { error } = await supabase.from('events').insert(row);
+      reportError('insertEvent', error);
+      if (error) return false;
+      if (participating_club_ids?.length) {
+        reportError(
+          'insertEventClubs',
+          (
+            await supabase
+              .from('event_participating_clubs')
+              .insert(participating_club_ids.map(cid => ({ event_id: e.id, club_id: cid })))
+          ).error,
+        );
+      }
+      return true;
+    }
+
+    reportError('insertEventRpc', rpcRes.error);
+    return false;
   },
   updateEvent: async (eventId: string, updates: Partial<RotaractEvent>) => {
     const { participating_club_ids, organizing_club_name, ...row } = updates;

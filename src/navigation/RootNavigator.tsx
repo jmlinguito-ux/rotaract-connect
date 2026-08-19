@@ -10,6 +10,7 @@ import { StatusBar } from 'expo-status-bar';
 import { RootStackParamList } from './types';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { useAutoCheckIn } from '../hooks/useAutoCheckIn';
 import AuthStack from './AuthStack';
 import MainTabs from './MainTabs';
 import EventDetailScreen from '../screens/events/EventDetailScreen';
@@ -94,7 +95,17 @@ export default function RootNavigator() {
         )}
       </Stack.Navigator>
       <PushNotifications />
-      {isAuthenticated && <SyncErrorBanner />}
+      {isAuthenticated && (
+        <>
+          <SyncErrorBanner />
+          <AutoCheckInWatcher />
+        </>
+      )}
     </NavigationContainer>
   );
+}
+
+function AutoCheckInWatcher() {
+  useAutoCheckIn();
+  return null;
 }
