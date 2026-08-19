@@ -7,7 +7,7 @@
 -- 1. Message Reactions Table
 CREATE TABLE IF NOT EXISTS message_reactions (
   id TEXT PRIMARY KEY,
-  message_id TEXT NOT NULL REFERENCES direct_messages(id) ON DELETE CASCADE,
+  message_id UUID NOT NULL REFERENCES direct_messages(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
   emoji TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -18,29 +18,34 @@ CREATE TABLE IF NOT EXISTS message_reactions (
 CREATE INDEX IF NOT EXISTS idx_message_reactions_message_id ON message_reactions(message_id);
 CREATE INDEX IF NOT EXISTS idx_message_reactions_user_id ON message_reactions(user_id);
 
--- RLS policies for message_reactions
+ALTER TABLE message_reactions REPLICA IDENTITY FULL;
 ALTER TABLE message_reactions ENABLE ROW LEVEL SECURITY;
 
+-- RLS policies for message_reactions
+DROP POLICY IF EXISTS "Reactions are viewable by everyone who can view the message" ON message_reactions;
 CREATE POLICY "Reactions are viewable by everyone who can view the message"
   ON message_reactions FOR SELECT
   USING (true);
 
+DROP POLICY IF EXISTS "Users can insert their own reactions" ON message_reactions;
 CREATE POLICY "Users can insert their own reactions"
   ON message_reactions FOR INSERT
   WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update their own reactions" ON message_reactions;
 CREATE POLICY "Users can update their own reactions"
   ON message_reactions FOR UPDATE
   USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can delete their own reactions" ON message_reactions;
 CREATE POLICY "Users can delete their own reactions"
   ON message_reactions FOR DELETE
   USING (auth.uid() = user_id);
 
 -- 2. Add reply fields to direct_messages
 ALTER TABLE direct_messages
-  ADD COLUMN IF NOT EXISTS reply_to_message_id TEXT,
+  ADD COLUMN IF NOT EXISTS reply_to_message_id UUID,
   ADD COLUMN IF NOT EXISTS reply_to_sender_name TEXT,
   ADD COLUMN IF NOT EXISTS reply_to_text TEXT;
 
