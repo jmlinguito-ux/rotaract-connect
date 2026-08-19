@@ -59,6 +59,32 @@ export default function ClubDetailScreen({ route }: Props) {
         <View style={[styles.header, { backgroundColor: themeColors.primary + '1A' }]}>
           <ClubLogo size={80} />
           <Text style={[styles.name, { color: themeColors.text }]}>{club.club_name}</Text>
+          
+          <View
+            style={[
+              styles.charterBadge,
+              club.club_type === 'INSTITUTION_BASED'
+                ? { backgroundColor: '#EDE9FE', borderColor: '#8B5CF6' }
+                : { backgroundColor: '#E0F2FE', borderColor: '#0284C7' },
+            ]}
+          >
+            <Ionicons
+              name={club.club_type === 'INSTITUTION_BASED' ? 'school' : 'business'}
+              size={12}
+              color={club.club_type === 'INSTITUTION_BASED' ? '#6D28D9' : '#0369A1'}
+            />
+            <Text
+              style={[
+                styles.charterBadgeText,
+                { color: club.club_type === 'INSTITUTION_BASED' ? '#6D28D9' : '#0369A1' },
+              ]}
+            >
+              {club.club_type === 'INSTITUTION_BASED'
+                ? `University-Based${club.institution_name ? ` (${club.institution_name})` : ''}`
+                : 'Community-Based Club'}
+            </Text>
+          </View>
+
           <Text style={[styles.meta, { color: themeColors.textMuted }]}>{zone?.zone_name} • {club.city}, {club.province}</Text>
           <Text style={[styles.clubId, { color: themeColors.textMuted }]}>{club.club_code}</Text>
         </View>
@@ -190,8 +216,10 @@ const styles = StyleSheet.create({
   logo: { width: 80, height: 80, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
   logoText: { color: '#fff', fontSize: 32, fontWeight: '800' },
   name: { fontSize: 22, fontWeight: '800', textAlign: 'center' },
-  meta: { fontSize: 13, marginTop: 4 },
-  clubId: { fontSize: 11, marginTop: 6, letterSpacing: 0.5 },
+  charterBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, borderWidth: 1, marginTop: 8 },
+  charterBadgeText: { fontSize: 11, fontWeight: '700' },
+  meta: { fontSize: 13, marginTop: 6 },
+  clubId: { fontSize: 11, marginTop: 4, letterSpacing: 0.5 },
   statsRow: { flexDirection: 'row', margin: 16, borderRadius: 14, borderWidth: 1, padding: 16 },
   stat: { flex: 1, alignItems: 'center' },
   statValue: { fontSize: 22, fontWeight: '800' },

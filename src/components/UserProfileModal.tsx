@@ -137,6 +137,42 @@ export function UserProfileModal({
               </View>
             )}
 
+            {/* Contact Information & Privacy Protection */}
+            {(() => {
+              const privacy = targetUser.contact_privacy ?? 'ALL_VERIFIED';
+              const isSameClub = targetUser.club_id === currentUser?.club_id;
+              const isPrivileged = currentUser?.role === 'DISTRICT_ADMIN' || currentUser?.role === 'APP_ADMIN';
+              const canViewContact = isMe || isPrivileged || privacy === 'ALL_VERIFIED' || (privacy === 'MY_CLUB_ONLY' && isSameClub);
+
+              if (canViewContact) {
+                return (
+                  <View style={[styles.contactBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                    {targetUser.email ? (
+                      <View style={styles.contactRow}>
+                        <Ionicons name="mail-outline" size={13} color={colors.textMuted} />
+                        <Text style={[styles.contactText, { color: colors.text }]}>{targetUser.email}</Text>
+                      </View>
+                    ) : null}
+                    {targetUser.contact_number ? (
+                      <View style={styles.contactRow}>
+                        <Ionicons name="call-outline" size={13} color={colors.textMuted} />
+                        <Text style={[styles.contactText, { color: colors.text }]}>{targetUser.contact_number}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                );
+              }
+
+              return (
+                <View style={[styles.contactProtectedBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                  <Ionicons name="lock-closed-outline" size={13} color={colors.textMuted} />
+                  <Text style={[styles.contactProtectedText, { color: colors.textMuted }]}>
+                    Contact info protected by member privacy settings
+                  </Text>
+                </View>
+              );
+            })()}
+
             {/* Stats Grid */}
             <View style={[styles.statsGrid, { borderTopColor: colors.border }]}>
               <View style={styles.statBox}>
@@ -213,7 +249,12 @@ const styles = StyleSheet.create({
   positionText: { fontSize: 12, color: colors.textMuted, marginTop: 2, textAlign: 'center' },
   verifiedBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#EBF9F3', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, marginTop: 8 },
   verifiedText: { fontSize: 11, fontWeight: '700', color: colors.success },
-  statsGrid: { flexDirection: 'row', justifyContent: 'space-around', width: '100%', marginTop: 18, paddingTop: 16, borderTopWidth: 1, borderTopColor: colors.border },
+  contactBox: { width: '100%', borderRadius: 10, borderWidth: 1, padding: 10, gap: 6, marginTop: 12 },
+  contactRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  contactText: { fontSize: 12, fontWeight: '600' },
+  contactProtectedBox: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%', borderRadius: 10, borderWidth: 1, padding: 10, marginTop: 12 },
+  contactProtectedText: { fontSize: 11, fontStyle: 'italic' },
+  statsGrid: { flexDirection: 'row', justifyContent: 'space-around', width: '100%', marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: colors.border },
   statBox: { alignItems: 'center' },
   statVal: { fontSize: 18, fontWeight: '800', color: colors.text },
   statLbl: { fontSize: 11, color: colors.textMuted, marginTop: 2 },

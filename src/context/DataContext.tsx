@@ -989,7 +989,29 @@ export function DataProvider({ children }: { children: ReactNode }) {
         enqueueOfflineCheckIn(participantId, updates);
       }
     });
-  }, []);
+
+    if (at.recordedBy === 'ORGANIZER') {
+      const part = participants.find(x => x.id === participantId);
+      const ev = events.find(e => e.id === part?.event_id);
+      const targetUser = users.find(u => u.id === part?.user_id);
+      const log: AuditLog = {
+        id: nextId('audit'),
+        event_id: part?.event_id,
+        target_user_id: part?.user_id,
+        target_name: targetUser?.full_name ?? 'Participant',
+        action: 'ATTENDANCE_OVERRIDE',
+        category: 'ATTENDANCE',
+        performed_by_name: 'Organizer',
+        performed_by_role: 'CLUB_PRESIDENT',
+        previous_status: 'JOINED',
+        new_status: 'ATTENDED',
+        notes: `Manual on-site attendance verification for "${ev?.title ?? 'Event'}"`,
+        created_at: now(),
+      };
+      setAuditLogs(prev => [log, ...prev]);
+      db.insertAuditLog(log);
+    }
+  }, [participants, events, users]);
 
   const checkOut = useCallback((participantId: string, at: CheckOutRecord) => {
     const updates: Partial<EventParticipant> = {

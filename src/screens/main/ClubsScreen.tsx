@@ -75,6 +75,7 @@ export default function ClubsScreen() {
 
   const [q, setQ] = useState('');
   const [zoneId, setZoneId] = useState<string | 'ALL'>('ALL');
+  const [typeFilter, setTypeFilter] = useState<'ALL' | 'COMMUNITY' | 'INSTITUTION'>('ALL');
   const [activeTab, setActiveTab] = useState<SearchTab>('CLUBS');
 
   // Add Club Modal State
@@ -105,16 +106,19 @@ export default function ClubsScreen() {
     const query = q.toLowerCase().trim();
     return clubs.filter(c => {
       if (zoneId !== 'ALL' && c.zone_id !== zoneId) return false;
+      if (typeFilter === 'COMMUNITY' && c.club_type === 'INSTITUTION_BASED') return false;
+      if (typeFilter === 'INSTITUTION' && c.club_type !== 'INSTITUTION_BASED') return false;
       if (!query) return true;
 
       const nameMatch = c.club_name.toLowerCase().includes(query);
       const cityMatch = c.city.toLowerCase().includes(query);
       const presidentMatch = c.president_name.toLowerCase().includes(query);
+      const instMatch = c.institution_name?.toLowerCase().includes(query);
       const memberMatch = users.some(u => u.club_id === c.id && u.full_name.toLowerCase().includes(query));
 
-      return nameMatch || cityMatch || presidentMatch || memberMatch;
+      return nameMatch || cityMatch || presidentMatch || instMatch || memberMatch;
     });
-  }, [clubs, users, q, zoneId]);
+  }, [clubs, users, q, zoneId, typeFilter]);
 
   // Filter Members by name, club, position, or username
   const filteredMembers = useMemo(() => {
@@ -283,11 +287,63 @@ export default function ClubsScreen() {
           style={styles.zoneScroll}
           contentContainerStyle={styles.zoneContent}
         >
-          <ZoneChip label="All" active={zoneId === 'ALL'} colors={themeColors} onPress={() => setZoneId('ALL')} />
+          <ZoneChip label="All Zones" active={zoneId === 'ALL'} colors={themeColors} onPress={() => setZoneId('ALL')} />
           {zones.map(z => (
             <ZoneChip key={z.id} label={z.zone_name} active={zoneId === z.id} colors={themeColors} onPress={() => setZoneId(z.id)} />
           ))}
         </ScrollView>
+      )}
+
+      {/* Charter Type Filter (only show for Clubs tab) */}
+      {activeTab === 'CLUBS' && (
+        <View style={styles.charterFilterRow}>
+          <TouchableOpacity
+            style={[
+              styles.charterChip,
+              {
+                backgroundColor: typeFilter === 'ALL' ? themeColors.primary : themeColors.cardBg,
+                borderColor: typeFilter === 'ALL' ? themeColors.primary : themeColors.border,
+              },
+            ]}
+            onPress={() => setTypeFilter('ALL')}
+          >
+            <Text style={[styles.charterChipText, { color: typeFilter === 'ALL' ? '#fff' : themeColors.textMuted }]}>
+              All Types
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.charterChip,
+              {
+                backgroundColor: typeFilter === 'COMMUNITY' ? themeColors.primary : themeColors.cardBg,
+                borderColor: typeFilter === 'COMMUNITY' ? themeColors.primary : themeColors.border,
+              },
+            ]}
+            onPress={() => setTypeFilter('COMMUNITY')}
+          >
+            <Ionicons name="business-outline" size={12} color={typeFilter === 'COMMUNITY' ? '#fff' : themeColors.textMuted} />
+            <Text style={[styles.charterChipText, { color: typeFilter === 'COMMUNITY' ? '#fff' : themeColors.textMuted }]}>
+              Community-Based
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.charterChip,
+              {
+                backgroundColor: typeFilter === 'INSTITUTION' ? themeColors.primary : themeColors.cardBg,
+                borderColor: typeFilter === 'INSTITUTION' ? themeColors.primary : themeColors.border,
+              },
+            ]}
+            onPress={() => setTypeFilter('INSTITUTION')}
+          >
+            <Ionicons name="school-outline" size={12} color={typeFilter === 'INSTITUTION' ? '#fff' : themeColors.textMuted} />
+            <Text style={[styles.charterChipText, { color: typeFilter === 'INSTITUTION' ? '#fff' : themeColors.textMuted }]}>
+              University-Based
+            </Text>
+          </TouchableOpacity>
+        </View>
       )}
 
       {/* Results List */}
@@ -308,8 +364,35 @@ export default function ClubsScreen() {
               >
                 <ClubLogo size={48} />
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.name, { color: themeColors.text }]}>{item.club_name}</Text>
-                  <Text style={[styles.meta, { color: themeColors.textMuted }]}>{zone?.zone_name} • {item.city}</Text>
+                  <View style={styles.clubTitleRow}>
+                    <Text style={[styles.name, { color: themeColors.text, flexShrink: 1 }]}>{item.club_name}</Text>
+                    <View
+                      style={[
+                        styles.typeBadge,
+                        item.club_type === 'INSTITUTION_BASED'
+                          ? { backgroundColor: '#EDE9FE', borderColor: '#8B5CF6' }
+                          : { backgroundColor: '#E0F2FE', borderColor: '#0284C7' },
+                      ]}
+                    >
+                      <Ionicons
+                        name={item.club_type === 'INSTITUTION_BASED' ? 'school' : 'business'}
+                        size={10}
+                        color={item.club_type === 'INSTITUTION_BASED' ? '#6D28D9' : '#0369A1'}
+                      />
+                      <Text
+                        style={[
+                          styles.typeBadgeText,
+                          { color: item.club_type === 'INSTITUTION_BASED' ? '#6D28D9' : '#0369A1' },
+                        ]}
+                      >
+                        {item.club_type === 'INSTITUTION_BASED' ? 'University' : 'Community'}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={[styles.meta, { color: themeColors.textMuted }]}>
+                    {zone?.zone_name} • {item.city}
+                    {item.institution_name ? ` • ${item.institution_name}` : ''}
+                  </Text>
                   <Text style={[styles.metaSmall, { color: themeColors.textMuted }]}>{memberCount} members • President: {item.president_name}</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={themeColors.textMuted} />
@@ -678,12 +761,18 @@ const styles = StyleSheet.create({
   },
   segmentText: { fontSize: 12, fontWeight: '700' },
   badgeDot: { width: 8, height: 8, borderRadius: 4, position: 'absolute', top: 6, right: 6 },
-  zoneScroll: { flexGrow: 0, flexShrink: 0, marginTop: 10, marginBottom: 10 },
+  zoneScroll: { flexGrow: 0, flexShrink: 0, marginTop: 10, marginBottom: 6 },
   zoneContent: { paddingHorizontal: 16, gap: 8, alignItems: 'center' },
+  charterFilterRow: { flexDirection: 'row', gap: 6, marginHorizontal: 16, marginBottom: 8 },
+  charterChip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, borderWidth: 1 },
+  charterChipText: { fontSize: 11, fontWeight: '700' },
   chip: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16, borderWidth: 1 },
   chipText: { fontSize: 12, fontWeight: '700' },
-  list: { padding: 16, paddingTop: 12, paddingBottom: 40 },
+  list: { padding: 16, paddingTop: 6, paddingBottom: 40 },
   card: { borderRadius: 14, padding: 14, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  clubTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
+  typeBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, borderWidth: 1 },
+  typeBadgeText: { fontSize: 10, fontWeight: '700' },
   logo: { width: 48, height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   logoText: { color: '#fff', fontSize: 18, fontWeight: '800' },
   avatarLogo: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },

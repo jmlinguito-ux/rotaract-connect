@@ -343,6 +343,78 @@ export default function SettingsScreen({ navigation }: Props) {
           <View style={cardStyle}>
             <View style={styles.row}>
               <View style={[styles.rowIconWrap, { backgroundColor: themeColors.primary + '1A' }]}>
+                <Ionicons name="shield-outline" size={18} color={themeColors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={titleStyle}>Contact Info Privacy</Text>
+                <Text style={subStyle}>
+                  {user.contact_privacy === 'ONLY_ME'
+                    ? 'Hidden from all other members'
+                    : user.contact_privacy === 'MY_CLUB_ONLY'
+                    ? 'Visible only to your club members'
+                    : 'Visible to all verified Rotaractors'}
+                </Text>
+              </View>
+            </View>
+
+            {/* 3-Way Privacy Segment */}
+            <View style={[styles.privacySegmentWrap, { backgroundColor: themeColors.surface }]}>
+              <TouchableOpacity
+                style={[
+                  styles.privacySegmentBtn,
+                  (user.contact_privacy === 'ALL_VERIFIED' || !user.contact_privacy) && { backgroundColor: themeColors.primary },
+                ]}
+                onPress={() => updateProfile({ contact_privacy: 'ALL_VERIFIED' })}
+              >
+                <Text
+                  style={[
+                    styles.privacySegmentText,
+                    { color: (user.contact_privacy === 'ALL_VERIFIED' || !user.contact_privacy) ? '#fff' : themeColors.textMuted },
+                  ]}
+                >
+                  All Verified
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.privacySegmentBtn,
+                  user.contact_privacy === 'MY_CLUB_ONLY' && { backgroundColor: themeColors.primary },
+                ]}
+                onPress={() => updateProfile({ contact_privacy: 'MY_CLUB_ONLY' })}
+              >
+                <Text
+                  style={[
+                    styles.privacySegmentText,
+                    { color: user.contact_privacy === 'MY_CLUB_ONLY' ? '#fff' : themeColors.textMuted },
+                  ]}
+                >
+                  Club Only
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.privacySegmentBtn,
+                  user.contact_privacy === 'ONLY_ME' && { backgroundColor: themeColors.primary },
+                ]}
+                onPress={() => updateProfile({ contact_privacy: 'ONLY_ME' })}
+              >
+                <Text
+                  style={[
+                    styles.privacySegmentText,
+                    { color: user.contact_privacy === 'ONLY_ME' ? '#fff' : themeColors.textMuted },
+                  ]}
+                >
+                  Only Me
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={dividerStyle} />
+
+            <View style={styles.row}>
+              <View style={[styles.rowIconWrap, { backgroundColor: themeColors.primary + '1A' }]}>
                 <Ionicons name="chatbubbles-outline" size={18} color={themeColors.primary} />
               </View>
               <View style={{ flex: 1 }}>
@@ -782,6 +854,9 @@ const styles = StyleSheet.create({
   radiusPills: { flexDirection: 'row', gap: 8, marginTop: 12, marginLeft: 44 },
   radiusPill: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 12, borderWidth: 1 },
   radiusText: { fontSize: 12, fontWeight: '700' },
+  privacySegmentWrap: { flexDirection: 'row', gap: 6, padding: 4, borderRadius: 10, marginLeft: 46, marginBottom: 12 },
+  privacySegmentBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 6, borderRadius: 8 },
+  privacySegmentText: { fontSize: 11, fontWeight: '700' },
   saveBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 14, borderRadius: 12, marginTop: 8 },
   saveBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },

@@ -45,6 +45,8 @@ export interface Zone {
   zone_name: string;
 }
 
+export type ClubType = 'COMMUNITY_BASED' | 'INSTITUTION_BASED';
+
 export interface Club {
   id: string;
   club_name: string;
@@ -58,6 +60,8 @@ export interface Club {
   member_count: number;
   president_id: string;
   president_name: string;
+  club_type?: ClubType;
+  institution_name?: string;
 }
 
 export interface RotaractEvent {
@@ -117,6 +121,10 @@ export interface AppUser {
    * what OTHER people may do — a device-local flag could not enforce anything.
    */
   allow_direct_inquiries?: boolean;
+  /**
+   * Controls visibility of email and contact number across the directory.
+   */
+  contact_privacy?: 'ALL_VERIFIED' | 'MY_CLUB_ONLY' | 'ONLY_ME';
 }
 
 export interface EventParticipant {
