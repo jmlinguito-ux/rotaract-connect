@@ -23,12 +23,19 @@ export const DEFAULT_LOCATION: LocationValue = {
   city: '',
 };
 
+export function isDistrict3800Region(lat: number, lng: number): boolean {
+  // District 3800 approximate bounding box: Metro Manila and Rizal (lat 14.3 to 14.9, lng 120.9 to 121.5)
+  return lat >= 14.3 && lat <= 14.9 && lng >= 120.9 && lng <= 121.5;
+}
+
 /**
  * Confirms what the venue search (or map pin) resolved to. Address and city are
  * filled from that selection rather than typed, so they're shown, not edited.
  */
 export function LocationSummary({ value }: { value: LocationValue }) {
   if (!value.address && !value.city) return null;
+
+  const isD3800 = isDistrict3800Region(value.latitude, value.longitude);
 
   return (
     <View style={styles.summary}>
@@ -40,6 +47,14 @@ export function LocationSummary({ value }: { value: LocationValue }) {
         <Text style={styles.coordsText}>
           {value.latitude.toFixed(5)}, {value.longitude.toFixed(5)}
         </Text>
+        <View style={styles.territoryRow}>
+          <View style={[styles.territoryBadge, { backgroundColor: isD3800 ? '#EBF9F3' : '#FFF4E5' }]}>
+            <Ionicons name={isD3800 ? 'shield-checkmark' : 'globe-outline'} size={11} color={isD3800 ? '#10B981' : '#F59E0B'} />
+            <Text style={[styles.territoryBadgeText, { color: isD3800 ? '#10B981' : '#F59E0B' }]}>
+              {isD3800 ? 'District 3800 Venue (NCR / Rizal)' : 'Out-of-District Venue (500m Check-In Window)'}
+            </Text>
+          </View>
+        </View>
       </View>
     </View>
   );
@@ -58,7 +73,7 @@ export const styles = StyleSheet.create({
   },
   summary: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 8,
     marginTop: 10,
     paddingHorizontal: 12,
@@ -70,6 +85,9 @@ export const styles = StyleSheet.create({
   },
   summaryTitle: { fontSize: 13, fontWeight: '600', color: colors.text },
   coordsText: { fontSize: 11, color: colors.textMuted, fontVariant: ['tabular-nums'], marginTop: 2 },
+  territoryRow: { marginTop: 6, flexDirection: 'row' },
+  territoryBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  territoryBadgeText: { fontSize: 10, fontWeight: '700' },
 
   searchRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
   searchInput: { flex: 1 },

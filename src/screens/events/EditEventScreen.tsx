@@ -23,7 +23,7 @@ export default function EditEventScreen({ route, navigation }: Props) {
   const { eventId } = route.params;
   const { user } = useAuth();
   const { colors: themeColors, isNightMode } = useTheme();
-  const { events, updateEvent, users, participantsFor, resetEventApprovals } = useData();
+  const { events, updateEvent, users, clubs, participantsFor, resetEventApprovals } = useData();
 
   const event = events.find(e => e.id === eventId);
 
@@ -34,6 +34,12 @@ export default function EditEventScreen({ route, navigation }: Props) {
   const [coOrgQuery, setCoOrgQuery] = useState('');
   const [isCoOrgFocused, setIsCoOrgFocused] = useState(false);
   const coOrgInputRef = useRef<TextInput>(null);
+
+  const [selectedPartnerClubs, setSelectedPartnerClubs] = useState<string[]>(
+    event?.participating_club_ids?.filter(id => id !== event.organizing_club_id) ?? []
+  );
+  const [partnerClubQuery, setPartnerClubQuery] = useState('');
+  const [isPartnerClubFocused, setIsPartnerClubFocused] = useState(false);
   const [location, setLocation] = useState<LocationValue>({
     address: event?.address ?? '',
     city: event?.city ?? '',
@@ -124,11 +130,21 @@ export default function EditEventScreen({ route, navigation }: Props) {
   /** Build the update payload from current form state, respecting field locks. */
   const buildUpdates = useCallback(() => {
     const requested = parseInt(maxP, 10) || 50;
+    const coOrgClubIds = selectedCoOrganizers
+      .map(id => users.find(u => u.id === id)?.club_id)
+      .filter((id): id is string => Boolean(id));
+    const involvedClubIds = Array.from(new Set([
+      event?.organizing_club_id ?? user?.club_id ?? '',
+      ...selectedPartnerClubs,
+      ...coOrgClubIds,
+    ])).filter(Boolean);
+
     return {
       title,
       description: desc,
       event_type: type,
       co_organizer_user_ids: selectedCoOrganizers,
+      participating_club_ids: involvedClubIds,
       latitude: policy.lockedFields.location ? event.latitude : location.latitude,
       longitude: policy.lockedFields.location ? event.longitude : location.longitude,
       address: policy.lockedFields.location ? event.address : location.address,
@@ -144,7 +160,7 @@ export default function EditEventScreen({ route, navigation }: Props) {
       areas_of_focus: isServiceProject ? areasOfFocus : undefined,
       lock_leave_cutoff_hours: lockCutoffHours,
     };
-  }, [title, desc, type, selectedCoOrganizers, location, maxP, requiresApproval, allowInvites, visibility, coverPhoto, contactNumber, contactEmail, areasOfFocus, lockCutoffHours, isServiceProject, policy, event]);
+  }, [title, desc, type, selectedCoOrganizers, selectedPartnerClubs, location, maxP, requiresApproval, allowInvites, visibility, coverPhoto, contactNumber, contactEmail, areasOfFocus, lockCutoffHours, isServiceProject, policy, event, users, user]);
 
   /** Commit the given updates (or current form state) and navigate back. */
   const performSave = useCallback((updates: Partial<RotaractEvent>) => {
@@ -354,6 +370,69 @@ export default function EditEventScreen({ route, navigation }: Props) {
               </View>
             </View>
           )}
+
+          {/* Partner / Co-Hosting Clubs */}
+          <Text style={[styles.label, { color: themeColors.text }]}>Co-Hosting Partner Clubs (Optional)</Text>
+          <Text style={[styles.subHint, { color: themeColors.textMuted }]}>
+            Select partner clubs co-hosting this project. Their Club Presidents will be notified for joint approval.
+          </Text>
+
+          {selectedPartnerClubs.length > 0 && (
+            <View style={styles.selectedPillsRow}>
+              {selectedPartnerClubs.map(cid => {
+                const clb = clubs.find(c => c.id === cid);
+                if (!clb) return null;
+                return (
+                  <View key={cid} style={[styles.selectedPill, { backgroundColor: themeColors.surface, borderColor: themeColors.border }]}>
+                    <Text style={[styles.selectedPillText, { color: themeColors.text }]}>{clb.club_name.replace('Rotaract Club of ', '')}</Text>
+                    <TouchableOpacity onPress={() => setSelectedPartnerClubs(prev => prev.filter(id => id !== cid))}>
+                      <Ionicons name="close-circle" size={16} color={themeColors.textMuted} />
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+
+          <View style={styles.coOrgSearchWrap}>
+            <TextInput
+              style={[styles.input, styles.coOrgSearchInput, { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text }]}
+              placeholder="Search clubs to add as co-hosts..."
+              placeholderTextColor={themeColors.textMuted}
+              value={partnerClubQuery}
+              onChangeText={setPartnerClubQuery}
+              onFocus={() => setIsPartnerClubFocused(true)}
+            />
+            {isPartnerClubFocused && partnerClubQuery.trim().length > 0 && (
+              <View style={[styles.coOrgDropdown, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border, zIndex: 3 }]}>
+                {clubs
+                  .filter(c => {
+                    if (c.id === event?.organizing_club_id) return false;
+                    if (selectedPartnerClubs.includes(c.id)) return false;
+                    return c.club_name.toLowerCase().includes(partnerClubQuery.toLowerCase());
+                  })
+                  .slice(0, 5)
+                  .map(c => (
+                    <TouchableOpacity
+                      key={c.id}
+                      style={[styles.coOrgDropdownItem, { borderBottomColor: themeColors.border }]}
+                      onPress={() => {
+                        setSelectedPartnerClubs(prev => [...prev, c.id]);
+                        setPartnerClubQuery('');
+                        Keyboard.dismiss();
+                        setIsPartnerClubFocused(false);
+                      }}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.coOrgItemName, { color: themeColors.text }]}>{c.club_name}</Text>
+                        <Text style={[styles.coOrgItemSub, { color: themeColors.textMuted }]}>{c.city}, {c.province}</Text>
+                      </View>
+                      <Ionicons name="add-circle" size={18} color={themeColors.primary} />
+                    </TouchableOpacity>
+                  ))}
+              </View>
+            )}
+          </View>
 
           {policy.lockedFields.location ? (
             <View style={styles.fieldLockCard}>
@@ -610,4 +689,10 @@ const styles = StyleSheet.create({
   toggleKnobOn: { transform: [{ translateX: 18 }] },
   submitBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: colors.primary, padding: 16, borderRadius: 12, marginTop: 28 },
   submitText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  subHint: { fontSize: 12, marginBottom: 8, marginTop: -2 },
+  selectedPillsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 },
+  selectedPill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1 },
+  selectedPillText: { fontSize: 12, fontWeight: '600' },
+  coOrgSearchWrap: { marginBottom: 12 },
+  coOrgSearchInput: { height: 44, paddingHorizontal: 12 },
 });

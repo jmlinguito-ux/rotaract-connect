@@ -23,7 +23,7 @@ export default function SettingsScreen({ navigation }: Props) {
   const { user, changePassword, updateProfile, requestEmailChange, confirmEmailChange, signOut } = useAuth();
   const { clubs, participants, events, impacts, removeUser } = useData();
   const { showToast } = useToast();
-  const { isNightMode, setNightMode, colors: themeColors } = useTheme();
+  const { themeMode, setThemeMode, isNightMode, colors: themeColors } = useTheme();
   const { pushEnabled, setPushEnabled, showActiveStatus, setShowActiveStatus, highAccuracyGps, setHighAccuracyGps, autoCheckIn, setAutoCheckIn } = usePreferences();
 
   const [confirmDeleteAccountVisible, setConfirmDeleteAccountVisible] = useState(false);
@@ -144,28 +144,6 @@ export default function SettingsScreen({ navigation }: Props) {
     <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.bg }]} edges={['bottom']}>
       <ScrollView contentContainerStyle={styles.container}>
 
-        {/* 🌙 APPEARANCE & THEME */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: themeColors.primary }]}>APPEARANCE</Text>
-          <View style={cardStyle}>
-            <View style={styles.row}>
-              <View style={[styles.rowIconWrap, { backgroundColor: themeColors.primary + '1A' }]}>
-                <Ionicons name={isNightMode ? 'moon' : 'sunny'} size={18} color={themeColors.primary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={titleStyle}>Night Mode</Text>
-                <Text style={subStyle}>Switch between dark and light theme</Text>
-              </View>
-              <Switch
-                value={isNightMode}
-                onValueChange={v => setNightMode(v)}
-                trackColor={{ false: themeColors.border, true: themeColors.primary }}
-                thumbColor="#fff"
-              />
-            </View>
-          </View>
-        </View>
-
         {/* 👤 ACCOUNT & MEMBERSHIP PROFILE */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: themeColors.primary }]}>ACCOUNT & MEMBERSHIP</Text>
@@ -243,6 +221,81 @@ export default function SettingsScreen({ navigation }: Props) {
               </View>
               <Ionicons name="chevron-forward" size={16} color={themeColors.textMuted} />
             </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* 🎨 APPEARANCE & THEME */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: themeColors.primary }]}>APPEARANCE & THEME</Text>
+          <View style={cardStyle}>
+            <View style={styles.row}>
+              <View style={[styles.rowIconWrap, { backgroundColor: themeColors.primary + '1A' }]}>
+                <Ionicons name={themeMode === 'DARK' ? 'moon' : themeMode === 'LIGHT' ? 'sunny' : 'phone-portrait-outline'} size={18} color={themeColors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={titleStyle}>App Theme</Text>
+                <Text style={subStyle}>
+                  {themeMode === 'SYSTEM'
+                    ? `Match device setting (${isNightMode ? 'Dark' : 'Light'})`
+                    : themeMode === 'DARK'
+                    ? 'Always Dark Mode'
+                    : 'Always Light Mode'}
+                </Text>
+              </View>
+            </View>
+
+            <View style={[styles.privacySegmentWrap, { backgroundColor: themeColors.surface }]}>
+              <TouchableOpacity
+                style={[
+                  styles.privacySegmentBtn,
+                  themeMode === 'SYSTEM' && { backgroundColor: themeColors.primary },
+                ]}
+                onPress={() => setThemeMode('SYSTEM')}
+              >
+                <Text
+                  style={[
+                    styles.privacySegmentText,
+                    { color: themeMode === 'SYSTEM' ? '#fff' : themeColors.textMuted },
+                  ]}
+                >
+                  System
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.privacySegmentBtn,
+                  themeMode === 'LIGHT' && { backgroundColor: themeColors.primary },
+                ]}
+                onPress={() => setThemeMode('LIGHT')}
+              >
+                <Text
+                  style={[
+                    styles.privacySegmentText,
+                    { color: themeMode === 'LIGHT' ? '#fff' : themeColors.textMuted },
+                  ]}
+                >
+                  Light
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.privacySegmentBtn,
+                  themeMode === 'DARK' && { backgroundColor: themeColors.primary },
+                ]}
+                onPress={() => setThemeMode('DARK')}
+              >
+                <Text
+                  style={[
+                    styles.privacySegmentText,
+                    { color: themeMode === 'DARK' ? '#fff' : themeColors.textMuted },
+                  ]}
+                >
+                  Dark
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
 

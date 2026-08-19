@@ -5,7 +5,7 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { colors } from '../../theme/colors';
-import { AreaOfFocus, EventType, EventVisibility } from '../../types';
+import { AreaOfFocus, EventType, EventVisibility, RotaractEvent } from '../../types';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -30,7 +30,7 @@ defaultEnd.setHours(13, 0, 0, 0);
 
 export default function CreateEventScreen({ navigation }: Props) {
   const { user } = useAuth();
-  const { createEvent, users } = useData();
+  const { createEvent, users, clubs } = useData();
   const { colors: themeColors, isNightMode } = useTheme();
 
   const [title, setTitle] = useState('');
@@ -40,6 +40,10 @@ export default function CreateEventScreen({ navigation }: Props) {
   const [coOrgQuery, setCoOrgQuery] = useState('');
   const [isCoOrgFocused, setIsCoOrgFocused] = useState(false);
   const coOrgInputRef = useRef<TextInput>(null);
+
+  const [selectedPartnerClubs, setSelectedPartnerClubs] = useState<string[]>([]);
+  const [partnerClubQuery, setPartnerClubQuery] = useState('');
+  const [isPartnerClubFocused, setIsPartnerClubFocused] = useState(false);
   const [location, setLocation] = useState<LocationValue>(DEFAULT_LOCATION);
   const [areasOfFocus, setAreasOfFocus] = useState<AreaOfFocus[]>([]);
   const [coverPhoto, setCoverPhoto] = useState<string | undefined>();
@@ -68,9 +72,13 @@ export default function CreateEventScreen({ navigation }: Props) {
   const willNeedApproval = (() => {
     if (!user) return true;
     if (type === 'DISTRICT_EVENT') return !(user.role === 'DISTRICT_ADMIN' || user.role === 'APP_ADMIN');
+    const coOrgClubIds = selectedCoOrganizers
+      .map(id => users.find(u => u.id === id)?.club_id)
+      .filter((id): id is string => Boolean(id));
     const involvedClubIds = new Set([
       user.club_id,
-      ...selectedCoOrganizers.map(id => users.find(u => u.id === id)?.club_id).filter(Boolean),
+      ...selectedPartnerClubs,
+      ...coOrgClubIds,
     ]);
     return !(user.role === 'CLUB_PRESIDENT' && involvedClubIds.size === 1);
   })();
@@ -178,25 +186,29 @@ export default function CreateEventScreen({ navigation }: Props) {
     const isPresident = user.role === 'CLUB_PRESIDENT';
     const isDistrictEvent = type === 'DISTRICT_EVENT';
 
-    // Clubs pulled in by the co-organizers each need their own President's approval,
-    // so a President can only self-publish an event that involves no other club.
-    const coOrganizerClubIds = selectedCoOrganizers
+    const coOrgClubIds = selectedCoOrganizers
       .map(id => users.find(u => u.id === id)?.club_id)
-      .filter((id): id is string => !!id);
-    const involvedClubIds = [...new Set([user.club_id, ...coOrganizerClubIds])];
+      .filter((id): id is string => Boolean(id));
+    const involvedClubIds = Array.from(new Set([
+      user.club_id,
+      ...selectedPartnerClubs,
+      ...coOrgClubIds,
+    ]));
+
     const isSingleClubEvent = involvedClubIds.length === 1;
 
-    let initialStatus: 'RECRUITING' | 'PENDING_APPROVAL' = 'PENDING_APPROVAL';
+    let initialStatus: RotaractEvent['status'] = 'PENDING_APPROVAL';
+    let approvedByClubIds: string[] = [];
 
     if (isDistrictEvent) {
-      initialStatus = isDistrictAdmin ? 'RECRUITING' : 'PENDING_APPROVAL';
-    } else {
-      initialStatus = isPresident && isSingleClubEvent ? 'RECRUITING' : 'PENDING_APPROVAL';
+      initialStatus = (user.role === 'DISTRICT_ADMIN' || user.role === 'APP_ADMIN') ? 'RECRUITING' : 'PENDING_APPROVAL';
+    } else if (user.role === 'CLUB_PRESIDENT' && isSingleClubEvent) {
+      initialStatus = 'RECRUITING';
+      approvedByClubIds = [user.club_id];
+    } else if (user.role === 'CLUB_PRESIDENT') {
+      initialStatus = 'PENDING_APPROVAL';
+      approvedByClubIds = [user.club_id];
     }
-
-    // A President submitting a multi-club event has implicitly approved for their own club.
-    const approvedByClubIds =
-      !isDistrictEvent && isPresident && initialStatus === 'PENDING_APPROVAL' ? [user.club_id] : [];
 
     const created = createEvent({
       title,
@@ -213,7 +225,7 @@ export default function CreateEventScreen({ navigation }: Props) {
       organizing_club_name: user.club_name,
       organizer_user_id: user.id,
       co_organizer_user_ids: selectedCoOrganizers,
-      participating_club_ids: [],
+      participating_club_ids: involvedClubIds,
       max_participants: parseInt(maxP, 10) || 50,
       // District events: open to all verified members, no join approval, and the
       // whole district is invited on publish — so these are forced, not user-set.
@@ -421,6 +433,69 @@ export default function CreateEventScreen({ navigation }: Props) {
               </View>
             </View>
           )}
+
+          {/* Partner / Co-Hosting Clubs */}
+          <Text style={[styles.label, { color: themeColors.text }]}>Co-Hosting Partner Clubs (Optional)</Text>
+          <Text style={[styles.subHint, { color: themeColors.textMuted }]}>
+            Select partner clubs co-hosting this project. Their Club Presidents will be notified for joint approval.
+          </Text>
+
+          {selectedPartnerClubs.length > 0 && (
+            <View style={styles.selectedPillsRow}>
+              {selectedPartnerClubs.map(cid => {
+                const clb = clubs.find(c => c.id === cid);
+                if (!clb) return null;
+                return (
+                  <View key={cid} style={[styles.selectedPill, { backgroundColor: themeColors.surface, borderColor: themeColors.border }]}>
+                    <Text style={[styles.selectedPillText, { color: themeColors.text }]}>{clb.club_name.replace('Rotaract Club of ', '')}</Text>
+                    <TouchableOpacity onPress={() => setSelectedPartnerClubs(prev => prev.filter(id => id !== cid))}>
+                      <Ionicons name="close-circle" size={16} color={themeColors.textMuted} />
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+
+          <View style={styles.coOrgSearchWrap}>
+            <TextInput
+              style={[styles.input, styles.coOrgSearchInput, { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text }]}
+              placeholder="Search clubs to add as co-hosts..."
+              placeholderTextColor={themeColors.textMuted}
+              value={partnerClubQuery}
+              onChangeText={setPartnerClubQuery}
+              onFocus={() => setIsPartnerClubFocused(true)}
+            />
+            {isPartnerClubFocused && partnerClubQuery.trim().length > 0 && (
+              <View style={[styles.coOrgDropdown, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border, zIndex: 3 }]}>
+                {clubs
+                  .filter(c => {
+                    if (c.id === user?.club_id) return false;
+                    if (selectedPartnerClubs.includes(c.id)) return false;
+                    return c.club_name.toLowerCase().includes(partnerClubQuery.toLowerCase());
+                  })
+                  .slice(0, 5)
+                  .map(c => (
+                    <TouchableOpacity
+                      key={c.id}
+                      style={[styles.coOrgDropdownItem, { borderBottomColor: themeColors.border }]}
+                      onPress={() => {
+                        setSelectedPartnerClubs(prev => [...prev, c.id]);
+                        setPartnerClubQuery('');
+                        Keyboard.dismiss();
+                        setIsPartnerClubFocused(false);
+                      }}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.coOrgItemName, { color: themeColors.text }]}>{c.club_name}</Text>
+                        <Text style={[styles.coOrgItemSub, { color: themeColors.textMuted }]}>{c.city}, {c.province}</Text>
+                      </View>
+                      <Ionicons name="add-circle" size={18} color={themeColors.primary} />
+                    </TouchableOpacity>
+                  ))}
+              </View>
+            )}
+          </View>
 
           {/* Date Selector Input Box */}
           <Text style={[styles.label, { color: themeColors.text }]}>Date</Text>
@@ -734,6 +809,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12,
   },
+  subHint: { fontSize: 12, marginBottom: 8, marginTop: -2 },
+  selectedPillsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 },
+  selectedPill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1 },
+  selectedPillText: { fontSize: 12, fontWeight: '600' },
+  coOrgSearchWrap: { marginBottom: 12 },
+  coOrgSearchInput: { height: 44, paddingHorizontal: 12 },
   pickerContainer: { backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, marginTop: 10, padding: 12, overflow: 'hidden' },
   pickerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, paddingHorizontal: 4 },
   pickerHeaderTitle: { fontSize: 13, fontWeight: '700', color: colors.text },
