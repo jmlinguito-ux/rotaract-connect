@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
@@ -70,6 +70,63 @@ export default function ActivityPortfolioScreen({ route, navigation }: Props) {
 
   const displayList = filter === 'ATTENDED' ? attendedEventsList : filter === 'JOINED' ? allEventsList : organizedEventsList;
 
+  const totalHours = stats.hours;
+  const milestoneInfo = useMemo(() => {
+    if (totalHours >= 100) {
+      return {
+        tier: 'Diamond Rotary Fellow',
+        icon: '💎',
+        color: '#3B82F6',
+        nextTier: null,
+        nextTarget: 100,
+        progress: 1,
+        remaining: 0,
+      };
+    }
+    if (totalHours >= 50) {
+      return {
+        tier: 'Gold Humanitarian',
+        icon: '🥇',
+        color: '#EAB308',
+        nextTier: 'Diamond Rotary Fellow',
+        nextTarget: 100,
+        progress: totalHours / 100,
+        remaining: 100 - totalHours,
+      };
+    }
+    if (totalHours >= 25) {
+      return {
+        tier: 'Silver Champion',
+        icon: '🥈',
+        color: '#94A3B8',
+        nextTier: 'Gold Humanitarian',
+        nextTarget: 50,
+        progress: totalHours / 50,
+        remaining: 50 - totalHours,
+      };
+    }
+    if (totalHours >= 10) {
+      return {
+        tier: 'Bronze Volunteer',
+        icon: '🥉',
+        color: '#D97706',
+        nextTier: 'Silver Champion',
+        nextTarget: 25,
+        progress: totalHours / 25,
+        remaining: 25 - totalHours,
+      };
+    }
+    return {
+      tier: 'Aspiring Volunteer',
+      icon: '🌟',
+      color: '#10B981',
+      nextTier: 'Bronze Volunteer',
+      nextTarget: 10,
+      progress: totalHours / 10,
+      remaining: 10 - totalHours,
+    };
+  }, [totalHours]);
+
   const badges = [
     { title: 'Verified Rotaractor', icon: 'shield-checkmark', color: themeColors.success, desc: 'Official active status verified' },
     { title: 'Service Leader', icon: 'hands-helping', isFontAwesome: true, color: themeColors.primary, desc: `${stats.service} Service Projects completed` },
@@ -100,6 +157,48 @@ export default function ActivityPortfolioScreen({ route, navigation }: Props) {
             <Ionicons name="share-outline" size={15} color="#fff" />
             <Text style={styles.exportTranscriptBtnText}>Export Service Transcript</Text>
           </TouchableOpacity>
+        </View>
+
+        {/* 🌟 Volunteer Milestone Progression HUD */}
+        <View style={[styles.milestoneCard, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}>
+          <View style={styles.milestoneHeader}>
+            <View style={[styles.milestoneIconWrap, { backgroundColor: milestoneInfo.color + '20' }]}>
+              <Text style={styles.milestoneEmoji}>{milestoneInfo.icon}</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={styles.milestoneTierRow}>
+                <Text style={[styles.milestoneTier, { color: themeColors.text }]}>{milestoneInfo.tier}</Text>
+                <View style={[styles.hoursPill, { backgroundColor: themeColors.primary + '18' }]}>
+                  <Text style={[styles.hoursPillText, { color: themeColors.primary }]}>{totalHours} Hours</Text>
+                </View>
+              </View>
+              <Text style={[styles.milestoneSub, { color: themeColors.textMuted }]}>
+                {milestoneInfo.nextTier
+                  ? `${milestoneInfo.remaining}h remaining until ${milestoneInfo.nextTier}`
+                  : 'Highest volunteer distinction unlocked!'}
+              </Text>
+            </View>
+          </View>
+
+          {/* Linear Progress Bar */}
+          <View style={[styles.progressBarTrack, { backgroundColor: themeColors.surface }]}>
+            <View
+              style={[
+                styles.progressBarFill,
+                {
+                  backgroundColor: milestoneInfo.color,
+                  width: `${Math.min(100, Math.round(milestoneInfo.progress * 100))}%`,
+                },
+              ]}
+            />
+          </View>
+          <View style={styles.progressLabelsRow}>
+            <Text style={[styles.progressLabel, { color: themeColors.textMuted }]}>0 hrs</Text>
+            <Text style={[styles.progressLabelBold, { color: milestoneInfo.color }]}>
+              {Math.min(100, Math.round(milestoneInfo.progress * 100))}%
+            </Text>
+            <Text style={[styles.progressLabel, { color: themeColors.textMuted }]}>{milestoneInfo.nextTarget} hrs</Text>
+          </View>
         </View>
 
         <View style={styles.statsGrid}>
@@ -293,6 +392,20 @@ const styles = StyleSheet.create({
   statusText: { fontSize: 12, fontWeight: '700' },
   exportTranscriptBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 12, marginTop: 12 },
   exportTranscriptBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  milestoneCard: { padding: 16, borderRadius: 16, borderWidth: 1, marginBottom: 16 },
+  milestoneHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
+  milestoneIconWrap: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  milestoneEmoji: { fontSize: 22 },
+  milestoneTierRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  milestoneTier: { fontSize: 15, fontWeight: '800' },
+  hoursPill: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
+  hoursPillText: { fontSize: 11, fontWeight: '800' },
+  milestoneSub: { fontSize: 12, marginTop: 2 },
+  progressBarTrack: { height: 8, borderRadius: 4, overflow: 'hidden', marginBottom: 6 },
+  progressBarFill: { height: '100%', borderRadius: 4 },
+  progressLabelsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  progressLabel: { fontSize: 10, fontWeight: '600' },
+  progressLabelBold: { fontSize: 11, fontWeight: '800' },
   statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
   statBox: { width: '48%', padding: 14, borderRadius: 14, borderWidth: 1, alignItems: 'center' },
   statVal: { fontSize: 22, fontWeight: '800', marginTop: 4 },

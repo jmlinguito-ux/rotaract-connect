@@ -27,6 +27,9 @@ import RotaryWheel from '../../components/RotaryWheel';
 import ClubLogo from '../../components/ClubLogo';
 import { VerifiedName } from '../../components/VerifiedCheck';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
+import { callNumber, sendEmail } from '../../utils/contactLinks';
+import { openNavigationApp } from '../../utils/navigationLauncher';
+import { useToast } from '../../context/ToastContext';
 
 type SearchTab = 'CLUBS' | 'MEMBERS' | 'REQUESTS';
 
@@ -68,6 +71,7 @@ export default function ClubsScreen() {
   const { user } = useAuth();
   const { clubs, users, getOrCreateConversation, addClub, applicationsForRole, removeUser } = useData();
   const { colors: themeColors } = useTheme();
+  const { showToast } = useToast();
   const refreshControl = useAppRefreshControl();
 
   const isAppAdmin = user?.role === 'APP_ADMIN';
@@ -357,6 +361,7 @@ export default function ClubsScreen() {
           renderItem={({ item }) => {
             const zone = zones.find(z => z.id === item.zone_id);
             const memberCount = users.filter(u => u.club_id === item.id).length || item.member_count;
+            const presUser = users.find(u => u.id === item.president_id || (u.club_id === item.id && u.role === 'CLUB_PRESIDENT'));
             return (
               <TouchableOpacity
                 style={[styles.card, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}
@@ -394,6 +399,58 @@ export default function ClubsScreen() {
                     {item.institution_name ? ` • ${item.institution_name}` : ''}
                   </Text>
                   <Text style={[styles.metaSmall, { color: themeColors.textMuted }]}>{memberCount} members • President: {item.president_name}</Text>
+
+                  {/* Leadership Quick Actions Row */}
+                  <View style={styles.quickActionRow}>
+                    <TouchableOpacity
+                      style={[styles.quickActionBtn, { backgroundColor: themeColors.surface, borderColor: themeColors.border }]}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        if (presUser?.contact_number) {
+                          callNumber(presUser.contact_number);
+                        } else {
+                          showToast({
+                            type: 'info',
+                            title: 'Contact Unlisted',
+                            message: 'President phone number is not publicly listed.',
+                          });
+                        }
+                      }}
+                    >
+                      <Ionicons name="call-outline" size={12} color={themeColors.primary} />
+                      <Text style={[styles.quickActionText, { color: themeColors.primary }]}>Call</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.quickActionBtn, { backgroundColor: themeColors.surface, borderColor: themeColors.border }]}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        if (presUser?.email) {
+                          sendEmail(presUser.email);
+                        } else {
+                          showToast({
+                            type: 'info',
+                            title: 'Email Unlisted',
+                            message: 'Club email address is not publicly listed.',
+                          });
+                        }
+                      }}
+                    >
+                      <Ionicons name="mail-outline" size={12} color={themeColors.primary} />
+                      <Text style={[styles.quickActionText, { color: themeColors.primary }]}>Email</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.quickActionBtn, { backgroundColor: themeColors.surface, borderColor: themeColors.border }]}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        openNavigationApp(item.latitude, item.longitude, item.club_name, `${item.city}, ${item.province}`);
+                      }}
+                    >
+                      <Ionicons name="navigate-outline" size={12} color={themeColors.primary} />
+                      <Text style={[styles.quickActionText, { color: themeColors.primary }]}>Venue</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={themeColors.textMuted} />
               </TouchableOpacity>
@@ -780,6 +837,9 @@ const styles = StyleSheet.create({
   name: { fontSize: 15, fontWeight: '700' },
   meta: { fontSize: 12, marginTop: 1 },
   metaSmall: { fontSize: 11, marginTop: 2 },
+  quickActionRow: { flexDirection: 'row', gap: 6, marginTop: 8 },
+  quickActionBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, borderWidth: 1 },
+  quickActionText: { fontSize: 10, fontWeight: '700' },
   statusPill: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, marginTop: 4 },
   statusText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
   chatIconBtn: { width: 36, height: 36, borderRadius: 18, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
