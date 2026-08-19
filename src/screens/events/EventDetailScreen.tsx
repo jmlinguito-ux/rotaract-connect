@@ -20,6 +20,7 @@ import VerifiedCheck from '../../components/VerifiedCheck';
 import { BottomSheet } from '../../components/BottomSheet';
 import { callNumber, sendEmail, openMaps } from '../../utils/contactLinks';
 import { openNavigationApp } from '../../utils/navigationLauncher';
+import { exportEventToCalendar } from '../../utils/calendarExport';
 import { AppUser } from '../../types';
 import { areaOfFocusIcon, areaOfFocusLabel } from '../../data/areasOfFocus';
 import { formatTime, formatDate } from '../../utils/timeFormat';
@@ -923,6 +924,13 @@ export default function EventDetailScreen({ route, navigation }: Props) {
               icon="time-outline"
               text={`${formatTime(start)} — ${formatTime(end)}`}
             />
+            <TouchableOpacity
+              style={[styles.directionsBtn, { backgroundColor: themeColors.primary + '15', borderColor: themeColors.primary, marginTop: 6 }]}
+              onPress={() => exportEventToCalendar(event)}
+            >
+              <Ionicons name="calendar" size={14} color={themeColors.primary} />
+              <Text style={[styles.directionsBtnText, { color: themeColors.primary }]}>Add to Calendar (.ics)</Text>
+            </TouchableOpacity>
           </Section>
 
           <Section title="Where">

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { AppState, View, Text, FlatList, StyleSheet, TextInput, TouchableOpacity, Platform, Image, Alert, ActivityIndicator, Keyboard, KeyboardAvoidingView } from 'react-native';
+import { AppState, View, Text, FlatList, StyleSheet, TextInput, TouchableOpacity, Platform, Image, Alert, ActivityIndicator, Keyboard, KeyboardAvoidingView, Clipboard } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useIsFocused } from '@react-navigation/native';
@@ -21,6 +21,7 @@ import { useSignedUrl } from '../../hooks/useSignedUrl';
 import { uploadImageAsset } from '../../services/storage';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { canMessageUser, inquiryBlockedMessage } from '../../utils/messaging';
+import { useToast } from '../../context/ToastContext';
 import RotaractNotifications from '../../../modules/rotaract-notifications';
 import { formatTime } from '../../utils/timeFormat';
 import { DirectMessage } from '../../types';
@@ -39,6 +40,7 @@ export default function ChatScreen({ route, navigation }: Props) {
     getOrCreateConversation, markConversationRead, readCursorsFor,
   } = useData();
   const { colors: themeColors } = useTheme();
+  const { showToast } = useToast();
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
   const isFocused = useIsFocused();
@@ -471,7 +473,11 @@ export default function ChatScreen({ route, navigation }: Props) {
                         </Text>
                       </View>
                     ) : (
-                      <>
+                      <TouchableOpacity
+                        activeOpacity={0.85}
+                        onLongPress={() => setActionMsg(item)}
+                        delayLongPress={250}
+                      >
                         {item.attachment_path && item.attachment_type === 'image' && (
                           <ChatImage
                             path={item.attachment_path}
@@ -484,7 +490,7 @@ export default function ChatScreen({ route, navigation }: Props) {
                         {!!item.text && (
                           <Text style={[styles.messageText, { color: isMe ? '#fff' : themeColors.text }]}>{item.text}</Text>
                         )}
-                      </>
+                      </TouchableOpacity>
                     )}
 
                     {/* The meta row (time + ticks) is also a toggle target for the
@@ -666,7 +672,31 @@ export default function ChatScreen({ route, navigation }: Props) {
         onClose={() => setActionMsg(null)}
         cardStyle={[styles.menuCard, { backgroundColor: themeColors.cardBg }]}
       >
-        <Text style={[styles.menuTitle, { color: themeColors.textMuted }]}>Message options</Text>
+        <Text style={[styles.menuTitle, { color: themeColors.textMuted }]}>Message Options</Text>
+        
+        {actionMsg && !!actionMsg.text && !actionMsg.deleted_at && (
+          <TouchableOpacity
+            style={styles.menuRow}
+            onPress={() => {
+              if (actionMsg?.text) {
+                Clipboard.setString(actionMsg.text);
+                setActionMsg(null);
+                showToast({
+                  type: 'success',
+                  title: 'Copied',
+                  message: 'Message copied to clipboard',
+                });
+              }
+            }}
+          >
+            <Ionicons name="copy-outline" size={20} color={themeColors.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.menuLabel, { color: themeColors.text }]}>Copy Text</Text>
+              <Text style={[styles.menuSub, { color: themeColors.textMuted }]}>Copy message content to clipboard</Text>
+            </View>
+          </TouchableOpacity>
+        )}
+
         {actionMsg && actionMsg.sender_id === user.id && !actionMsg.deleted_at && (
           <TouchableOpacity
             style={styles.menuRow}

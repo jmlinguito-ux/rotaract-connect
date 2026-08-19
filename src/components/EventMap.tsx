@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Platform, StyleProp, StyleSheet, View, ViewStyle } from 'react-native';
+import { Platform, StyleProp, StyleSheet, View, ViewStyle, TouchableOpacity } from 'react-native';
 import MapView, { Marker, Circle, Region } from 'react-native-maps';
 import { useIsFocused } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -131,33 +131,54 @@ export function EventMap({ events, userCoords, style, interactive = false, showA
     return <View style={[styles.map, style, { backgroundColor: isNightMode ? '#1E293B' : '#E2E8F0' }]} />;
   }
 
+  const handleCenterUser = () => {
+    if (!userCoords || !mapRef.current) return;
+    mapRef.current.animateToRegion(
+      {
+        latitude: userCoords.latitude,
+        longitude: userCoords.longitude,
+        latitudeDelta: 0.025,
+        longitudeDelta: 0.025,
+      },
+      600,
+    );
+  };
+
   return (
-    <MapView
-      ref={mapRef}
-      style={[styles.map, style]}
-      initialRegion={region}
-      userInterfaceStyle={isNightMode ? 'dark' : 'light'}
-      customMapStyle={isNightMode ? darkMapStyle : lightMapStyle}
-      // Pan + zoom work directly in the container now — no need to open fullscreen.
-      scrollEnabled
-      zoomEnabled
-      rotateEnabled={interactive}
-      pitchEnabled={interactive}
-      toolbarEnabled={false}
-      showsUserLocation={!!userCoords}
-      showsMyLocationButton={!!userCoords}
-      onLayout={e => {
-        const { width, height } = e.nativeEvent.layout;
-        hasSize.current = width > 0 && height > 0;
-      }}
-      onMapReady={() => {
-        isMapReady.current = true;
-        lastAnimated.current = region;
-      }}
-      onRegionChangeComplete={(_r, details) => {
-        if (details?.isGesture) userInteracted.current = true;
-      }}
-    >
+    <View style={[styles.container, style]}>
+      <MapView
+        ref={mapRef}
+        style={styles.map}
+        initialRegion={region}
+        customMapStyle={isNightMode ? darkMapStyle : lightMapStyle}
+        showsUserLocation={!!userCoords}
+        showsMyLocationButton={false}
+        showsCompass={interactive}
+        scrollEnabled={true}
+        zoomEnabled={true}
+        pitchEnabled={interactive}
+        rotateEnabled={interactive}
+        onPanDrag={() => {
+          userInteracted.current = true;
+        }}
+        onMapReady={() => {
+          isMapReady.current = true;
+          if (hasSize.current && mapRef.current && !userInteracted.current) {
+            lastAnimated.current = region;
+            mapRef.current.animateToRegion(region, 400);
+          }
+        }}
+        onLayout={() => {
+          hasSize.current = true;
+          if (isMapReady.current && mapRef.current && !userInteracted.current) {
+            lastAnimated.current = region;
+            mapRef.current.animateToRegion(region, 400);
+          }
+        }}
+        onRegionChangeComplete={(_r, details) => {
+          if (details?.isGesture) userInteracted.current = true;
+        }}
+      >
       {showAreas &&
         validEvents.map(event => {
           const color = statusColor(event.status);
@@ -196,12 +217,41 @@ export function EventMap({ events, userCoords, style, interactive = false, showA
           </Marker>
         );
       })}
-    </MapView>
+      </MapView>
+
+      {userCoords && (
+        <TouchableOpacity
+          style={[styles.locateBtn, { backgroundColor: isNightMode ? '#1E293B' : '#fff', borderColor: isNightMode ? '#334155' : '#E2E8F0' }]}
+          onPress={handleCenterUser}
+          accessibilityLabel="Center on my location"
+        >
+          <Ionicons name="locate" size={18} color="#0284C7" />
+        </TouchableOpacity>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  map: { flex: 1 },
+  container: { position: 'relative', overflow: 'hidden' },
+  map: { width: '100%', height: '100%' },
+  locateBtn: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 4,
+    zIndex: 10,
+  },
   markerPin: {
     width: 28,
     height: 28,
