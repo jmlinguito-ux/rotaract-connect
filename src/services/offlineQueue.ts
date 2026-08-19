@@ -82,3 +82,17 @@ export async function drainOfflineCheckIns(
     return 0;
   }
 }
+
+/**
+ * Returns the count of pending offline check-in records.
+ */
+export async function getQueuedCheckInsCount(): Promise<number> {
+  try {
+    const raw = await AsyncStorage.getItem(OFFLINE_CHECKINS_KEY);
+    if (!raw) return 0;
+    const list: QueuedCheckIn[] = JSON.parse(raw);
+    return list.length;
+  } catch {
+    return 0;
+  }
+}

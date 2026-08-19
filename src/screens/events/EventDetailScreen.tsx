@@ -225,8 +225,15 @@ export default function EventDetailScreen({ route, navigation }: Props) {
     );
   };
 
-  const handleApprove = () => {
+  const handleConfirmApproval = () => {
     if (!user) return;
+    if (event.status !== 'PENDING_APPROVAL') {
+      Alert.alert(
+        'Already Decided',
+        `This event is already marked as "${event.status.replace(/_/g, ' ')}". Your view has been refreshed.`,
+      );
+      return;
+    }
     const result = approveEvent(eventId, user);
     if (result.published) {
       Alert.alert('Event Approved!', 'The event is now active and visible to all members.');
@@ -240,6 +247,13 @@ export default function EventDetailScreen({ route, navigation }: Props) {
 
   const handleReject = () => {
     if (!user) return;
+    if (event.status !== 'PENDING_APPROVAL') {
+      Alert.alert(
+        'Already Decided',
+        `This event is already marked as "${event.status.replace(/_/g, ' ')}".`,
+      );
+      return;
+    }
     setRejectModalVisible(true);
   };
 
@@ -1473,7 +1487,7 @@ export default function EventDetailScreen({ route, navigation }: Props) {
         confirmIcon="checkmark-circle"
         onConfirm={() => {
           setApprovalConfirmVisible(false);
-          handleApprove();
+          handleConfirmApproval();
         }}
         onCancel={() => setApprovalConfirmVisible(false)}
       />

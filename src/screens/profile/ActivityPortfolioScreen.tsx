@@ -12,6 +12,7 @@ import { RootStackParamList } from '../../navigation/types';
 import { formatDistance, punctuality } from '../../utils/checkIn';
 import { formatTime, formatDate } from '../../utils/timeFormat';
 import { EventParticipant } from '../../types';
+import { exportServiceTranscript } from '../../utils/csvExport';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ActivityPortfolio'>;
 type FilterMode = 'ATTENDED' | 'JOINED' | 'ORGANIZED';
@@ -91,6 +92,14 @@ export default function ActivityPortfolioScreen({ route, navigation }: Props) {
             <Ionicons name="ribbon" size={12} color={themeColors.primary} />
             <Text style={[styles.statusText, { color: themeColors.primary }]}>Rotaract Activity Portfolio</Text>
           </View>
+
+          <TouchableOpacity
+            style={[styles.exportTranscriptBtn, { backgroundColor: themeColors.primary }]}
+            onPress={() => exportServiceTranscript(user, attendedEventsList as any, stats)}
+          >
+            <Ionicons name="share-outline" size={15} color="#fff" />
+            <Text style={styles.exportTranscriptBtnText}>Export Service Transcript</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.statsGrid}>
@@ -280,8 +289,10 @@ const styles = StyleSheet.create({
   avatarText: { color: '#fff', fontWeight: '800', fontSize: 24 },
   name: { fontSize: 20, fontWeight: '800' },
   club: { fontSize: 13, marginTop: 2 },
-  statusPill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, marginTop: 10 },
-  statusText: { fontSize: 11, fontWeight: '700' },
+  statusPill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12, marginTop: 8 },
+  statusText: { fontSize: 12, fontWeight: '700' },
+  exportTranscriptBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 12, marginTop: 12 },
+  exportTranscriptBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
   statBox: { width: '48%', padding: 14, borderRadius: 14, borderWidth: 1, alignItems: 'center' },
   statVal: { fontSize: 22, fontWeight: '800', marginTop: 4 },

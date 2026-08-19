@@ -90,6 +90,15 @@ export default function ApplicationReviewScreen({ route, navigation }: Props) {
   const canReview = canClubValidate || canDistrict || canAdmin;
 
   const handleApprove = () => {
+    if (['VERIFIED', 'REJECTED'].includes(app.status)) {
+      Alert.alert(
+        'Already Reviewed',
+        `This application has already been marked as "${app.status.replace(/_/g, ' ')}" by another officer. Your view has been refreshed.`,
+        [{ text: 'OK', onPress: () => navigation.goBack() }],
+      );
+      return;
+    }
+
     const approveAction = canClubValidate
       ? 'CLUB_VALIDATE'
       : canDistrict
@@ -122,11 +131,28 @@ export default function ApplicationReviewScreen({ route, navigation }: Props) {
   };
 
   const handleOpenRejectModal = () => {
+    if (['VERIFIED', 'REJECTED'].includes(app.status)) {
+      Alert.alert(
+        'Already Reviewed',
+        `This application has already been marked as "${app.status.replace(/_/g, ' ')}" by another officer.`,
+        [{ text: 'OK', onPress: () => navigation.goBack() }],
+      );
+      return;
+    }
     setRejectReason('');
     setRejectModalVisible(true);
   };
 
   const handleConfirmReject = () => {
+    if (['VERIFIED', 'REJECTED'].includes(app.status)) {
+      setRejectModalVisible(false);
+      Alert.alert(
+        'Already Reviewed',
+        `This application has already been marked as "${app.status.replace(/_/g, ' ')}" by another officer.`,
+        [{ text: 'OK', onPress: () => navigation.goBack() }],
+      );
+      return;
+    }
     reviewApplication(app.id, 'REJECT', user, rejectReason.trim());
     setRejectModalVisible(false);
     Alert.alert('Application Rejected', `The application for ${app.full_name} has been rejected.`, [

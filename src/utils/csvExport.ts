@@ -141,3 +141,69 @@ export async function exportDistrictImpactCSV(
     }
   }
 }
+
+/**
+ * Generates and shares a Member Volunteer Service Transcript via the native OS share sheet.
+ */
+export async function exportServiceTranscript(
+  user: AppUser,
+  attendedItems: Array<{ event: RotaractEvent; participant: EventParticipant; impact?: EventImpact }>,
+  stats: { joined: number; organized: number; hours: number },
+): Promise<void> {
+  try {
+    const headers = [
+      'Record Type',
+      'Event Date',
+      'Event Title',
+      'Event Type',
+      'Organizing Club',
+      'Member Role',
+      'Attendance Status',
+      'Volunteer Hours Credited',
+    ];
+
+    const rows: string[] = [
+      `"ROTARY INTERNATIONAL DISTRICT 3800 - OFFICIAL SERVICE TRANSCRIPT"`,
+      `"Member Name",${escapeCsv(user.full_name)}`,
+      `"Email",${escapeCsv(user.email)}`,
+      `"Club Affiliation",${escapeCsv(user.club_name)}`,
+      `"Position / Role",${escapeCsv(user.position)}`,
+      `"Total Verified Volunteer Hours",${escapeCsv(stats.hours)}`,
+      `"Total Projects Attended",${escapeCsv(stats.joined)}`,
+      `"Total Projects Organized",${escapeCsv(stats.organized)}`,
+      `"Generated At",${escapeCsv(new Date().toLocaleString())}`,
+      `""`,
+      headers.join(','),
+    ];
+
+    for (const item of attendedItems) {
+      const hours = calculateParticipantHours(item.participant, item.event);
+      const isLead = item.event.organizer_user_id === user.id;
+      const isCo = item.event.co_organizer_user_ids?.includes(user.id);
+      const roleStr = isLead ? 'Lead Organizer' : isCo ? 'Co-Organizer' : 'Volunteer Attendee';
+
+      const row = [
+        escapeCsv('COMMUNITY_SERVICE'),
+        escapeCsv(new Date(item.event.start_datetime).toLocaleDateString()),
+        escapeCsv(item.event.title),
+        escapeCsv(item.event.event_type),
+        escapeCsv(item.event.organizing_club_name),
+        escapeCsv(roleStr),
+        escapeCsv(item.participant.attendance_status === 'ATTENDED' || item.participant.checked_in_at ? 'VERIFIED_ATTENDED' : 'JOINED'),
+        escapeCsv(hours),
+      ];
+      rows.push(row.join(','));
+    }
+
+    const csvContent = rows.join('\n');
+
+    await Share.share({
+      title: `Service Transcript - ${user.full_name}`,
+      message: csvContent,
+    });
+  } catch (err: any) {
+    if (err?.message !== 'User did not share') {
+      Alert.alert('Export Error', 'Unable to export volunteer service transcript.');
+    }
+  }
+}

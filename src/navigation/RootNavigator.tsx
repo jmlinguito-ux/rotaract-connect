@@ -6,6 +6,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { navigationRef } from './navigationRef';
 import { PushNotifications } from '../components/PushNotifications';
 import { SyncErrorBanner } from '../components/SyncErrorBanner';
+import { SyncStatusBanner } from '../components/SyncStatusBanner';
 import { StatusBar } from 'expo-status-bar';
 import { RootStackParamList } from './types';
 import { useAuth } from '../context/AuthContext';
@@ -100,6 +101,7 @@ export default function RootNavigator() {
       {isAuthenticated && (
         <>
           <SyncErrorBanner />
+          <SyncStatusBanner />
           <AutoCheckInWatcher />
         </>
       )}
