@@ -243,14 +243,16 @@ export async function triggerEmergencySOS({
   if (pushNotificationFn) {
     const notifiedUserIds = new Set<string>();
 
+    const notePart = customMessage ? ` "${customMessage}"` : '';
+
     // A. Always notify Club President
     if (presidentUser && presidentUser.id !== user.id) {
       notifiedUserIds.add(presidentUser.id);
       pushNotificationFn({
         user_id: presidentUser.id,
         kind: 'EMERGENCY_BROADCAST',
-        title: `🚨 SOS: Emergency from ${user.full_name}`,
-        message: `${user.full_name} (${user.club_name}) triggered a Panic Alert near ${addressHint}. Map: ${mapUrl}`,
+        title: `🚨 EMERGENCY SOS: ${user.full_name}`,
+        message: `${user.full_name} (${user.club_name}) triggered an Emergency SOS near ${addressHint}.${notePart} Map: ${mapUrl}`,
         priority: 'HIGH',
       });
     }
@@ -263,8 +265,8 @@ export async function triggerEmergencySOS({
         pushNotificationFn({
           user_id: target.id,
           kind: 'EMERGENCY_BROADCAST',
-          title: `🚨 NEARBY EMERGENCY: ${user.full_name}`,
-          message: `${user.full_name} requested emergency help near ${addressHint}. Tap to open map: ${mapUrl}`,
+          title: `🚨 EMERGENCY SOS: ${user.full_name}`,
+          message: `${user.full_name} (${user.club_name}) requested emergency help near ${addressHint}.${notePart} Map: ${mapUrl}`,
           priority: 'HIGH',
         });
       }

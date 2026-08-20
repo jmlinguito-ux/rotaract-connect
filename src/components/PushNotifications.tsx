@@ -29,6 +29,9 @@ interface PushData {
   club_id?: string;
   club_name?: string;
   address_hint?: string;
+  message?: string;
+  avatar_url?: string;
+  contact_number?: string;
   latitude?: number;
   longitude?: number;
 }
@@ -102,19 +105,24 @@ export function PushNotifications() {
 
     // 1. Emergency SOS Broadcast tap -> open Map & trigger distress modal
     if (data.type === 'EMERGENCY_SOS' || data.kind === 'EMERGENCY_SOS' || data.kind === 'EMERGENCY_BROADCAST') {
+      const broadcaster = users.find(u => (data.user_id && u.id === data.user_id) || (data.full_name && u.full_name?.toLowerCase() === data.full_name.toLowerCase()));
       const lat = typeof data.latitude === 'number' ? data.latitude : 14.6948;
       const lng = typeof data.longitude === 'number' ? data.longitude : 120.9664;
+
       dispatchLocalAlert({
         id: data.broadcastId || data.notificationId || `sos_${Date.now()}`,
-        user_id: data.user_id || '',
-        full_name: data.full_name || 'Rotaract Member in Distress',
-        club_id: data.club_id || '',
-        club_name: data.club_name || 'District 3800',
+        user_id: data.user_id || broadcaster?.id || '',
+        full_name: data.full_name || broadcaster?.full_name || 'Rotaract Member in Distress',
+        avatar_url: data.avatar_url || broadcaster?.avatar_url,
+        club_id: data.club_id || broadcaster?.club_id || '',
+        club_name: data.club_name || broadcaster?.club_name || 'District 3800',
+        contact_number: data.contact_number || broadcaster?.contact_number,
         latitude: lat,
         longitude: lng,
         status: 'ACTIVE',
         map_url: `https://maps.google.com/?q=${lat},${lng}`,
         address_hint: data.address_hint,
+        message: data.message,
         created_at: new Date().toISOString(),
       });
       navigate('Main', { screen: 'MapTab' } as any);

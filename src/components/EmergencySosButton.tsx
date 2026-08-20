@@ -9,6 +9,9 @@ import {
   ActivityIndicator,
   Alert,
   Linking,
+  KeyboardAvoidingView,
+  ScrollView,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
@@ -131,91 +134,101 @@ export default function EmergencySosButton({ variant = 'icon', style }: Props) {
         animationType="fade"
         onRequestClose={() => setIsConfirmOpen(false)}
       >
-        <View style={styles.modalBackdrop}>
-          <View style={[styles.modalCard, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}>
-            <View style={styles.modalHeader}>
-              <View style={styles.warningCircle}>
-                <Ionicons name="warning" size={28} color="#EF4444" />
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={{ flex: 1 }}
+        >
+          <ScrollView
+            contentContainerStyle={styles.modalBackdrop}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            bounces={false}
+          >
+            <View style={[styles.modalCard, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}>
+              <View style={styles.modalHeader}>
+                <View style={styles.warningCircle}>
+                  <Ionicons name="warning" size={28} color="#EF4444" />
+                </View>
+                <Text style={[styles.modalTitle, { color: themeColors.text }]}>Emergency SOS Broadcast</Text>
+                <Text style={[styles.modalSub, { color: themeColors.textMuted }]}>
+                  Instantly shares your GPS location link with all verified Rotaract members within 5 km and alerts your Club President.
+                </Text>
               </View>
-              <Text style={[styles.modalTitle, { color: themeColors.text }]}>Emergency SOS Broadcast</Text>
-              <Text style={[styles.modalSub, { color: themeColors.textMuted }]}>
-                Instantly shares your GPS location link with all verified Rotaract members within 5 km and alerts your Club President.
-              </Text>
-            </View>
 
-            {/* Direct Emergency Hotlines */}
-            <View style={styles.hotlinesSection}>
-              <Text style={[styles.hotlinesTitle, { color: themeColors.textMuted }]}>DIRECT EMERGENCY HOTLINES</Text>
-              <View style={styles.hotlinesGrid}>
-                {EMERGENCY_HOTLINES.map(h => (
-                  <TouchableOpacity
-                    key={h.number}
-                    style={[styles.hotlineCard, { borderColor: themeColors.border, backgroundColor: themeColors.bg }]}
-                    onPress={() => handleCallHotline(h.number)}
-                  >
-                    <View style={[styles.hotlineIconBadge, { backgroundColor: h.color + '15' }]}>
-                      <Ionicons name={h.icon as any} size={16} color={h.color} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.hotlineName, { color: themeColors.text }]}>{h.name}</Text>
-                      <Text style={[styles.hotlineSub, { color: themeColors.textMuted }]}>{h.subtitle}</Text>
-                    </View>
-                    <View style={[styles.callPill, { backgroundColor: h.color }]}>
-                      <Ionicons name="call" size={12} color="#fff" />
-                      <Text style={styles.callPillText}>{h.number}</Text>
-                    </View>
-                  </TouchableOpacity>
-                ))}
+              {/* Direct Emergency Hotlines */}
+              <View style={styles.hotlinesSection}>
+                <Text style={[styles.hotlinesTitle, { color: themeColors.textMuted }]}>DIRECT EMERGENCY HOTLINES</Text>
+                <View style={styles.hotlinesGrid}>
+                  {EMERGENCY_HOTLINES.map(h => (
+                    <TouchableOpacity
+                      key={h.number}
+                      style={[styles.hotlineCard, { borderColor: themeColors.border, backgroundColor: themeColors.bg }]}
+                      onPress={() => handleCallHotline(h.number)}
+                    >
+                      <View style={[styles.hotlineIconBadge, { backgroundColor: h.color + '15' }]}>
+                        <Ionicons name={h.icon as any} size={16} color={h.color} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.hotlineName, { color: themeColors.text }]}>{h.name}</Text>
+                        <Text style={[styles.hotlineSub, { color: themeColors.textMuted }]}>{h.subtitle}</Text>
+                      </View>
+                      <View style={[styles.callPill, { backgroundColor: h.color }]}>
+                        <Ionicons name="call" size={12} color="#fff" />
+                        <Text style={styles.callPillText}>{h.number}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              <View style={styles.inputWrap}>
+                <Text style={[styles.inputLabel, { color: themeColors.textMuted }]}>
+                  Optional Emergency Message / Note:
+                </Text>
+                <TextInput
+                  style={[
+                    styles.textInput,
+                    {
+                      backgroundColor: themeColors.bg,
+                      color: themeColors.text,
+                      borderColor: themeColors.border,
+                    },
+                  ]}
+                  placeholder="e.g. Medical emergency, road assistance needed..."
+                  placeholderTextColor={themeColors.textMuted}
+                  value={customMsg}
+                  onChangeText={setCustomMsg}
+                  maxLength={120}
+                />
+              </View>
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity
+                  style={[styles.cancelBtn, { borderColor: themeColors.border }]}
+                  onPress={() => setIsConfirmOpen(false)}
+                  disabled={loading}
+                >
+                  <Text style={[styles.cancelBtnText, { color: themeColors.text }]}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.broadcastBtn}
+                  onPress={handleBroadcastSOS}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <>
+                      <Ionicons name="megaphone" size={18} color="#fff" />
+                      <Text style={styles.broadcastBtnText}>Broadcast SOS</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
               </View>
             </View>
-
-            <View style={styles.inputWrap}>
-              <Text style={[styles.inputLabel, { color: themeColors.textMuted }]}>
-                Optional Emergency Message / Note:
-              </Text>
-              <TextInput
-                style={[
-                  styles.textInput,
-                  {
-                    backgroundColor: themeColors.bg,
-                    color: themeColors.text,
-                    borderColor: themeColors.border,
-                  },
-                ]}
-                placeholder="e.g. Medical emergency, road assistance needed..."
-                placeholderTextColor={themeColors.textMuted}
-                value={customMsg}
-                onChangeText={setCustomMsg}
-                maxLength={120}
-              />
-            </View>
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={[styles.cancelBtn, { borderColor: themeColors.border }]}
-                onPress={() => setIsConfirmOpen(false)}
-                disabled={loading}
-              >
-                <Text style={[styles.cancelBtnText, { color: themeColors.text }]}>Cancel</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.broadcastBtn}
-                onPress={handleBroadcastSOS}
-                disabled={loading}
-              >
-                {loading ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <>
-                    <Ionicons name="megaphone" size={18} color="#fff" />
-                    <Text style={styles.broadcastBtnText}>Broadcast SOS</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
       </Modal>
     </>
   );
@@ -265,7 +278,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   modalBackdrop: {
-    flex: 1,
+    flexGrow: 1,
     backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'center',
     alignItems: 'center',

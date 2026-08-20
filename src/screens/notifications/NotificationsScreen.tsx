@@ -123,18 +123,36 @@ export default function NotificationsScreen({ navigation }: Props) {
       markNotificationsRead(item.id);
     }
     if (item.kind === 'EMERGENCY_BROADCAST') {
-      const broadcasterName = item.title.replace('🚨 EMERGENCY SOS: ', '').trim() || 'Rotaract Member in Distress';
+      const broadcasterName = item.title.replace(/^🚨\s*(?:EMERGENCY\s*SOS|NEARBY\s*EMERGENCY|SOS):\s*/i, '').trim() || 'Rotaract Member in Distress';
+      const broadcaster = users.find(u => u.id === item.user_id || (u.full_name && u.full_name.toLowerCase() === broadcasterName.toLowerCase()));
+
+      const clubMatch = item.message.match(/\((Rotaract Club of [^)]+|RC [^)]+|District 3800)\)/i);
+      const clubName = clubMatch ? clubMatch[1] : (broadcaster?.club_name || 'District 3800');
+
+      const msgMatch = item.message.match(/"([^"]+)"/);
+      const customNote = msgMatch ? msgMatch[1] : '';
+
+      const coordsMatch = item.message.match(/maps\.google\.com\/\?q=([0-9.-]+),([0-9.-]+)/);
+      const lat = coordsMatch ? parseFloat(coordsMatch[1]) : 14.6948;
+      const lng = coordsMatch ? parseFloat(coordsMatch[2]) : 120.9664;
+
+      const addrMatch = item.message.match(/near\s+(.*?)(?:\.|\"|\s+Map:|\s+Location:|$)/i);
+      const addressHint = addrMatch ? addrMatch[1].trim() : (customNote ? 'Coordinates provided' : item.message);
+
       dispatchLocalAlert({
         id: item.id,
-        user_id: item.user_id,
-        full_name: broadcasterName,
-        club_id: '',
-        club_name: 'District 3800',
-        latitude: 14.6948,
-        longitude: 120.9664,
+        user_id: broadcaster?.id || item.user_id,
+        full_name: broadcaster?.full_name || broadcasterName,
+        avatar_url: broadcaster?.avatar_url,
+        club_id: broadcaster?.club_id || '',
+        club_name: clubName,
+        contact_number: broadcaster?.contact_number,
+        latitude: lat,
+        longitude: lng,
         status: 'ACTIVE',
-        map_url: 'https://maps.google.com/?q=14.6948,120.9664',
-        address_hint: item.message,
+        map_url: `https://maps.google.com/?q=${lat},${lng}`,
+        address_hint: addressHint,
+        message: customNote || undefined,
         created_at: item.created_at,
       });
       navigation.navigate('Main', { screen: 'MapTab' } as any);
