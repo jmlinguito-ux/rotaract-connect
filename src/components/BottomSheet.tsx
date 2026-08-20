@@ -1,5 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Dimensions, Easing, Modal, Pressable, StyleSheet, ViewStyle } from 'react-native';
+import {
+  Animated,
+  Dimensions,
+  Easing,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  StyleSheet,
+  ViewStyle,
+} from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 
 interface BottomSheetProps {
@@ -56,20 +66,26 @@ export function BottomSheet({ visible, onClose, children, cardStyle }: BottomShe
 
   return (
     <Modal visible transparent animationType="none" onRequestClose={onClose} statusBarTranslucent>
-      <Animated.View style={[styles.backdrop, { opacity: progress }]}>
-        <Pressable style={styles.backdropPress} onPress={onClose} />
-        <Animated.View
-          style={[styles.card, { backgroundColor: themeColors.cardBg }, cardStyle, { transform: [{ translateY }] }]}
-          onLayout={e => setSheetHeight(e.nativeEvent.layout.height)}
-        >
-          {children}
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoid}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <Animated.View style={[styles.backdrop, { opacity: progress }]}>
+          <Pressable style={styles.backdropPress} onPress={onClose} />
+          <Animated.View
+            style={[styles.card, { backgroundColor: themeColors.cardBg }, cardStyle, { transform: [{ translateY }] }]}
+            onLayout={e => setSheetHeight(e.nativeEvent.layout.height)}
+          >
+            {children}
+          </Animated.View>
         </Animated.View>
-      </Animated.View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  keyboardAvoid: { flex: 1 },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   backdropPress: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
   card: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24 },

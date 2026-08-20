@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,6 +8,7 @@ import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { NotificationPriority } from '../../types';
+import { KeyboardAwareScrollView } from '../../components/KeyboardAwareScrollView';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'OrganizerBroadcast'>;
 
@@ -76,72 +77,74 @@ export default function OrganizerBroadcastScreen({ route, navigation }: Props) {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]} edges={['bottom']}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
-          <View style={[styles.contextCard, { backgroundColor: colors.primary + '14', borderColor: colors.primary + '3D' }]}>
-            <Ionicons name="megaphone" size={18} color={colors.primary} />
-            <Text style={[styles.contextText, { color: colors.primary }]} numberOfLines={2}>
-              Announcing to {recipientCount} participant{recipientCount === 1 ? '' : 's'} of "{event.title}"
-            </Text>
-          </View>
-
-          <Text style={[styles.label, { color: colors.text }]}>Title</Text>
-          <TextInput
-            style={[styles.input, { backgroundColor: colors.cardBg, borderColor: colors.border, color: colors.text }]}
-            placeholder="e.g. Venue changed to the covered court"
-            placeholderTextColor={colors.textMuted}
-            value={title}
-            onChangeText={t => setTitle(t.slice(0, TITLE_MAX))}
-            maxLength={TITLE_MAX}
-          />
-          <Text style={[styles.counter, { color: colors.textMuted }]}>{title.length}/{TITLE_MAX}</Text>
-
-          <Text style={[styles.label, { color: colors.text }]}>Message</Text>
-          <TextInput
-            style={[styles.input, styles.multiline, { backgroundColor: colors.cardBg, borderColor: colors.border, color: colors.text }]}
-            placeholder="Add the details participants need to know…"
-            placeholderTextColor={colors.textMuted}
-            value={message}
-            onChangeText={t => setMessage(t.slice(0, BODY_MAX))}
-            multiline
-          />
-          <Text style={[styles.counter, { color: colors.textMuted }]}>{message.length}/{BODY_MAX}</Text>
-
-          <Text style={[styles.label, { color: colors.text, marginTop: 8 }]}>Priority</Text>
-          {PRIORITY_OPTIONS.map(opt => {
-            const selected = priority === opt.value;
-            return (
-              <TouchableOpacity
-                key={opt.value}
-                style={[styles.priorityRow, { borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? colors.primary + '12' : colors.cardBg }]}
-                onPress={() => setPriority(opt.value)}
-              >
-                <Ionicons name={opt.icon} size={20} color={selected ? colors.primary : colors.textMuted} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.priorityLabel, { color: selected ? colors.primary : colors.text }]}>{opt.label}</Text>
-                  <Text style={[styles.priorityDesc, { color: colors.textMuted }]}>{opt.desc}</Text>
-                </View>
-                <Ionicons name={selected ? 'radio-button-on' : 'radio-button-off'} size={20} color={selected ? colors.primary : colors.textMuted} />
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-
-        <View style={[styles.footer, { borderTopColor: colors.border, backgroundColor: colors.cardBg }]}>
-          <TouchableOpacity
-            style={[styles.sendBtn, { backgroundColor: colors.primary }, (sending || !title.trim()) && { opacity: 0.5 }]}
-            onPress={handleSend}
-            disabled={sending || !title.trim()}
-          >
-            {sending ? <ActivityIndicator color="#fff" /> : (
-              <>
-                <Ionicons name="send" size={16} color="#fff" />
-                <Text style={styles.sendBtnText}>Send Banner Notification</Text>
-              </>
-            )}
-          </TouchableOpacity>
+      <KeyboardAwareScrollView
+        contentContainerStyle={styles.body}
+        keyboardShouldPersistTaps="handled"
+        keyboardTopMargin={30}
+      >
+        <View style={[styles.contextCard, { backgroundColor: colors.primary + '14', borderColor: colors.primary + '3D' }]}>
+          <Ionicons name="megaphone" size={18} color={colors.primary} />
+          <Text style={[styles.contextText, { color: colors.primary }]} numberOfLines={2}>
+            Announcing to {recipientCount} participant{recipientCount === 1 ? '' : 's'} of "{event.title}"
+          </Text>
         </View>
-      </KeyboardAvoidingView>
+
+        <Text style={[styles.label, { color: colors.text }]}>Title</Text>
+        <TextInput
+          style={[styles.input, { backgroundColor: colors.cardBg, borderColor: colors.border, color: colors.text }]}
+          placeholder="e.g. Venue changed to the covered court"
+          placeholderTextColor={colors.textMuted}
+          value={title}
+          onChangeText={t => setTitle(t.slice(0, TITLE_MAX))}
+          maxLength={TITLE_MAX}
+        />
+        <Text style={[styles.counter, { color: colors.textMuted }]}>{title.length}/{TITLE_MAX}</Text>
+
+        <Text style={[styles.label, { color: colors.text }]}>Message</Text>
+        <TextInput
+          style={[styles.input, styles.multiline, { backgroundColor: colors.cardBg, borderColor: colors.border, color: colors.text }]}
+          placeholder="Add the details participants need to know…"
+          placeholderTextColor={colors.textMuted}
+          value={message}
+          onChangeText={t => setMessage(t.slice(0, BODY_MAX))}
+          multiline
+        />
+        <Text style={[styles.counter, { color: colors.textMuted }]}>{message.length}/{BODY_MAX}</Text>
+
+        <Text style={[styles.label, { color: colors.text, marginTop: 8 }]}>Priority</Text>
+        {PRIORITY_OPTIONS.map(opt => {
+          const selected = priority === opt.value;
+          return (
+            <TouchableOpacity
+              key={opt.value}
+              style={[styles.priorityRow, { borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? colors.primary + '12' : colors.cardBg }]}
+              onPress={() => setPriority(opt.value)}
+            >
+              <Ionicons name={opt.icon} size={20} color={selected ? colors.primary : colors.textMuted} />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.priorityLabel, { color: selected ? colors.primary : colors.text }]}>{opt.label}</Text>
+                <Text style={[styles.priorityDesc, { color: colors.textMuted }]}>{opt.desc}</Text>
+              </View>
+              <Ionicons name={selected ? 'radio-button-on' : 'radio-button-off'} size={20} color={selected ? colors.primary : colors.textMuted} />
+            </TouchableOpacity>
+          );
+        })}
+      </KeyboardAwareScrollView>
+
+      <View style={[styles.footer, { borderTopColor: colors.border, backgroundColor: colors.cardBg }]}>
+        <TouchableOpacity
+          style={[styles.sendBtn, { backgroundColor: colors.primary }, (sending || !title.trim()) && { opacity: 0.5 }]}
+          onPress={handleSend}
+          disabled={sending || !title.trim()}
+        >
+          {sending ? <ActivityIndicator color="#fff" /> : (
+            <>
+              <Ionicons name="send" size={16} color="#fff" />
+              <Text style={styles.sendBtnText}>Send Banner Notification</Text>
+            </>
+          )}
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }

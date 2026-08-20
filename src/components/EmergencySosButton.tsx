@@ -154,7 +154,7 @@ export default function EmergencySosButton({ variant = 'icon', style }: Props) {
       >
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' }}
+          style={styles.avoidView}
         >
           <ScrollView
             ref={scrollRef}
@@ -306,9 +306,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
   },
+  avoidView: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
   modalBackdrop: {
     flexGrow: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,

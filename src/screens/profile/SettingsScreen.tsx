@@ -921,7 +921,7 @@ export default function SettingsScreen({ navigation }: Props) {
 
       {/* Club Selection Modal */}
       <Modal visible={clubModalVisible} transparent animationType="slide" onRequestClose={() => setClubModalVisible(false)}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.modalOverlay}>
           <View style={[styles.modalCard, { backgroundColor: themeColors.cardBg, maxHeight: '80%', borderColor: themeColors.border }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: themeColors.text }]}>Select Club</Text>

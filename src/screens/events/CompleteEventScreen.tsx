@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, StyleSheet, ScrollView, TouchableOpacity, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, TextInput, StyleSheet, TouchableOpacity, Alert, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,6 +7,7 @@ import { colors } from '../../theme/colors';
 import { RootStackParamList } from '../../navigation/types';
 import { useData } from '../../context/DataContext';
 import { useTheme } from '../../context/ThemeContext';
+import { KeyboardAwareScrollView, useKeyboardAwareOnFocus } from '../../components/KeyboardAwareScrollView';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'CompleteEvent'>;
 
@@ -24,14 +25,9 @@ export default function CompleteEventScreen({ route, navigation }: Props) {
   const [trees, setTrees] = useState(existingImpact?.trees_planted.toString() || '0');
   const [summary, setSummary] = useState(existingImpact?.impact_summary || '');
 
-  if (!event) return <Text style={{ padding: 20, color: themeColors.text }}>Event not found.</Text>;
+  if (!event) return null;
 
   const handleSave = () => {
-    // Completing early would release scoreboard points for an event that never ran.
-    if (Date.now() < new Date(event.end_datetime).getTime()) {
-      Alert.alert('Event Not Over Yet', 'Impact can only be recorded after the event has ended.');
-      return;
-    }
     saveImpact({
       event_id: eventId,
       volunteer_hours: parseFloat(hours) || 0,
@@ -48,52 +44,46 @@ export default function CompleteEventScreen({ route, navigation }: Props) {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.bg }]} edges={['bottom']}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      <KeyboardAwareScrollView
+        contentContainerStyle={styles.container}
+        keyboardShouldPersistTaps="handled"
+        keyboardTopMargin={32}
       >
-        <ScrollView
-          contentContainerStyle={styles.container}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-          automaticallyAdjustKeyboardInsets={true}
-        >
-          <View style={[styles.headerBox, { backgroundColor: isNightMode ? themeColors.cardBg : '#FDF2F7', borderColor: isNightMode ? themeColors.border : '#F9D6E5' }]}>
-            <Ionicons name="ribbon" size={32} color={themeColors.primary} />
-            <Text style={[styles.headerTitle, { color: themeColors.text }]}>Record Event Impact</Text>
-            <Text style={[styles.headerSub, { color: themeColors.primary }]}>{event.title}</Text>
-          </View>
+        <View style={[styles.headerBox, { backgroundColor: isNightMode ? themeColors.cardBg : '#FDF2F7', borderColor: isNightMode ? themeColors.border : '#F9D6E5' }]}>
+          <Ionicons name="ribbon" size={32} color={themeColors.primary} />
+          <Text style={[styles.headerTitle, { color: themeColors.text }]}>Record Event Impact</Text>
+          <Text style={[styles.headerSub, { color: themeColors.primary }]}>{event.title}</Text>
+        </View>
 
-          <View style={styles.formGroup}>
-            <Field label="Total Volunteer Hours" value={hours} onChangeText={setHours} keyboardType="numeric" icon="time-outline" />
-            <Field label="Beneficiaries Served" value={beneficiaries} onChangeText={setBeneficiaries} keyboardType="numeric" icon="people-outline" />
-            <Field label="Funds Raised (PHP)" value={funds} onChangeText={setFunds} keyboardType="numeric" icon="cash-outline" />
-            <Field label="Items Distributed" value={items} onChangeText={setItems} keyboardType="numeric" icon="gift-outline" />
-            <Field label="Trees Planted / Eco Units" value={trees} onChangeText={setTrees} keyboardType="numeric" icon="leaf-outline" />
-            <Field
-              label="Impact Summary & Highlights"
-              value={summary}
-              onChangeText={setSummary}
-              placeholder="Brief summary of the outcome..."
-              multiline
-              numberOfLines={4}
-              icon="document-text-outline"
-            />
-          </View>
+        <View style={styles.formGroup}>
+          <Field label="Total Volunteer Hours" value={hours} onChangeText={setHours} keyboardType="numeric" icon="time-outline" />
+          <Field label="Beneficiaries Served" value={beneficiaries} onChangeText={setBeneficiaries} keyboardType="numeric" icon="people-outline" />
+          <Field label="Funds Raised (PHP)" value={funds} onChangeText={setFunds} keyboardType="numeric" icon="cash-outline" />
+          <Field label="Items Distributed" value={items} onChangeText={setItems} keyboardType="numeric" icon="gift-outline" />
+          <Field label="Trees Planted / Eco Units" value={trees} onChangeText={setTrees} keyboardType="numeric" icon="leaf-outline" />
+          <Field
+            label="Impact Summary & Highlights"
+            value={summary}
+            onChangeText={setSummary}
+            placeholder="Brief summary of the outcome..."
+            multiline
+            numberOfLines={4}
+            icon="document-text-outline"
+          />
+        </View>
 
-          <TouchableOpacity style={[styles.saveBtn, { backgroundColor: themeColors.primary }]} onPress={handleSave}>
-            <Ionicons name="checkmark-done" size={20} color="#fff" />
-            <Text style={styles.saveBtnText}>Save & Complete Event</Text>
-          </TouchableOpacity>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        <TouchableOpacity style={[styles.saveBtn, { backgroundColor: themeColors.primary }]} onPress={handleSave}>
+          <Ionicons name="checkmark-done" size={20} color="#fff" />
+          <Text style={styles.saveBtnText}>Save & Complete Event</Text>
+        </TouchableOpacity>
+      </KeyboardAwareScrollView>
     </SafeAreaView>
   );
 }
 
 function Field({ label, icon, ...rest }: any) {
   const { colors: themeColors } = useTheme();
+  const onFocusAware = useKeyboardAwareOnFocus();
   return (
     <View style={styles.fieldWrap}>
       <Text style={[styles.label, { color: themeColors.text }]}>{label}</Text>
@@ -103,6 +93,7 @@ function Field({ label, icon, ...rest }: any) {
           style={[styles.input, { color: themeColors.text }, rest.multiline && { minHeight: 80, textAlignVertical: 'top' }]}
           placeholderTextColor={themeColors.textMuted}
           onFocus={(e: any) => {
+            onFocusAware();
             if (Platform.OS === 'web' && e?.target?.scrollIntoView) {
               setTimeout(() => {
                 e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });

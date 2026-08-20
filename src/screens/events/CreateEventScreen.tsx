@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { View, Text, TextInput, StyleSheet, ScrollView, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, Keyboard, Pressable } from 'react-native';
+import { View, Text, TextInput, StyleSheet, TouchableOpacity, Alert, Platform, Keyboard, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
@@ -18,6 +18,7 @@ import { CalendarGridModal } from '../../components/CalendarGridModal';
 import { SegmentedTimeInput } from '../../components/SegmentedTimeInput';
 import { ConfirmRulesModal } from '../../components/ConfirmRulesModal';
 import { editLockRulesForSubmit } from '../../utils/eventEditPolicy';
+import { KeyboardAwareScrollView, useKeyboardAwareOnFocus } from '../../components/KeyboardAwareScrollView';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'CreateEvent'>;
 
@@ -296,30 +297,24 @@ export default function CreateEventScreen({ route, navigation }: Props) {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.bg }]} edges={['bottom', 'left', 'right']}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      <KeyboardAwareScrollView
+        contentContainerStyle={styles.container}
+        keyboardShouldPersistTaps="handled"
+        keyboardTopMargin={32}
+        onScrollBeginDrag={() => {
+          Keyboard.dismiss();
+          setIsCoOrgFocused(false);
+          setCoOrgQuery('');
+        }}
       >
-        <ScrollView
-          contentContainerStyle={styles.container}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-          automaticallyAdjustKeyboardInsets={true}
-          onScrollBeginDrag={() => {
+        <Pressable
+          style={{ flex: 1 }}
+          onPress={() => {
             Keyboard.dismiss();
             setIsCoOrgFocused(false);
             setCoOrgQuery('');
           }}
         >
-          <Pressable
-            style={{ flex: 1 }}
-            onPress={() => {
-              Keyboard.dismiss();
-              setIsCoOrgFocused(false);
-              setCoOrgQuery('');
-            }}
-          >
           <CoverPhotoPicker value={coverPhoto} onChange={setCoverPhoto} />
 
           <Text style={[styles.label, { color: themeColors.text }]}>Event Type</Text>
@@ -713,9 +708,8 @@ export default function CreateEventScreen({ route, navigation }: Props) {
             <Ionicons name="add-circle" size={20} color="#fff" />
             <Text style={styles.submitText}>Publish Event</Text>
           </TouchableOpacity>
-          </Pressable>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </Pressable>
+      </KeyboardAwareScrollView>
 
       <ConfirmRulesModal
         visible={confirmVisible}
@@ -734,6 +728,7 @@ export default function CreateEventScreen({ route, navigation }: Props) {
 function Field({ label, ...rest }: any) {
   const { colors: themeColors } = useTheme();
   const [focused, setFocused] = useState(false);
+  const onFocusAware = useKeyboardAwareOnFocus();
   return (
     <>
       <Text style={[styles.label, { color: themeColors.text }]}>{label}</Text>
@@ -746,6 +741,7 @@ function Field({ label, ...rest }: any) {
         ]}
         onFocus={(e: any) => {
           setFocused(true);
+          onFocusAware();
           if (Platform.OS === 'web' && e?.target?.scrollIntoView) {
             setTimeout(() => {
               e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
