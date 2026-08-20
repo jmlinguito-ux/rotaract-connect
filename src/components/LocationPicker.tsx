@@ -3,6 +3,8 @@ import { Text, View } from 'react-native';
 import MapView, { MapPressEvent, Marker, Circle } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { colors } from '../theme/colors';
+import { useTheme } from '../context/ThemeContext';
+import { lightMapStyle, darkMapStyle } from '../theme/mapStyles';
 import { LocationPickerProps, LocationSummary, styles } from './location/shared';
 import { PlaceSearchField } from './location/PlaceSearchField';
 
@@ -12,6 +14,7 @@ import { PlaceSearchField } from './location/PlaceSearchField';
  * other, so the address text and the coordinates stay in agreement.
  */
 export function LocationPicker({ value, onChange, geofenceRadius = 300 }: LocationPickerProps) {
+  const { isNightMode } = useTheme();
   const mapRef = useRef<MapView>(null);
   const isMapReady = useRef(false);
 
@@ -71,6 +74,7 @@ export function LocationPicker({ value, onChange, geofenceRadius = 300 }: Locati
       <View style={styles.mapWrap}>
         <MapView
           ref={mapRef}
+          key={`picker-map-${isNightMode ? 'dark' : 'light'}`}
           style={{ flex: 1 }}
           initialRegion={{
             latitude: value.latitude,
@@ -78,6 +82,8 @@ export function LocationPicker({ value, onChange, geofenceRadius = 300 }: Locati
             latitudeDelta: 0.02,
             longitudeDelta: 0.02,
           }}
+          userInterfaceStyle={isNightMode ? 'dark' : 'light'}
+          customMapStyle={isNightMode ? darkMapStyle : lightMapStyle}
           showsUserLocation={false}
           onUserLocationChange={() => {}}
           onPress={onMapPress}

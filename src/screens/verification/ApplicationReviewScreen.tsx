@@ -268,16 +268,10 @@ export default function ApplicationReviewScreen({ route, navigation }: Props) {
       >
         <KeyboardAvoidingView
           style={styles.modalBackdrop}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
           <TouchableOpacity
-            style={[
-              styles.modalBackdropPress,
-              {
-                justifyContent: isKeyboardVisible ? 'flex-end' : 'center',
-                paddingBottom: isKeyboardVisible ? 24 : 20,
-              },
-            ]}
+            style={styles.modalBackdropPress}
             activeOpacity={1}
             onPress={() => setRejectModalVisible(false)}
           >

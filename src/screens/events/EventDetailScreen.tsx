@@ -1488,17 +1488,12 @@ export default function EventDetailScreen({ route, navigation }: Props) {
       <Modal visible={messageModalVisible} transparent animationType="fade" onRequestClose={() => setMessageModalVisible(false)}>
         <KeyboardAvoidingView
           style={styles.modalAvoidView}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
           <ScrollView
-            contentContainerStyle={[
-              styles.modalBackdrop,
-              {
-                justifyContent: isKeyboardVisible ? 'flex-end' : 'center',
-                paddingBottom: isKeyboardVisible ? 24 : 20,
-              },
-            ]}
+            contentContainerStyle={styles.modalBackdrop}
             keyboardShouldPersistTaps="handled"
+            automaticallyAdjustKeyboardInsets={true}
             bounces={false}
           >
             <View style={[styles.modalCard, { backgroundColor: themeColors.cardBg }]}>

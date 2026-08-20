@@ -747,8 +747,8 @@ export default function ChatScreen({ route, navigation }: Props) {
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? headerHeight + 10 : headerHeight}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? headerHeight + 10 : 0}
       >
         {reversedMessages.length === 0 ? (
           <View style={[styles.emptyChatWrap, { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 }]}>

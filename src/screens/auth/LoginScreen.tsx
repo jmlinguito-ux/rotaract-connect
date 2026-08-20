@@ -15,13 +15,14 @@ import { colors } from '../../theme/colors';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import RotaryWheel from '../../components/RotaryWheel';
-import { KeyboardAwareScrollView } from '../../components/KeyboardAwareScrollView';
+import { KeyboardAwareScrollView, useKeyboardAwareOnFocus } from '../../components/KeyboardAwareScrollView';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Login'>;
 
 export default function LoginScreen({ navigation }: Props) {
   const { signIn } = useAuth();
   const { colors: themeColors, isNightMode } = useTheme();
+  const onFocusAware = useKeyboardAwareOnFocus();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -74,6 +75,7 @@ export default function LoginScreen({ navigation }: Props) {
             style={[styles.input, { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text }]}
             value={email}
             onChangeText={setEmail}
+            onFocus={onFocusAware}
             placeholder="you@example.com or username"
             placeholderTextColor={themeColors.textMuted}
             keyboardType="default"
@@ -87,6 +89,7 @@ export default function LoginScreen({ navigation }: Props) {
               style={[styles.passwordInput, { color: themeColors.text }]}
               value={password}
               onChangeText={setPassword}
+              onFocus={onFocusAware}
               placeholder="••••••••"
               placeholderTextColor={themeColors.textMuted}
               secureTextEntry={!showPassword}

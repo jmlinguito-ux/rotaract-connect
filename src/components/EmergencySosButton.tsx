@@ -153,20 +153,14 @@ export default function EmergencySosButton({ variant = 'icon', style }: Props) {
         onRequestClose={() => setIsConfirmOpen(false)}
       >
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.avoidView}
         >
           <ScrollView
             ref={scrollRef}
-            contentContainerStyle={[
-              styles.modalBackdrop,
-              isKeyboardVisible && Platform.OS === 'android' && {
-                justifyContent: 'flex-start',
-                paddingTop: 50,
-                paddingBottom: 20,
-              },
-            ]}
+            contentContainerStyle={styles.modalBackdrop}
             keyboardShouldPersistTaps="handled"
+            automaticallyAdjustKeyboardInsets={true}
             showsVerticalScrollIndicator={false}
             bounces={false}
           >
@@ -224,9 +218,6 @@ export default function EmergencySosButton({ variant = 'icon', style }: Props) {
                   placeholderTextColor={themeColors.textMuted}
                   value={customMsg}
                   onChangeText={setCustomMsg}
-                  onFocus={() => {
-                    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 120);
-                  }}
                   maxLength={120}
                 />
               </View>

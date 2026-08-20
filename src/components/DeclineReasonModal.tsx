@@ -59,18 +59,13 @@ export function DeclineReasonModal({
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
       <KeyboardAvoidingView
         style={styles.avoidView}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <ScrollView
           ref={scrollRef}
-          contentContainerStyle={[
-            styles.backdrop,
-            {
-              justifyContent: isKeyboardVisible ? 'flex-end' : 'center',
-              paddingBottom: isKeyboardVisible ? 24 : 20,
-            },
-          ]}
+          contentContainerStyle={styles.backdrop}
           keyboardShouldPersistTaps="handled"
+          automaticallyAdjustKeyboardInsets={true}
           bounces={false}
         >
           <View style={[styles.card, { backgroundColor: themeColors.cardBg }]}>
@@ -94,9 +89,6 @@ export function DeclineReasonModal({
               placeholderTextColor={themeColors.textMuted}
               value={remarks}
               onChangeText={setRemarks}
-              onFocus={() => {
-                setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 120);
-              }}
               multiline
               numberOfLines={4}
             />

@@ -149,8 +149,10 @@ export function EventMap({ events, userCoords, style, interactive = false, showA
     <View style={[styles.container, style]}>
       <MapView
         ref={mapRef}
+        key={`event-map-${isNightMode ? 'dark' : 'light'}`}
         style={styles.map}
         initialRegion={region}
+        userInterfaceStyle={isNightMode ? 'dark' : 'light'}
         customMapStyle={isNightMode ? darkMapStyle : lightMapStyle}
         showsUserLocation={false}
         showsMyLocationButton={false}
