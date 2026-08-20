@@ -28,6 +28,7 @@ import { openNavigationApp } from '../../utils/navigationLauncher';
 
 import { visibleEvents } from '../../utils/eventApproval';
 import { BottomSheet } from '../../components/BottomSheet';
+import EmergencySosButton from '../../components/EmergencySosButton';
 
 type DistanceOption = '5KM' | '15KM' | '30KM';
 type DateOption = 'TODAY' | 'WEEK' | 'MONTH';
@@ -119,6 +120,12 @@ export default function MapScreen() {
 
   useEffect(() => {
     (async () => {
+      const userClub = clubs.find(c => c.id === user?.club_id);
+      const defaultFallback =
+        userClub?.latitude && userClub?.longitude
+          ? { latitude: userClub.latitude, longitude: userClub.longitude }
+          : { latitude: 14.6500, longitude: 121.0800 };
+
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status === 'granted') {
@@ -131,13 +138,13 @@ export default function MapScreen() {
           const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
           setUserCoords({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
         } else {
-          setUserCoords({ latitude: 14.5266, longitude: 121.1553 });
+          setUserCoords(defaultFallback);
         }
       } catch {
-        setUserCoords({ latitude: 14.5266, longitude: 121.1553 });
+        setUserCoords(defaultFallback);
       }
     })();
-  }, []);
+  }, [user?.club_id, clubs]);
 
   const activeFilterCount =
     selectedDistances.length + selectedZones.length + selectedOpenness.length + selectedAreas.length + selectedDates.length;
@@ -360,6 +367,9 @@ export default function MapScreen() {
           style={styles.mapCanvas}
           onMarkerPress={id => navigation.navigate('EventDetail', { eventId: id })}
         />
+
+        {/* SOS Panic Button - Upper Left inside the Map */}
+        <EmergencySosButton style={styles.mapSosOverlayBtn} />
 
         <TouchableOpacity
           style={[styles.expandMapBtn, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}
@@ -690,6 +700,9 @@ function FullscreenMapModal({ visible, events, userCoords, colors: c, onClose, o
               }}
             />
 
+            {/* SOS Panic Button - Upper Left inside Fullscreen Map */}
+            <EmergencySosButton style={styles.mapSosOverlayBtn} />
+
             {/* Floating Pin Preview HUD */}
             {selectedEv && (
               <View style={[styles.pinHudCard, { backgroundColor: c.cardBg, borderColor: c.border }]}>
@@ -732,6 +745,14 @@ function FullscreenMapModal({ visible, events, userCoords, colors: c, onClose, o
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   header: { padding: 20, paddingBottom: 10 },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 10,
+  },
   title: { fontSize: 28, fontWeight: '800' },
   subtitle: { fontSize: 13, marginTop: 2 },
   searchRowContainer: { paddingHorizontal: 16, marginBottom: 8, gap: 8 },
@@ -745,9 +766,20 @@ const styles = StyleSheet.create({
   activePillText: { color: '#fff', fontSize: 11, fontWeight: '700' },
   clearLink: { paddingHorizontal: 8, paddingVertical: 4 },
   clearLinkText: { fontSize: 12, fontWeight: '700' },
-  mapContainer: { height: 180, marginHorizontal: 16, borderRadius: 16, overflow: Platform.OS === 'ios' ? 'hidden' : undefined, marginBottom: 12 },
+  mapContainer: { height: 180, marginHorizontal: 16, borderRadius: 16, overflow: Platform.OS === 'ios' ? 'hidden' : undefined, marginBottom: 12, position: 'relative' },
   mapCanvas: { width: '100%', height: '100%', borderRadius: 16 },
-  expandMapBtn: { position: 'absolute', bottom: 10, right: 10, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, borderWidth: 1 },
+  mapSosOverlayBtn: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    zIndex: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 6,
+  },
+  expandMapBtn: { position: 'absolute', bottom: 10, right: 10, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, borderWidth: 1, zIndex: 10 },
   expandMapText: { fontSize: 11, fontWeight: '700' },
   listHeader: { paddingHorizontal: 20, marginBottom: 8 },
   listHeaderTitle: { fontSize: 11, fontWeight: '800', letterSpacing: 1 },

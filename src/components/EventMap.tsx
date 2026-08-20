@@ -10,12 +10,13 @@ import { distanceMeters, formatDistance } from '../utils/checkIn';
 import { useTheme } from '../context/ThemeContext';
 import { lightMapStyle, darkMapStyle } from '../theme/mapStyles';
 
-// District 3800 covers Metro Manila and Rizal — used when no events are visible.
+// District 3800 covers CAMANAVA (Valenzuela, Caloocan, Malabon, Navotas),
+// Central Metro (Marikina, Pasig, Mandaluyong, San Juan), and Rizal Province.
 const FALLBACK_REGION: Region = {
-  latitude: 14.5995,
-  longitude: 120.9842,
-  latitudeDelta: 0.4,
-  longitudeDelta: 0.4,
+  latitude: 14.6500,
+  longitude: 121.0800,
+  latitudeDelta: 0.28,
+  longitudeDelta: 0.28,
 };
 
 export function regionFor(events: RotaractEvent[], userCoords?: { latitude: number; longitude: number } | null): Region {

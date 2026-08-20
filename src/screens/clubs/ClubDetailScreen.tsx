@@ -89,6 +89,20 @@ export default function ClubDetailScreen({ route }: Props) {
           </View>
 
           <Text style={[styles.meta, { color: themeColors.textMuted }]}>{zone?.zone_name} • {club.city}, {club.province}</Text>
+          {club.meeting_address && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 }}>
+              <Ionicons name="location-outline" size={13} color={themeColors.primary} />
+              <Text style={[styles.meta, { color: themeColors.text, fontWeight: '500' }]} numberOfLines={2}>
+                {club.meeting_address}
+              </Text>
+            </View>
+          )}
+          {club.email && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+              <Ionicons name="mail-outline" size={13} color={themeColors.textMuted} />
+              <Text style={[styles.meta, { color: themeColors.textMuted }]}>{club.email}</Text>
+            </View>
+          )}
           <Text style={[styles.clubId, { color: themeColors.textMuted }]}>{club.club_code}</Text>
 
           {/* Quick Actions Row */}
@@ -96,26 +110,9 @@ export default function ClubDetailScreen({ route }: Props) {
             <TouchableOpacity
               style={[styles.clubActionBtn, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}
               onPress={() => {
-                if (presidentUser?.contact_number) {
-                  callNumber(presidentUser.contact_number);
-                } else {
-                  showToast({
-                    type: 'info',
-                    title: 'Contact Unlisted',
-                    message: 'President phone number is not publicly listed.',
-                  });
-                }
-              }}
-            >
-              <Ionicons name="call-outline" size={13} color={themeColors.primary} />
-              <Text style={[styles.clubActionBtnText, { color: themeColors.primary }]}>Call Pres</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.clubActionBtn, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}
-              onPress={() => {
-                if (presidentUser?.email) {
-                  sendEmail(presidentUser.email);
+                const targetEmail = club.email || presidentUser?.email;
+                if (targetEmail) {
+                  sendEmail(targetEmail);
                 } else {
                   showToast({
                     type: 'info',
@@ -126,15 +123,15 @@ export default function ClubDetailScreen({ route }: Props) {
               }}
             >
               <Ionicons name="mail-outline" size={13} color={themeColors.primary} />
-              <Text style={[styles.clubActionBtnText, { color: themeColors.primary }]}>Email Pres</Text>
+              <Text style={[styles.clubActionBtnText, { color: themeColors.primary }]}>Email Club</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={[styles.clubActionBtn, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}
-              onPress={() => openNavigationApp(club.latitude, club.longitude, club.club_name, `${club.city}, ${club.province}`)}
+              onPress={() => openNavigationApp(club.latitude, club.longitude, club.club_name, club.meeting_address || `${club.city}, ${club.province}`)}
             >
               <Ionicons name="navigate-outline" size={13} color={themeColors.primary} />
-              <Text style={[styles.clubActionBtnText, { color: themeColors.primary }]}>Venue Map</Text>
+              <Text style={[styles.clubActionBtnText, { color: themeColors.primary }]}>Meeting Venue</Text>
             </TouchableOpacity>
           </View>
         </View>

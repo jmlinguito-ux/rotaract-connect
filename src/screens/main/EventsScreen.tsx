@@ -22,6 +22,9 @@ import { useAppRefreshControl } from '../../hooks/useAppRefreshControl';
 import { AreaOfFocus, RotaractEvent } from '../../types';
 
 import { visibleEvents, canApproveEvent } from '../../utils/eventApproval';
+import * as Location from 'expo-location';
+import { checkInWindow } from '../../utils/checkIn';
+import { LocationPermissionModal } from '../../components/location/LocationPermissionModal';
 
 type ParticipationOption = 'JOINED' | 'ATTENDED' | 'INVITED' | 'MY' | 'APPROVALS';
 type StatusOption = 'ONGOING' | 'SCHEDULED' | 'RECRUITING' | 'COMPLETED';
@@ -85,6 +88,30 @@ export default function EventsScreen() {
   // Calendar State
   const [calendarMonthDate, setCalendarMonthDate] = useState<Date>(new Date());
   const [selectedDateStr, setSelectedDateStr] = useState<string | null>(null);
+  const [locationModalVisible, setLocationModalVisible] = useState(false);
+  const [isGpsEnabled, setIsGpsEnabled] = useState(true);
+
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const { status } = await Location.getForegroundPermissionsAsync();
+        const services = await Location.hasServicesEnabledAsync();
+        setIsGpsEnabled(status === 'granted' && services);
+      } catch {
+        setIsGpsEnabled(false);
+      }
+    })();
+  }, []);
+
+  const hasActiveEventToday = useMemo(() => {
+    if (!user) return false;
+    const now = new Date();
+    return events.some(e => {
+      const isJoined = participants.some(p => p.event_id === e.id && p.user_id === user.id && p.status === 'JOINED' && !p.checked_in_at && p.attendance_status !== 'ATTENDED');
+      if (!isJoined) return false;
+      return checkInWindow(e, now).state === 'OPEN';
+    });
+  }, [events, participants, user]);
 
   const stats = user ? userStats(user.id) : { joined: 0, hours: 0 };
 
@@ -297,6 +324,23 @@ export default function EventsScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* 📍 Active Event Today & Location Disabled Notice */}
+      {!isGpsEnabled && hasActiveEventToday && (
+        <TouchableOpacity
+          style={[styles.locationNoticeBanner, { backgroundColor: themeColors.surface, borderColor: '#FCD34D' }]}
+          onPress={() => setLocationModalVisible(true)}
+        >
+          <Ionicons name="warning" size={16} color="#D97706" />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.locationNoticeTitle, { color: '#B45309' }]}>Location Services Off</Text>
+            <Text style={[styles.locationNoticeSub, { color: themeColors.textMuted }]}>
+              Enable GPS to trigger automatic on-arrival check-in today.
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={14} color="#D97706" />
+        </TouchableOpacity>
+      )}
+
       {/* Calendar View Component */}
       {viewMode === 'CALENDAR' && (
         <View style={[styles.calendarContainer, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}>
@@ -390,12 +434,38 @@ export default function EventsScreen() {
         }
       />
 
+      {/* 📍 Location Permission Modal */}
+      <LocationPermissionModal
+        visible={locationModalVisible}
+        onClose={() => setLocationModalVisible(false)}
+        onPermissionGranted={() => setIsGpsEnabled(true)}
+      />
+
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
+  locationNoticeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  locationNoticeTitle: {
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  locationNoticeSub: {
+    fontSize: 11,
+    marginTop: 1,
+    lineHeight: 15,
+  },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20, paddingBottom: 8 },
   headerTitle: { fontSize: 28, fontWeight: '800' },
   headerSubtitle: { fontSize: 13, marginTop: 2 },

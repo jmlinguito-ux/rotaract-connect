@@ -16,6 +16,7 @@ import UserAvatar from '../../components/UserAvatar';
 import FullImageModal from '../../components/FullImageModal';
 import RoleBadgeIcon from '../../components/RoleBadgeIcon';
 import { VerifiedName } from '../../components/VerifiedCheck';
+import EmergencySosButton from '../../components/EmergencySosButton';
 
 export default function ProfileScreen() {
   const { user, signOut, updateAvatar } = useAuth();
@@ -125,6 +126,10 @@ export default function ProfileScreen() {
             <Row icon="key-outline" label="Roles & Permissions" colors={themeColors} onPress={() => navigation.navigate('RoleManagement')} />
           )}
           <Row icon="settings-outline" label="Settings" colors={themeColors} onPress={() => navigation.navigate('Settings')} />
+        </View>
+
+        <View style={{ marginHorizontal: 20, marginTop: 12 }}>
+          <EmergencySosButton variant="full" />
         </View>
 
         <TouchableOpacity style={styles.logout} onPress={signOut}>

@@ -53,6 +53,7 @@ export default function EditEventScreen({ route, navigation }: Props) {
   const [requiresApproval, setRequiresApproval] = useState(event?.requires_approval ?? false);
   const [allowInvites, setAllowInvites] = useState(event?.allow_participant_invites ?? true);
   const [lockCutoffHours, setLockCutoffHours] = useState<number>(event?.lock_leave_cutoff_hours ?? 24);
+  const [geofenceRadius, setGeofenceRadius] = useState<number>(event?.geofence_radius_meters ?? 300);
   const [contactNumber, setContactNumber] = useState(event?.contact_number ?? '');
   const [contactEmail, setContactEmail] = useState(event?.contact_email ?? '');
   const [confirmSaveVisible, setConfirmSaveVisible] = useState(false);
@@ -77,6 +78,7 @@ export default function EditEventScreen({ route, navigation }: Props) {
       setRequiresApproval(event.requires_approval);
       setAllowInvites(event.allow_participant_invites);
       setLockCutoffHours(event.lock_leave_cutoff_hours ?? 24);
+      setGeofenceRadius(event.geofence_radius_meters ?? 300);
       setContactNumber(event.contact_number ?? '');
       setContactEmail(event.contact_email ?? '');
     }
@@ -159,8 +161,9 @@ export default function EditEventScreen({ route, navigation }: Props) {
       contact_email: contactEmail.trim() || undefined,
       areas_of_focus: isServiceProject ? areasOfFocus : undefined,
       lock_leave_cutoff_hours: lockCutoffHours,
+      geofence_radius_meters: geofenceRadius,
     };
-  }, [title, desc, type, selectedCoOrganizers, selectedPartnerClubs, location, maxP, requiresApproval, allowInvites, visibility, coverPhoto, contactNumber, contactEmail, areasOfFocus, lockCutoffHours, isServiceProject, policy, event, users, user]);
+  }, [title, desc, type, selectedCoOrganizers, selectedPartnerClubs, location, maxP, requiresApproval, allowInvites, visibility, coverPhoto, contactNumber, contactEmail, areasOfFocus, lockCutoffHours, geofenceRadius, isServiceProject, policy, event, users, user]);
 
   /** Commit the given updates (or current form state) and navigate back. */
   const performSave = useCallback((updates: Partial<RotaractEvent>) => {
@@ -444,7 +447,50 @@ export default function EditEventScreen({ route, navigation }: Props) {
               <Text style={styles.fieldLockValue}>{event.address}, {event.city}</Text>
             </View>
           ) : (
-            <LocationPicker value={location} onChange={setLocation} />
+            <>
+              <LocationPicker value={location} onChange={setLocation} geofenceRadius={geofenceRadius} />
+
+              {/* Check-In Geofence Perimeter Radius */}
+              <Text style={styles.label}>Check-In Geofence Perimeter</Text>
+              <Text style={styles.subHint}>
+                Participants entering this {geofenceRadius}m radius during the event window will check in automatically.
+              </Text>
+              <View style={styles.radiusPillsRow}>
+                {[
+                  { label: '100m (Indoor)', value: 100 },
+                  { label: '300m (Standard)', value: 300 },
+                  { label: '500m (Campus)', value: 500 },
+                  { label: '1km (District)', value: 1000 },
+                ].map(r => {
+                  const isSelected = geofenceRadius === r.value;
+                  return (
+                    <TouchableOpacity
+                      key={r.value}
+                      activeOpacity={0.7}
+                      style={[
+                        styles.radiusPill,
+                        isSelected && styles.radiusPillActive,
+                      ]}
+                      onPress={() => setGeofenceRadius(r.value)}
+                    >
+                      <Ionicons
+                        name={isSelected ? 'shield-checkmark' : 'ellipse-outline'}
+                        size={13}
+                        color={isSelected ? '#fff' : colors.textMuted}
+                      />
+                      <Text
+                        style={[
+                          styles.radiusPillText,
+                          isSelected && styles.radiusPillTextActive,
+                        ]}
+                      >
+                        {r.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </>
           )}
 
           <Field label="Max Participants" value={maxP} onChangeText={setMaxP} keyboardType="number-pad" placeholder="50" />
@@ -695,4 +741,37 @@ const styles = StyleSheet.create({
   selectedPillText: { fontSize: 12, fontWeight: '600' },
   coOrgSearchWrap: { marginBottom: 12 },
   coOrgSearchInput: { height: 44, paddingHorizontal: 12 },
+
+  // Geofence radius pills
+  radiusPillsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+    marginTop: 4,
+  },
+  radiusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  radiusPillActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  radiusPillText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  radiusPillTextActive: {
+    color: '#fff',
+    fontWeight: '700',
+  },
 });

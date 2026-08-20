@@ -426,7 +426,8 @@ type PushType =
   | 'join_approved'
   | 'organizer_high'
   | 'organizer_alert'
-  | 'announcement';
+  | 'announcement'
+  | 'emergency_sos';
 
 interface TypeRule {
   channelId: string;
@@ -438,18 +439,20 @@ interface TypeRule {
 }
 
 const RULES: Record<PushType, TypeRule> = {
-  chat_message:    { channelId: 'chat_v5',            categoryId: 'message_actions', sound: 'chime.wav', respectsMute: true,  highPriority: false },
-  mention:         { channelId: 'mentions_v3',        categoryId: 'message_actions', sound: 'chime.wav', respectsMute: false, highPriority: false },
-  event_reminder:  { channelId: 'events_v3',          categoryId: 'general_actions', sound: 'chime.wav', respectsMute: true,  highPriority: false },
-  invitation:      { channelId: 'events_v3',          categoryId: 'general_actions', sound: 'chime.wav', respectsMute: true,  highPriority: false },
-  join_approved:   { channelId: 'events_v3',          categoryId: 'general_actions', sound: 'chime.wav', respectsMute: true,  highPriority: false },
-  organizer_high:  { channelId: 'organizer_high_v2',  categoryId: 'general_actions', sound: 'alarm.wav', respectsMute: true,  highPriority: true  },
-  organizer_alert: { channelId: 'organizer_alert_v3', categoryId: 'general_actions', sound: 'alert.wav', respectsMute: true,  highPriority: true  },
-  announcement:    { channelId: 'general_v5',         categoryId: 'general_actions', sound: 'chime.wav', respectsMute: true,  highPriority: false },
+  chat_message:    { channelId: 'chat_v5',            categoryId: 'message_actions', sound: 'chime.wav',     respectsMute: true,  highPriority: false },
+  mention:         { channelId: 'mentions_v3',        categoryId: 'message_actions', sound: 'chime.wav',     respectsMute: false, highPriority: false },
+  event_reminder:  { channelId: 'events_v3',          categoryId: 'general_actions', sound: 'chime.wav',     respectsMute: true,  highPriority: false },
+  invitation:      { channelId: 'events_v3',          categoryId: 'general_actions', sound: 'chime.wav',     respectsMute: true,  highPriority: false },
+  join_approved:   { channelId: 'events_v3',          categoryId: 'general_actions', sound: 'chime.wav',     respectsMute: true,  highPriority: false },
+  organizer_high:  { channelId: 'organizer_high_v2',  categoryId: 'general_actions', sound: 'alarm.wav',     respectsMute: true,  highPriority: true  },
+  organizer_alert: { channelId: 'organizer_alert_v3', categoryId: 'general_actions', sound: 'alert.wav',     respectsMute: true,  highPriority: true  },
+  announcement:    { channelId: 'general_v5',         categoryId: 'general_actions', sound: 'chime.wav',     respectsMute: true,  highPriority: false },
+  emergency_sos:   { channelId: 'emergency_sos_v1',   categoryId: 'general_actions', sound: 'emergency.wav', respectsMute: false, highPriority: true  },
 };
 
 /** Classifies a notification row. Organizer urgency outranks the kind. */
 function typeForNotification(kind: string, priority: string | null, isChat: boolean): PushType {
+  if (kind === 'EMERGENCY_BROADCAST') return 'emergency_sos';
   if (priority === 'HIGH') return 'organizer_high';
   if (priority === 'ALERT') return 'organizer_alert';
   if (isChat) return 'chat_message';
@@ -749,6 +752,7 @@ async function sendViaExpo(
 
     // --- Android (only reached by devices without a registered device token) ---
     channelId: c.channelId,
+    color: '#D41367',
     ...(c.collapseKey ? { tag: c.collapseKey } : {}),
     ...(c.image ? { richContent: { image: c.image } } : {}),
 

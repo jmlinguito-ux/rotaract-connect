@@ -528,8 +528,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const updateAvatar = async (avatarUrl: string) => {
     if (!user) return;
-    await supabase.from('profiles').update({ avatar_url: avatarUrl }).eq('id', user.id);
-    setUser(prev => (prev ? { ...prev, avatar_url: avatarUrl } : null));
+    try {
+      await supabase.from('profiles').update({ avatar_url: avatarUrl }).eq('id', user.id);
+    } catch (e) {
+      console.warn('[updateAvatar error]:', e);
+    }
+    const updated = { ...user, avatar_url: avatarUrl };
+    setUser(updated);
+    await setCachedUser(updated);
   };
 
   const updateProfile = async (updates: Partial<AppUser>) => {
@@ -550,12 +556,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     if (updates.verification_status !== undefined) dbUpdates.verification_status = updates.verification_status;
     if (updates.allow_direct_inquiries !== undefined) dbUpdates.allow_direct_inquiries = updates.allow_direct_inquiries;
+    if (updates.contact_privacy !== undefined) dbUpdates.contact_privacy = updates.contact_privacy;
 
     if (Object.keys(dbUpdates).length > 0) {
-      await supabase.from('profiles').update(dbUpdates).eq('id', user.id);
+      try {
+        const { error } = await supabase.from('profiles').update(dbUpdates).eq('id', user.id);
+        if (error) {
+          console.warn('[updateProfile Supabase error]:', error.message);
+        }
+      } catch (e) {
+        console.warn('[updateProfile error]:', e);
+      }
     }
 
-    setUser(prev => (prev ? { ...prev, ...updates } : null));
+    const updatedUser = { ...user, ...updates };
+    setUser(updatedUser);
+    await setCachedUser(updatedUser);
   };
 
   return (

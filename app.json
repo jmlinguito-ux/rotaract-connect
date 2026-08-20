@@ -17,7 +17,10 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.rotaractconnect.app",
       "infoPlist": {
-        "NSPhotoLibraryUsageDescription": "Rotaract Connect needs access to your photos to allow you to upload and crop cover photos for events."
+        "NSPhotoLibraryUsageDescription": "Rotaract Connect needs access to your photos to allow you to upload and crop cover photos for events.",
+        "NSLocationWhenInUseUsageDescription": "Rotaract Connect uses your location to confirm event check-in and power nearby emergency SOS alerts.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Rotaract Connect periodically updates your coarse location in the background to ensure you receive urgent emergency broadcasts from nearby Rotaractors.",
+        "UIBackgroundModes": ["location", "fetch", "remote-notification"]
       }
     },
     "android": {
@@ -35,6 +38,9 @@
       "permissions": [
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION",
         "android.permission.RECORD_AUDIO"
       ]
     },
@@ -46,7 +52,9 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Rotaract Connect uses your location to confirm you are at the venue when you check in to an event."
+          "locationWhenInUsePermission": "Rotaract Connect uses your location to confirm event check-in and power nearby emergency SOS alerts.",
+          "locationAlwaysAndWhenInUsePermission": "Rotaract Connect periodically updates your coarse location in the background to ensure you receive urgent emergency broadcasts from nearby Rotaractors.",
+          "isAndroidBackgroundLocationEnabled": true
         }
       ],
       [
@@ -68,7 +76,8 @@
           "defaultChannel": "general_v5",
           "sounds": [
             "./assets/sounds/chime.wav",
-            "./assets/sounds/alert.wav"
+            "./assets/sounds/alert.wav",
+            "./assets/sounds/emergency.wav"
           ]
         }
       ],

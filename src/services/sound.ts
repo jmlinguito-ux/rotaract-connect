@@ -22,6 +22,7 @@ try {
 const CHIME = require('../../assets/sounds/chime.wav');
 const ALERT = require('../../assets/sounds/alert.wav');
 const ALARM = require('../../assets/sounds/alarm.wav');
+const EMERGENCY = require('../../assets/sounds/emergency.wav');
 
 let player: AudioPlayer | null = null;
 let audioModeSet = false;
@@ -37,22 +38,27 @@ function ensureAudioMode() {
   }
 }
 
-/** Plays the notification chime (CHIME), organizer alert (ALERT), or looping alarm (HIGH). */
-export function playAlertSound(priority: 'CHIME' | 'ALERT' | 'HIGH' = 'CHIME') {
+/** Plays the notification chime (CHIME), organizer alert (ALERT), or looping alarm (HIGH/EMERGENCY). */
+export function playAlertSound(priority: 'CHIME' | 'ALERT' | 'HIGH' | 'EMERGENCY' = 'CHIME') {
   if (!audio?.createAudioPlayer) return;
   try {
     stopAlertSound();
     ensureAudioMode();
-    const source = priority === 'HIGH' ? ALARM : priority === 'ALERT' ? ALERT : CHIME;
+    const source = priority === 'EMERGENCY' ? EMERGENCY : priority === 'HIGH' ? ALARM : priority === 'ALERT' ? ALERT : CHIME;
     player = audio.createAudioPlayer(source);
     if (player) {
-      player.loop = priority === 'HIGH'; // HIGH keeps sounding until stopAlertSound()
+      player.loop = priority === 'HIGH' || priority === 'EMERGENCY'; // Keeps sounding until dismissed
       player.volume = 1.0;
       player.play();
     }
   } catch {
     // ignore playback errors (e.g. native module missing)
   }
+}
+
+/** Explicit helper for playing the emergency broadcast alarm sound */
+export function playEmergencySound() {
+  playAlertSound('EMERGENCY');
 }
 
 /** Explicit helper for playing the pleasant chime sound */

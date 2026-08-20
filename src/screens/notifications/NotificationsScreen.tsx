@@ -14,6 +14,7 @@ import { DeclineReasonModal } from '../../components/DeclineReasonModal';
 import { SwipeableRow } from '../../components/SwipeableRow';
 import { BottomSheet } from '../../components/BottomSheet';
 import UserAvatar from '../../components/UserAvatar';
+import { dispatchLocalAlert } from '../../services/emergencyBroadcast';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Notifications'>;
 
@@ -30,6 +31,7 @@ const ICON: Record<NotificationKind, keyof typeof Ionicons.glyphMap> = {
   EVENT_APPROVED: 'checkmark-circle',
   MEMBERSHIP_REQUEST: 'people',
   INQUIRY_RECEIVED: 'chatbubble-ellipses',
+  EMERGENCY_BROADCAST: 'warning',
 };
 
 const ICON_COLOR: Record<NotificationKind, string> = {
@@ -45,6 +47,7 @@ const ICON_COLOR: Record<NotificationKind, string> = {
   EVENT_APPROVED: colors.success,
   MEMBERSHIP_REQUEST: colors.warning,
   INQUIRY_RECEIVED: colors.primary,
+  EMERGENCY_BROADCAST: colors.danger,
 };
 
 export default function NotificationsScreen({ navigation }: Props) {
@@ -118,6 +121,24 @@ export default function NotificationsScreen({ navigation }: Props) {
   const handleRowPress = (item: AppNotification) => {
     if (!item.is_read) {
       markNotificationsRead(item.id);
+    }
+    if (item.kind === 'EMERGENCY_BROADCAST') {
+      const broadcasterName = item.title.replace('🚨 EMERGENCY SOS: ', '').trim() || 'Rotaract Member in Distress';
+      dispatchLocalAlert({
+        id: item.id,
+        user_id: item.user_id,
+        full_name: broadcasterName,
+        club_id: '',
+        club_name: 'District 3800',
+        latitude: 14.6948,
+        longitude: 120.9664,
+        status: 'ACTIVE',
+        map_url: 'https://maps.google.com/?q=14.6948,120.9664',
+        address_hint: item.message,
+        created_at: item.created_at,
+      });
+      navigation.navigate('Main', { screen: 'MapTab' } as any);
+      return;
     }
     if (item.conversation_id) {
       const senderName = item.title.replace('Inquiry from ', '');

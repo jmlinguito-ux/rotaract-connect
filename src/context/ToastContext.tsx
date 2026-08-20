@@ -12,7 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from './ThemeContext';
 
-export type ToastType = 'success' | 'info' | 'warning' | 'error';
+export type ToastType = 'rotaract' | 'success' | 'info' | 'warning' | 'error';
 
 export interface ToastOptions {
   id?: string;
@@ -105,8 +105,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     [translateY, opacity, hideToast],
   );
 
-  const getIconAndColor = (type: ToastType = 'info') => {
+  const getIconAndColor = (type: ToastType = 'rotaract') => {
     switch (type) {
+      case 'rotaract':
+        return { icon: 'shield-checkmark' as const, color: '#D41367', bg: isNightMode ? '#3B0720' : '#FDF2F8' };
       case 'success':
         return { icon: 'checkmark-circle' as const, color: '#10B981', bg: isNightMode ? '#064E3B' : '#ECFDF5' };
       case 'warning':

@@ -73,6 +73,38 @@ export async function configurePushNotifications() {
     // `expo prebuild`. Both are kept in step so either path works.
     const chime = 'chime.wav';
     const alert = 'alert.wav';
+    const emergency = 'emergency.wav';
+
+    try {
+      await Notifications.setNotificationChannelAsync('emergency_sos_v1', {
+        name: 'Emergency SOS Broadcasts',
+        description: 'Urgent emergency distress broadcasts from nearby members.',
+        importance: Notifications.AndroidImportance.MAX,
+        sound: emergency,
+        vibrationPattern: [0, 800, 400, 800, 400, 800],
+        lightColor: '#EF4444',
+        showBadge: true,
+        bypassDnd: true,
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+      });
+    } catch {
+      // Fallback to alert sound on dev builds compiled before emergency.wav was added
+      try {
+        await Notifications.setNotificationChannelAsync('emergency_sos_v1', {
+          name: 'Emergency SOS Broadcasts',
+          description: 'Urgent emergency distress broadcasts from nearby members.',
+          importance: Notifications.AndroidImportance.MAX,
+          sound: alert,
+          vibrationPattern: [0, 800, 400, 800, 400, 800],
+          lightColor: '#EF4444',
+          showBadge: true,
+          bypassDnd: true,
+          lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+        });
+      } catch {
+        // ignore
+      }
+    }
 
     await Notifications.setNotificationChannelAsync('chat_v5', {
       name: 'Chat Messages',

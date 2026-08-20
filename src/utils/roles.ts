@@ -31,6 +31,47 @@ export const ASSIGNABLE_ROLES: UserRole[] = ['MEMBER', 'CLUB_PRESIDENT', 'DISTRI
 export const ASSIGNABLE_SYSTEM_ROLES: SystemRole[] = ['NONE', 'DISTRICT_ADMIN', 'APP_ADMIN'];
 export const ASSIGNABLE_CLUB_ROLES: ClubRole[] = ['MEMBER', 'OFFICER', 'CLUB_PRESIDENT'];
 
+/**
+ * Canonical list of standard Rotaract club positions.
+ * Used across Registration, Application Review, and Profile editing.
+ */
+export const ROTARACT_POSITIONS = [
+  'President',
+  'Vice President',
+  'Secretary',
+  'Treasurer',
+  'Auditor',
+  'Club Service Director',
+  'Community Service Director',
+  'International Service Director',
+  'Professional Development Director',
+  'Public Image Director',
+  'Youth Service Director',
+  'Member',
+] as const;
+
+export type RotaractPosition = (typeof ROTARACT_POSITIONS)[number];
+
+/**
+ * Maps a position title to its corresponding ClubRole.
+ * "President" → CLUB_PRESIDENT, any Director/Officer title → OFFICER, otherwise MEMBER.
+ */
+export function getPositionClubRole(position: string): ClubRole {
+  const p = position.toLowerCase().trim();
+  if (p === 'president' || p === 'club president') return 'CLUB_PRESIDENT';
+  const officerTitles = [
+    'vice president', 'secretary', 'treasurer', 'auditor',
+    'club service director', 'community service director',
+    'international service director', 'professional development director',
+    'public image director', 'youth service director',
+  ];
+  if (officerTitles.includes(p)) return 'OFFICER';
+  // Fallback heuristic for non-standard titles
+  const officerKeywords = ['vp', 'director', 'officer', 'chair', 'pro', 'sergeant'];
+  if (officerKeywords.some(kw => p.includes(kw))) return 'OFFICER';
+  return 'MEMBER';
+}
+
 export type RoleBadge = {
   /** `rotary` draws the Rotary wheel asset; `ionicons` takes a glyph name. */
   family: 'ionicons' | 'rotary';
@@ -79,7 +120,12 @@ export function getClubRole(user: Partial<AppUser> | null | undefined): ClubRole
     return 'CLUB_PRESIDENT';
   }
   const pos = user.position?.toLowerCase() || '';
-  const officerKeywords = ['vice president', 'vp', 'secretary', 'treasurer', 'director', 'officer', 'chair', 'auditor', 'pro', 'sergeant'];
+  const officerKeywords = [
+    'vice president', 'vp', 'secretary', 'treasurer', 'director',
+    'officer', 'chair', 'auditor', 'pro', 'sergeant',
+    'club service', 'community service', 'international service',
+    'professional development', 'public image', 'youth service',
+  ];
   if (officerKeywords.some(kw => pos.includes(kw))) {
     return 'OFFICER';
   }

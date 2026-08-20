@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform, Modal, Image, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Platform, Modal, Image, Alert, ActivityIndicator } from 'react-native';
 import { KeyboardAwareScrollView, useKeyboardAwareOnFocus } from '../../components/KeyboardAwareScrollView';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -13,10 +13,9 @@ import * as ImagePicker from 'expo-image-picker';
 import FullImageModal from '../../components/FullImageModal';
 import TermsAndPrivacyModal from '../../components/TermsAndPrivacyModal';
 import { PickedImage } from '../../services/storage';
+import { ROTARACT_POSITIONS, getPositionClubRole } from '../../utils/roles';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Register'>;
-
-const POSITIONS = ['President', 'Officer', 'Member'];
 
 export default function RegisterScreen({ navigation }: Props) {
   const { signUp } = useAuth();
@@ -32,7 +31,7 @@ export default function RegisterScreen({ navigation }: Props) {
   const [memberId, setMemberId] = useState('');
   const [contactNumber, setContactNumber] = useState('');
   const [position, setPosition] = useState('Member');
-  const [positionModalVisible, setPositionModalVisible] = useState(false);
+  const [isPositionDropdownOpen, setIsPositionDropdownOpen] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [legalModalVisible, setLegalModalVisible] = useState(false);
   const [legalModalTab, setLegalModalTab] = useState<'terms' | 'privacy'>('terms');
@@ -207,16 +206,57 @@ export default function RegisterScreen({ navigation }: Props) {
             <Text style={styles.errorText}>Rotaract Member ID must be 8 digits</Text>
           ) : null}
 
-          <Text style={styles.label}>Position</Text>
-          <TouchableOpacity
-            style={styles.selector}
-            onPress={() => setPositionModalVisible(true)}
-          >
-            <Text style={position ? styles.selectorText : styles.selectorPlaceholder}>
-              {position || 'Select Position'}
-            </Text>
-            <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
-          </TouchableOpacity>
+          <View style={{ marginBottom: 16 }}>
+            <Text style={styles.label}>Position *</Text>
+            <TouchableOpacity
+              style={[styles.selector, isPositionDropdownOpen && { borderColor: colors.primary }]}
+              onPress={() => setIsPositionDropdownOpen(!isPositionDropdownOpen)}
+            >
+              <Text style={position ? styles.selectorText : styles.selectorPlaceholder}>
+                {position || 'Select Position'}
+              </Text>
+              <Ionicons name={isPositionDropdownOpen ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textMuted} />
+            </TouchableOpacity>
+
+            {isPositionDropdownOpen && (
+              <View style={styles.inlineDropdownMenu}>
+                <ScrollView
+                  nestedScrollEnabled={true}
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={true}
+                  style={{ maxHeight: 220 }}
+                >
+                  {ROTARACT_POSITIONS.map(p => {
+                    const isSelected = position === p;
+                    const clubRole = getPositionClubRole(p);
+                    const roleHint = clubRole === 'CLUB_PRESIDENT' ? 'Executive' : clubRole === 'OFFICER' ? 'Officer' : 'General';
+                    return (
+                      <TouchableOpacity
+                        key={p}
+                        style={[styles.overlayDropdownItem, isSelected && { backgroundColor: colors.primary + '14' }]}
+                        onPress={() => {
+                          setPosition(p);
+                          setIsPositionDropdownOpen(false);
+                        }}
+                      >
+                        <View style={styles.checkmarkWrap}>
+                          {isSelected ? (
+                            <Ionicons name="checkmark-circle" size={18} color={colors.primary} />
+                          ) : (
+                            <Ionicons name="ellipse-outline" size={14} color={colors.textMuted} />
+                          )}
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.overlayDropdownText, { color: isSelected ? colors.primary : colors.text, fontWeight: isSelected ? '700' : '400' }]}>{p}</Text>
+                          <Text style={{ fontSize: 11, color: isSelected ? colors.primary : colors.textMuted, marginTop: 1 }}>{roleHint}</Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            )}
+          </View>
 
           <Text style={styles.label}>Rotaract ID / Membership Proof (Optional)</Text>
           {proofUrl ? (
@@ -328,7 +368,7 @@ export default function RegisterScreen({ navigation }: Props) {
                 club_id: selectedClubId ?? '',
                 club_name: selectedClub?.club_name ?? '',
                 position,
-                role: position === 'President' ? 'CLUB_PRESIDENT' : 'MEMBER',
+                role: getPositionClubRole(position) === 'CLUB_PRESIDENT' ? 'CLUB_PRESIDENT' : 'MEMBER',
                 avatar_asset: avatarAsset || undefined,
                 member_id: memberId,
                 proof_asset: proofAsset || undefined,
@@ -367,37 +407,7 @@ export default function RegisterScreen({ navigation }: Props) {
           </TouchableOpacity>
       </KeyboardAwareScrollView>
 
-      {/* Position Dropdown Modal */}
-      <Modal visible={positionModalVisible} transparent animationType="fade" onRequestClose={() => setPositionModalVisible(false)}>
-        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setPositionModalVisible(false)}>
-          <TouchableOpacity style={styles.modalCard} activeOpacity={1} onPress={e => e.stopPropagation()}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Position</Text>
-              <TouchableOpacity onPress={() => setPositionModalVisible(false)}>
-                <Ionicons name="close" size={20} color={colors.textMuted} />
-              </TouchableOpacity>
-            </View>
-            <View style={{ gap: 8 }}>
-              {POSITIONS.map(p => {
-                const isSelected = position === p;
-                return (
-                  <TouchableOpacity
-                    key={p}
-                    style={[styles.positionOption, isSelected && styles.positionOptionActive]}
-                    onPress={() => {
-                      setPosition(p);
-                      setPositionModalVisible(false);
-                    }}
-                  >
-                    <Text style={[styles.positionOptionText, isSelected && styles.positionOptionTextActive]}>{p}</Text>
-                    {isSelected && <Ionicons name="checkmark-circle" size={20} color={colors.primary} />}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
+
 
       <TermsAndPrivacyModal
         visible={legalModalVisible}
@@ -560,14 +570,35 @@ const styles = StyleSheet.create({
   linkBtn: { marginTop: 20, alignItems: 'center', paddingVertical: 10 },
   linkText: { color: colors.textMuted, fontSize: 14 },
   linkTextBold: { color: colors.primary, fontWeight: '700' },
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-  modalCard: { width: '100%', maxWidth: 360, backgroundColor: '#fff', borderRadius: 20, padding: 20 },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  modalTitle: { fontSize: 18, fontWeight: '800', color: colors.text },
-  positionOption: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 14, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
-  positionOptionActive: { borderColor: colors.primary, backgroundColor: colors.primary + '0D' },
-  positionOptionText: { fontSize: 15, fontWeight: '600', color: colors.text },
-  positionOptionTextActive: { color: colors.primary, fontWeight: '800' },
+  inlineDropdownMenu: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: '#fff',
+    marginTop: 6,
+    marginBottom: 6,
+    overflow: 'hidden',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+  },
+  overlayDropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    gap: 8,
+  },
+  checkmarkWrap: {
+    width: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  overlayDropdownText: {
+    fontSize: 15,
+  },
   agreementCard: {
     marginTop: 18,
     padding: 14,

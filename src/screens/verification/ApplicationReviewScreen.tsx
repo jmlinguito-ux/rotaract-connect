@@ -12,17 +12,15 @@ import FullImageModal from '../../components/FullImageModal';
 import UserAvatar from '../../components/UserAvatar';
 import { getSignedImageUrl, isRemoteUrl } from '../../services/storage';
 
-import { isAppAdmin, isDistrictAdmin, isClubPresident } from '../../utils/roles';
+import { isAppAdmin, isDistrictAdmin, isClubPresident, ROTARACT_POSITIONS, getPositionClubRole } from '../../utils/roles';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ApplicationReview'>;
-
-const POSITIONS = ['President', 'Officer', 'Member'];
 
 export default function ApplicationReviewScreen({ route, navigation }: Props) {
   const { applicationId } = route.params;
   const { user } = useAuth();
   const { applications, reviewApplication, resubmitApplication, clubs } = useData();
-  const { colors: themeColors } = useTheme();
+  const { colors: themeColors, isNightMode } = useTheme();
 
   const [rejectModalVisible, setRejectModalVisible] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
@@ -376,14 +374,19 @@ export default function ApplicationReviewScreen({ route, navigation }: Props) {
             </TouchableOpacity>
 
             {isClubDropdownOpen && (
-              <View style={[styles.overlayDropdownMenu, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border, maxHeight: 220 }]}>
-                <ScrollView nestedScrollEnabled style={{ maxHeight: 220 }}>
+              <View style={[styles.inlineDropdownMenu, { backgroundColor: isNightMode ? themeColors.surface : '#F8FAFC', borderColor: themeColors.border }]}>
+                <ScrollView
+                  nestedScrollEnabled={true}
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={true}
+                  style={{ maxHeight: 200 }}
+                >
                   {clubs.map(c => {
                     const isSelected = editClubId === c.id;
                     return (
                       <TouchableOpacity
                         key={c.id}
-                        style={styles.overlayDropdownItem}
+                        style={[styles.overlayDropdownItem, isSelected && { backgroundColor: themeColors.primary + '14' }]}
                         onPress={() => {
                           setEditClubId(c.id);
                           setEditClubName(c.club_name);
@@ -391,10 +394,14 @@ export default function ApplicationReviewScreen({ route, navigation }: Props) {
                         }}
                       >
                         <View style={styles.checkmarkWrap}>
-                          {isSelected && <Ionicons name="checkmark-sharp" size={18} color={themeColors.text} />}
+                          {isSelected ? (
+                            <Ionicons name="checkmark-circle" size={18} color={themeColors.primary} />
+                          ) : (
+                            <Ionicons name="ellipse-outline" size={14} color={themeColors.textMuted} />
+                          )}
                         </View>
                         <View style={{ flex: 1 }}>
-                          <Text style={[styles.overlayDropdownText, { color: themeColors.text, fontWeight: isSelected ? '700' : '400' }]}>{c.club_name}</Text>
+                          <Text style={[styles.overlayDropdownText, { color: isSelected ? themeColors.primary : themeColors.text, fontWeight: isSelected ? '700' : '400' }]}>{c.club_name}</Text>
                           <Text style={{ fontSize: 11, color: themeColors.textMuted }}>{c.city}, {c.province}</Text>
                         </View>
                       </TouchableOpacity>
@@ -421,10 +428,10 @@ export default function ApplicationReviewScreen({ route, navigation }: Props) {
           ) : null}
 
           {/* Position Selector */}
-          <View style={{ zIndex: isPositionDropdownOpen ? 1000 : 1, position: 'relative' }}>
+          <View style={{ marginBottom: 12 }}>
             <Text style={[styles.inputLabel, { color: themeColors.text }]}>Position *</Text>
             <TouchableOpacity
-              style={[styles.selector, { backgroundColor: themeColors.bg, borderColor: themeColors.border }]}
+              style={[styles.selector, { backgroundColor: themeColors.bg, borderColor: isPositionDropdownOpen ? themeColors.primary : themeColors.border }]}
               onPress={() => {
                 setIsPositionDropdownOpen(!isPositionDropdownOpen);
                 setIsClubDropdownOpen(false);
@@ -437,23 +444,32 @@ export default function ApplicationReviewScreen({ route, navigation }: Props) {
             </TouchableOpacity>
 
             {isPositionDropdownOpen && (
-              <View style={[styles.overlayDropdownMenuUp, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border, maxHeight: 220 }]}>
-                <ScrollView nestedScrollEnabled style={{ maxHeight: 220 }}>
-                  {POSITIONS.map(pos => {
+              <View style={[styles.inlineDropdownMenu, { backgroundColor: isNightMode ? themeColors.surface : '#F8FAFC', borderColor: themeColors.border }]}>
+                <ScrollView
+                  nestedScrollEnabled={true}
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={true}
+                  style={{ maxHeight: 220 }}
+                >
+                  {ROTARACT_POSITIONS.map(pos => {
                     const isSelected = editPosition === pos;
                     return (
                       <TouchableOpacity
                         key={pos}
-                        style={styles.overlayDropdownItem}
+                        style={[styles.overlayDropdownItem, isSelected && { backgroundColor: themeColors.primary + '14' }]}
                         onPress={() => {
                           setEditPosition(pos);
                           setIsPositionDropdownOpen(false);
                         }}
                       >
                         <View style={styles.checkmarkWrap}>
-                          {isSelected && <Ionicons name="checkmark-sharp" size={18} color={themeColors.text} />}
+                          {isSelected ? (
+                            <Ionicons name="checkmark-circle" size={18} color={themeColors.primary} />
+                          ) : (
+                            <Ionicons name="ellipse-outline" size={14} color={themeColors.textMuted} />
+                          )}
                         </View>
-                        <Text style={[styles.overlayDropdownText, { color: themeColors.text, fontWeight: isSelected ? '700' : '400' }]}>{pos}</Text>
+                        <Text style={[styles.overlayDropdownText, { color: isSelected ? themeColors.primary : themeColors.text, fontWeight: isSelected ? '700' : '400' }]}>{pos}</Text>
                       </TouchableOpacity>
                     );
                   })}
@@ -620,9 +636,9 @@ const styles = StyleSheet.create({
 
   inputLabel: { fontSize: 13, fontWeight: '700', marginBottom: 6, marginTop: 10 },
   input: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14 },
-  selector: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
-  selectorText: { fontSize: 14, fontWeight: '600' },
-  selectorPlaceholder: { fontSize: 14 },
+  selector: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
+  selectorText: { fontSize: 15, fontWeight: '600' },
+  selectorPlaceholder: { fontSize: 15 },
   overlayDropdownMenu: {
     position: 'absolute',
     top: 72,
@@ -651,12 +667,24 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 10,
   },
+  inlineDropdownMenu: {
+    borderRadius: 14,
+    borderWidth: 1,
+    marginTop: 6,
+    marginBottom: 6,
+    overflow: 'hidden',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+  },
   overlayDropdownItem: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 14,
-    paddingVertical: 10,
-    gap: 6,
+    paddingVertical: 11,
+    gap: 8,
   },
   overlayDropdownText: { fontSize: 14 },
   checkmarkWrap: {

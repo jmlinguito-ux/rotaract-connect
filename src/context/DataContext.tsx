@@ -19,14 +19,22 @@ import { ROLE_LABELS, getSystemRole, getClubRole, isAppAdmin, isDistrictAdmin, i
 import { useRealtimeSync } from './useRealtimeSync';
 import { enqueueOfflineCheckIn, drainOfflineCheckIns } from '../services/offlineQueue';
 import { calculateParticipantHours } from '../utils/hoursCalculation';
+import {
+  setupNotificationChannels,
+  scheduleEventReminder,
+  cancelEventReminder,
+  notifyAttendance,
+  updateBadgeCount,
+} from '../services/notifications';
+import { syncEventGeofences } from '../services/backgroundGeofencing';
 
 export type CheckInRecord = {
   checkedInAt: string;
   latitude: number;
   longitude: number;
   distanceMeters: number;
-  /** Who produced this record — the attendee's own verified GPS check-in, or the organizer manually. */
-  recordedBy?: 'SELF_GPS' | 'ORGANIZER';
+  /** Who produced this record — the attendee's own verified GPS check-in, organizer manual override, or QR pass scan. */
+  recordedBy?: 'SELF_GPS' | 'ORGANIZER' | 'ORGANIZER_QR';
 };
 
 export type CheckOutRecord = {
@@ -34,7 +42,7 @@ export type CheckOutRecord = {
   latitude?: number;
   longitude?: number;
   distanceMeters?: number;
-  recordedBy?: 'SELF_GPS' | 'AUTO_PERIMETER_LEAVE' | 'ORGANIZER';
+  recordedBy?: 'SELF_GPS' | 'AUTO_PERIMETER_LEAVE' | 'EVENT_CONCLUDED' | 'ORGANIZER' | 'ORGANIZER_QR';
 };
 
 /**
@@ -156,6 +164,7 @@ interface DataContextValue {
     }
   ) => void;
 
+  pushNotification: (n: Omit<AppNotification, 'id' | 'created_at' | 'is_read'>) => void;
   markNotificationsRead: (userId: string) => void;
   markNotificationRead: (notificationId: string) => void;
   deleteNotification: (notificationId: string) => void;
@@ -192,6 +201,8 @@ interface DataContextValue {
     president_name?: string;
     latitude?: number;
     longitude?: number;
+    email?: string;
+    meeting_address?: string;
   }) => Club;
 
   participantsFor: (eventId: string) => EventParticipant[];
@@ -249,6 +260,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
       }
     });
   }, []);
+
+  // Keep current authUser in sync with users list
+  useEffect(() => {
+    if (!authUser) return;
+    setUsers(prev => {
+      const idx = prev.findIndex(u => u.id === authUser.id);
+      if (idx >= 0 && prev[idx] !== authUser) {
+        const next = [...prev];
+        next[idx] = authUser;
+        return next;
+      }
+      return prev;
+    });
+  }, [authUser]);
 
   // Clear data cache on sign out
   useEffect(() => {
@@ -319,6 +344,30 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return () => { cancelledRef.current = true; };
   }, [isAuthenticated, applySnapshot]);
 
+  // Initialize Android notification channels on app startup
+  useEffect(() => {
+    setupNotificationChannels();
+  }, []);
+
+  // Update app icon badge with unread notification count
+  useEffect(() => {
+    if (!isAuthenticated || !authUser) return;
+    const unread = notifications.filter(n => n.user_id === authUser.id && !n.is_read).length;
+    updateBadgeCount(unread);
+  }, [notifications, isAuthenticated, authUser]);
+
+  // Sync OS-level native geofences for upcoming joined events (powers closed-app check-in)
+  useEffect(() => {
+    if (!isAuthenticated || !authUser) return;
+    const myJoinedEventIds = new Set(
+      participants
+        .filter(p => p.user_id === authUser.id && (p.status === 'JOINED' || p.attendance_status === 'ATTENDED'))
+        .map(p => p.event_id)
+    );
+    const myJoinedEvents = events.filter(e => myJoinedEventIds.has(e.id));
+    syncEventGeofences(myJoinedEvents);
+  }, [participants, events, isAuthenticated, authUser]);
+
   // Drain offline check-in queue on mount, auth ready, and app resume
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -358,6 +407,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     president_name?: string;
     latitude?: number;
     longitude?: number;
+    email?: string;
+    meeting_address?: string;
   }) => {
     const newClub: Club = {
       id: nextId('c'),
@@ -374,6 +425,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // once a real user is verified, so this must not point at a fake user id.
       president_id: '',
       president_name: c.president_name || 'Pending Election',
+      email: c.email?.trim() || undefined,
+      meeting_address: c.meeting_address?.trim() || undefined,
     };
     setClubs(prev => [...prev, newClub]);
     db.insertClub(newClub);
@@ -931,6 +984,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         event_id: ev.id,
       });
     } else {
+      scheduleEventReminder(ev);
       pushNotif({
         user_id: userId,
         kind: 'JOIN_APPROVED',
@@ -942,6 +996,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, [events, users, participants, pushNotif]);
 
   const leaveEvent = useCallback((eventId: string, userId: string, reason?: string) => {
+    cancelEventReminder(eventId);
     setParticipants(prev => prev.filter(p => !(p.event_id === eventId && p.user_id === userId)));
     db.deleteParticipant(eventId, userId);
 
@@ -988,6 +1043,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const p = participants.find(x => x.id === participantId);
     if (p) {
       const ev = events.find(e => e.id === p.event_id);
+      if (ev) scheduleEventReminder(ev);
       pushNotif({
         user_id: p.user_id,
         kind: 'JOIN_APPROVED',
@@ -1054,9 +1110,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
       }
     });
 
+    const part = participants.find(x => x.id === participantId);
+    const ev = events.find(e => e.id === part?.event_id);
+    if (ev) {
+      notifyAttendance('CHECK_IN', ev.title, at.distanceMeters);
+    }
+
     if (at.recordedBy === 'ORGANIZER') {
-      const part = participants.find(x => x.id === participantId);
-      const ev = events.find(e => e.id === part?.event_id);
       const targetUser = users.find(u => u.id === part?.user_id);
       const log: AuditLog = {
         id: nextId('audit'),
@@ -1091,7 +1151,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
         enqueueOfflineCheckIn(participantId, updates);
       }
     });
-  }, []);
+
+    const part = participants.find(x => x.id === participantId);
+    const ev = events.find(e => e.id === part?.event_id);
+    if (ev) {
+      notifyAttendance('CHECK_OUT', ev.title, at.distanceMeters);
+    }
+  }, [participants, events]);
 
   const invite = useCallback((eventId: string, invitedUserId: string, byUser: AppUser) => {
     const dup = invitations.find(i => i.event_id === eventId && i.invited_user_id === invitedUserId && i.status === 'PENDING');
@@ -1656,7 +1722,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       refresh,
       createEvent, updateEvent, updateEventStatus, resetEventApprovals, cancelEvent, approveEvent, rejectEvent, requestDistrictEventReview,
       joinEvent, leaveEvent, approveParticipant, declineParticipant, markAttendance, checkIn, checkOut, addClub,
-      invite, respondInvitation, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, sendDirectMessage, retryMessage, deleteMessageForMe, unsendMessage, markConversationRead, readCursorsFor, conversationStateFor, setConversationPinned, setConversationMuted, setConversationArchived, deleteConversationForMe, reactionsFor, toggleMessageReaction, broadcastToEvent, saveImpact, reviewApplication, resubmitApplication, markNotificationsRead, markNotificationRead, deleteNotification, updateUserRole, removeUser, addApplication,
+      invite, respondInvitation, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, sendDirectMessage, retryMessage, deleteMessageForMe, unsendMessage, markConversationRead, readCursorsFor, conversationStateFor, setConversationPinned, setConversationMuted, setConversationArchived, deleteConversationForMe, reactionsFor, toggleMessageReaction, broadcastToEvent, saveImpact, reviewApplication, resubmitApplication, pushNotification: pushNotif, markNotificationsRead, markNotificationRead, deleteNotification, updateUserRole, removeUser, addApplication,
       participantsFor, invitationFor, participationFor, impactFor, notificationsFor, unreadCountForUser, unreadInboxCountForUser, messagesForConversation, auditFor,
       applicationsForRole, userStats,
   }), [
@@ -1664,7 +1730,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     refresh,
     createEvent, updateEvent, updateEventStatus, resetEventApprovals, cancelEvent, approveEvent, rejectEvent, requestDistrictEventReview,
     joinEvent, leaveEvent, approveParticipant, declineParticipant, markAttendance, checkIn, checkOut, addClub,
-    invite, respondInvitation, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, sendDirectMessage, retryMessage, deleteMessageForMe, unsendMessage, markConversationRead, readCursorsFor, conversationStateFor, setConversationPinned, setConversationMuted, setConversationArchived, deleteConversationForMe, reactionsFor, toggleMessageReaction, broadcastToEvent, saveImpact, reviewApplication, resubmitApplication, markNotificationsRead, markNotificationRead, deleteNotification, updateUserRole, removeUser, addApplication,
+    invite, respondInvitation, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, sendDirectMessage, retryMessage, deleteMessageForMe, unsendMessage, markConversationRead, readCursorsFor, conversationStateFor, setConversationPinned, setConversationMuted, setConversationArchived, deleteConversationForMe, reactionsFor, toggleMessageReaction, broadcastToEvent, saveImpact, reviewApplication, resubmitApplication, pushNotif, markNotificationsRead, markNotificationRead, deleteNotification, updateUserRole, removeUser, addApplication,
     participantsFor, invitationFor, participationFor, impactFor, notificationsFor, unreadCountForUser, unreadInboxCountForUser, messagesForConversation, auditFor,
     applicationsForRole, userStats,
   ]);

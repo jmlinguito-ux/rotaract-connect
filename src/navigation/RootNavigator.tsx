@@ -12,6 +12,8 @@ import { RootStackParamList } from './types';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useAutoCheckIn } from '../hooks/useAutoCheckIn';
+import { useEmergencyAlerts } from '../hooks/useEmergencyAlerts';
+import EmergencyAlertModal from '../components/EmergencyAlertModal';
 import AuthStack from './AuthStack';
 import MainTabs from './MainTabs';
 import EventDetailScreen from '../screens/events/EventDetailScreen';
@@ -105,6 +107,7 @@ export default function RootNavigator() {
           <SyncErrorBanner />
           <SyncStatusBanner />
           <AutoCheckInWatcher />
+          <GlobalEmergencyAlert />
         </>
       )}
     </NavigationContainer>
@@ -114,4 +117,16 @@ export default function RootNavigator() {
 function AutoCheckInWatcher() {
   useAutoCheckIn();
   return null;
+}
+
+function GlobalEmergencyAlert() {
+  const { activeAlert, distanceMetersAway, dismissAlert } = useEmergencyAlerts();
+  return (
+    <EmergencyAlertModal
+      visible={!!activeAlert}
+      alert={activeAlert}
+      distanceMetersAway={distanceMetersAway}
+      onDismiss={dismissAlert}
+    />
+  );
 }

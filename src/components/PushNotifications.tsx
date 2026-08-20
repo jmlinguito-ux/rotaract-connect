@@ -11,15 +11,26 @@ import {
   registerForPushNotificationsAsync,
   unregisterPushTokenAsync,
 } from '../services/push';
+import { dispatchLocalAlert } from '../services/emergencyBroadcast';
 
-/** Deep-link payload carried by every push (set by the send-push Edge Function). */
+/** Deep-link payload carried by every push (set by the send-push Edge Function or local notification). */
 interface PushData {
   /** Absent on group-chat pushes, which are sent straight from the message row. */
   notificationId?: string;
   kind?: string;
+  type?: string;
   event_id?: string;
+  eventId?: string;
   application_id?: string;
   conversation_id?: string;
+  broadcastId?: string;
+  user_id?: string;
+  full_name?: string;
+  club_id?: string;
+  club_name?: string;
+  address_hint?: string;
+  latitude?: number;
+  longitude?: number;
 }
 
 /**
@@ -89,6 +100,28 @@ export function PushNotifications() {
   const routeTo = useCallback((data: PushData): boolean => {
     if (!user) return false;
 
+    // 1. Emergency SOS Broadcast tap -> open Map & trigger distress modal
+    if (data.type === 'EMERGENCY_SOS' || data.kind === 'EMERGENCY_SOS' || data.kind === 'EMERGENCY_BROADCAST') {
+      const lat = typeof data.latitude === 'number' ? data.latitude : 14.6948;
+      const lng = typeof data.longitude === 'number' ? data.longitude : 120.9664;
+      dispatchLocalAlert({
+        id: data.broadcastId || data.notificationId || `sos_${Date.now()}`,
+        user_id: data.user_id || '',
+        full_name: data.full_name || 'Rotaract Member in Distress',
+        club_id: data.club_id || '',
+        club_name: data.club_name || 'District 3800',
+        latitude: lat,
+        longitude: lng,
+        status: 'ACTIVE',
+        map_url: `https://maps.google.com/?q=${lat},${lng}`,
+        address_hint: data.address_hint,
+        created_at: new Date().toISOString(),
+      });
+      navigate('Main', { screen: 'MapTab' } as any);
+      return true;
+    }
+
+    // 2. Chat messages
     if (data.conversation_id) {
       const conv = conversations.find(c => c.id === data.conversation_id);
       if (conv?.is_group) {
@@ -114,8 +147,9 @@ export function PushNotifications() {
         return true;
       }
       // Conversation not synced yet: a group broadcast can still open its event.
-      if (data.event_id) {
-        const ev = events.find(e => e.id === data.event_id);
+      const targetEventId = data.event_id || data.eventId;
+      if (targetEventId) {
+        const ev = events.find(e => e.id === targetEventId);
         if (ev && canAccessEventGroupChat(ev.id, user.id)) {
           const group = getOrCreateEventGroupConversation(ev.id);
           navigate('Chat', {
@@ -131,15 +165,20 @@ export function PushNotifications() {
       return false; // wait for data to sync, then retry
     }
 
-    if (data.event_id) {
-      navigate('EventDetail', { eventId: data.event_id });
+    // 3. Event Detail & Reminders
+    const targetEventId = data.event_id || data.eventId;
+    if (targetEventId) {
+      navigate('EventDetail', { eventId: targetEventId });
       return true;
     }
+
+    // 4. Membership application review
     if (data.application_id) {
       navigate('ApplicationReview', { applicationId: data.application_id });
       return true;
     }
-    // Nothing specific to open — land on the Inbox.
+
+    // 5. Fallback: Inbox Tab
     navigate('Main', { screen: 'InboxTab' } as any);
     return true;
   }, [user, conversations, users, events, canAccessEventGroupChat, getOrCreateEventGroupConversation, markConversationRead]);

@@ -88,3 +88,20 @@ export function visibleEvents(
 ): RotaractEvent[] {
   return events.filter(e => canViewEvent(e, user, users, participants));
 }
+
+/**
+ * Whether this user is authorized to scan QR event passes and record attendance overrides.
+ * Authorized: District Admins, Event Creator, Co-Organizers, and Partner / Co-Hosting Club Presidents.
+ */
+export function canManageAttendance(
+  event: RotaractEvent | null | undefined,
+  user: AppUser | null | undefined,
+): boolean {
+  if (!event || !user) return false;
+  if (isDistrictAdmin(user)) return true;
+  if (isOnOrganizingTeam(event, user)) return true;
+  if (isClubPresident(user)) {
+    return event.organizing_club_id === user.club_id || (event.participating_club_ids ?? []).includes(user.club_id);
+  }
+  return false;
+}

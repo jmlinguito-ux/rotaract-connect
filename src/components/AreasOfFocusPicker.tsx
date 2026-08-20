@@ -82,13 +82,13 @@ export function AreasOfFocusPicker({
             activeOpacity={1}
             onPress={() => setOpen(false)}
           />
-          <View style={[styles.menu, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}>
+          <View style={[styles.menu, { backgroundColor: isNightMode ? themeColors.surface : '#F8FAFC', borderColor: themeColors.border }]}>
             {AREAS_OF_FOCUS.map((area, i) => {
               const isSelected = selected.includes(area.key);
               return (
                 <TouchableOpacity
                   key={area.key}
-                  style={[styles.option, i > 0 && [styles.optionDivider, { borderTopColor: themeColors.border }]]}
+                  style={[styles.option, isSelected && { backgroundColor: themeColors.primary + '14' }, i > 0 && [styles.optionDivider, { borderTopColor: themeColors.border }]]}
                   onPress={() => toggle(area.key)}
                   accessibilityRole="button"
                   accessibilityLabel={area.label}
@@ -98,7 +98,7 @@ export function AreasOfFocusPicker({
                     {isSelected && <Ionicons name="checkmark" size={13} color="#fff" />}
                   </View>
                   <Ionicons name={area.icon} size={16} color={isSelected ? themeColors.primary : themeColors.textMuted} />
-                  <Text style={[styles.optionText, { color: themeColors.text }, isSelected && styles.optionTextOn]}>{area.label}</Text>
+                  <Text style={[styles.optionText, { color: isSelected ? themeColors.primary : themeColors.text }, isSelected && styles.optionTextOn]}>{area.label}</Text>
                 </TouchableOpacity>
               );
             })}
@@ -151,10 +151,15 @@ const styles = StyleSheet.create({
     marginTop: 6,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 12,
+    borderRadius: 14,
     backgroundColor: colors.bg,
     overflow: 'hidden',
     zIndex: 2,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
   },
   option: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 12 },
   optionDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },

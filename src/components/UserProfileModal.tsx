@@ -17,6 +17,8 @@ import {
   positionRoleLabel,
   SYSTEM_ROLE_LABELS,
   CLUB_ROLE_LABELS,
+  ROTARACT_POSITIONS,
+  getPositionClubRole,
 } from '../utils/roles';
 
 interface Props {
@@ -224,7 +226,7 @@ export function UserProfileModal({
                           Quick Position Presets:
                         </Text>
                         <View style={styles.positionPresetsRow}>
-                          {['President', 'Vice President', 'Secretary', 'Treasurer', 'Director', 'Auditor', 'Member'].map(pName => {
+                          {ROTARACT_POSITIONS.map(pName => {
                             const isCurrent = currentPos.toLowerCase() === pName.toLowerCase();
                             return (
                               <TouchableOpacity
@@ -237,8 +239,7 @@ export function UserProfileModal({
                                   },
                                 ]}
                                 onPress={() => {
-                                  const targetClubRole: ClubRole =
-                                    pName === 'President' ? 'CLUB_PRESIDENT' : pName === 'Member' ? 'MEMBER' : 'OFFICER';
+                                  const targetClubRole: ClubRole = getPositionClubRole(pName);
                                   handleUpdateClubRole(targetClubRole, pName);
                                 }}
                               >
@@ -409,7 +410,19 @@ const styles = StyleSheet.create({
   adminRoleSection: { width: '100%', marginTop: 14 },
   adminRoleBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: 1 },
   adminRoleBtnText: { fontSize: 12, fontWeight: '700', flex: 1, marginHorizontal: 6 },
-  roleMenu: { marginTop: 8, borderRadius: 12, borderWidth: 1, padding: 12, gap: 10, width: '100%' },
+  roleMenu: {
+    marginTop: 8,
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 12,
+    gap: 10,
+    width: '100%',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+  },
   roleSectionBox: { width: '100%', gap: 8 },
   roleSectionTitle: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
   roleOptionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },

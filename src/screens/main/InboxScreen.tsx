@@ -29,6 +29,7 @@ const ICON: Record<AppNotification['kind'], keyof typeof Ionicons.glyphMap> = {
   EVENT_APPROVED: 'checkmark-done',
   MEMBERSHIP_REQUEST: 'people',
   INQUIRY_RECEIVED: 'chatbubble-ellipses',
+  EMERGENCY_BROADCAST: 'warning',
 };
 
 const ICON_COLOR: Record<AppNotification['kind'], string> = {
@@ -44,6 +45,7 @@ const ICON_COLOR: Record<AppNotification['kind'], string> = {
   EVENT_APPROVED: '#10B981',
   MEMBERSHIP_REQUEST: '#3B82F6',
   INQUIRY_RECEIVED: '#D41367',
+  EMERGENCY_BROADCAST: '#EF4444',
 };
 
 type Tab = 'notifications' | 'messages' | 'chats';

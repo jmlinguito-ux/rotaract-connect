@@ -49,9 +49,20 @@ class ConversationNotificationBuilder(
     // Urgent organizer broadcasts keep sounding until acted on, so they need a
     // delete intent — otherwise swiping the notification away would leave the loop
     // ringing until its timeout.
-    if (content.body?.optString("type") == "organizer_high") return withStopIntent(base)
-
-    val payload = ChatPayload.from(content.body, content.title, content.text) ?: return base
+    val payload = ChatPayload.from(content.body, content.title, content.text)
+    if (payload == null) {
+      val notification = if (content.body?.optString("type") == "organizer_high") withStopIntent(base) else base
+      // Non-chat notifications (Approvals, Cancellations, Verifications, SOS, Announcements)
+      // Tint the full banner in Rotaract Cranberry (#D41367)
+      return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        val builder = Notification.Builder.recoverBuilder(context, notification)
+        builder.setColor(0xFFD41367.toInt())
+        builder.setColorized(true)
+        builder.build()
+      } else {
+        notification
+      }
+    }
 
     ConversationStore.saveMeta(
       context,

@@ -14,6 +14,9 @@ import { canMessageUser, inquiryBlockedMessage } from '../../utils/messaging';
 import { Club } from '../../types';
 import { DeclineReasonModal } from '../../components/DeclineReasonModal';
 import { ConfirmRulesModal } from '../../components/ConfirmRulesModal';
+import { LocationPermissionModal } from '../../components/location/LocationPermissionModal';
+import { NotificationPermissionModal } from '../../components/notifications/NotificationPermissionModal';
+import * as Notifications from 'expo-notifications';
 import { UserProfileModal } from '../../components/UserProfileModal';
 import UserAvatar from '../../components/UserAvatar';
 import VerifiedCheck, { VerifiedName } from '../../components/VerifiedCheck';
@@ -27,8 +30,10 @@ import { areaOfFocusIcon, areaOfFocusLabel } from '../../data/areasOfFocus';
 import { formatTime, formatDate } from '../../utils/timeFormat';
 
 import * as Location from 'expo-location';
+import QRCode from 'qrcode';
+import { SvgXml } from 'react-native-svg';
 import { usePreferences } from '../../context/PreferencesContext';
-import { checkInWindow, distanceMeters, formatDistance, CHECK_IN_RADIUS_M } from '../../utils/checkIn';
+import { checkInWindow, distanceMeters, formatDistance, getEventGeofenceRadius, CHECK_IN_RADIUS_M } from '../../utils/checkIn';
 import { eventEditPolicy, editLockRulesForApproval } from '../../utils/eventEditPolicy';
 import { exportEventAttendanceCSV } from '../../utils/csvExport';
 import {
@@ -67,7 +72,23 @@ export default function EventDetailScreen({ route, navigation }: Props) {
   const [lateLeaveModalVisible, setLateLeaveModalVisible] = useState(false);
   const [districtReviewSent, setDistrictReviewSent] = useState(false);
   const [passModalVisible, setPassModalVisible] = useState(false);
+  const [passQrSvg, setPassQrSvg] = useState<string | null>(null);
+  const [notifModalVisible, setNotifModalVisible] = useState(false);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const [locationModalVisible, setLocationModalVisible] = useState(false);
+  const [isGpsEnabled, setIsGpsEnabled] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { status } = await Location.getForegroundPermissionsAsync();
+        const services = await Location.hasServicesEnabledAsync();
+        setIsGpsEnabled(status === 'granted' && services);
+      } catch {
+        setIsGpsEnabled(false);
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     const showSub = Keyboard.addListener(
@@ -160,8 +181,27 @@ export default function EventDetailScreen({ route, navigation }: Props) {
   const clubNameFor = (id: string) => clubs.find((c: Club) => c.id === id)?.club_name ?? 'Club';
 
   const creator = users.find(u => u.id === event.organizer_user_id);
-
   const editPolicy = eventEditPolicy(event, user, users, allParticipants);
+
+  useEffect(() => {
+    if (passModalVisible && user && userParticipation && event) {
+      const qrPayload = JSON.stringify({
+        type: 'RC_EVENT_PASS',
+        eventId: event.id,
+        userId: user.id,
+        participantId: userParticipation.id,
+        token: `#RC-${userParticipation.id.replace(/[^a-zA-Z0-9]/g, '').slice(-8).toUpperCase()}`,
+        name: user.full_name,
+        club: user.club_name,
+      });
+      QRCode.toString(qrPayload, { type: 'svg', margin: 1 })
+        .then(svg => setPassQrSvg(svg))
+        .catch(err => {
+          console.warn('[QRCode generation error]:', err);
+          setPassQrSvg(null);
+        });
+    }
+  }, [passModalVisible, user, userParticipation, event]);
 
   /**
    * The team grouped by club: each involved club, its role on the event, and the
@@ -442,7 +482,8 @@ export default function EventDetailScreen({ route, navigation }: Props) {
 
       const pos = await Location.getCurrentPositionAsync({ accuracy: highAccuracyGps ? Location.Accuracy.Highest : Location.Accuracy.Balanced });
       const meters = distanceMeters(pos.coords, { latitude: event.latitude, longitude: event.longitude });
-      const isWithinPremise = meters <= CHECK_IN_RADIUS_M;
+      const effectiveRadius = getEventGeofenceRadius(event);
+      const isWithinPremise = meters <= effectiveRadius;
 
       const now = new Date();
       const win = checkInWindow(event, now);
@@ -471,7 +512,7 @@ export default function EventDetailScreen({ route, navigation }: Props) {
       if (isScheduleValid && !isWithinPremise) {
         Alert.alert(
           'Check-In Premise Error',
-          `Check-in is open, but you are currently ${formatDistance(meters)} away from ${event.address}. Please move within ${CHECK_IN_RADIUS_M}m of the venue premise to check in.`,
+          `Check-in is open, but you are currently ${formatDistance(meters)} away from ${event.address}. Please move within ${effectiveRadius}m of the venue premise to check in.`,
         );
         return;
       }
@@ -606,6 +647,11 @@ export default function EventDetailScreen({ route, navigation }: Props) {
               } else {
                 Alert.alert('Joined!', `You joined ${event.title}.`);
               }
+              Notifications.getPermissionsAsync().then(({ status }) => {
+                if (status !== 'granted') {
+                  setTimeout(() => setNotifModalVisible(true), 800);
+                }
+              }).catch(() => {});
             },
           },
         ],
@@ -957,6 +1003,38 @@ export default function EventDetailScreen({ route, navigation }: Props) {
               <Ionicons name="navigate" size={15} color={themeColors.primary} />
               <Text style={[styles.directionsBtnText, { color: themeColors.primary }]}>Get Directions</Text>
             </TouchableOpacity>
+
+            <View style={[styles.geofenceZoneBadge, { backgroundColor: isNightMode ? themeColors.surface : '#FDF2F8', borderColor: isNightMode ? themeColors.border : '#F9D6E5' }]}>
+              <View style={[styles.geofenceIconWrap, { backgroundColor: '#D41367' + '18' }]}>
+                <Ionicons name="shield-checkmark" size={16} color="#D41367" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.geofenceZoneTitle, { color: themeColors.text }]}>
+                  Check-In Zone: {getEventGeofenceRadius(event)}m Perimeter
+                </Text>
+                <Text style={[styles.geofenceZoneSub, { color: themeColors.textMuted }]}>
+                  Arrival within this perimeter during event hours triggers auto check-in.
+                </Text>
+              </View>
+            </View>
+
+            {!isGpsEnabled && isJoined && (
+              <TouchableOpacity
+                style={[styles.gpsWarningPill, { backgroundColor: isNightMode ? themeColors.cardBg : '#FFFBEB', borderColor: isNightMode ? themeColors.border : '#FCD34D' }]}
+                onPress={() => setLocationModalVisible(true)}
+              >
+                <Ionicons name="warning" size={16} color="#D97706" />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.gpsWarningTitle, { color: isNightMode ? themeColors.warning : '#92400E' }]}>
+                    Location Services Disabled
+                  </Text>
+                  <Text style={[styles.gpsWarningSub, { color: themeColors.textMuted }]}>
+                    Tap to enable GPS for automatic on-premise check-in.
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={14} color="#D97706" />
+              </TouchableOpacity>
+            )}
           </Section>
 
           <Section title="Organizer & Team Members">
@@ -1700,10 +1778,37 @@ export default function EventDetailScreen({ route, navigation }: Props) {
                 </Text>
               </View>
             </View>
+
+            {/* Dynamic Event Pass QR Code */}
+            <View style={styles.passQrWrapper}>
+              <View style={[styles.passQrBox, { backgroundColor: '#fff', borderColor: themeColors.border }]}>
+                {passQrSvg ? (
+                  <SvgXml xml={passQrSvg} width={150} height={150} />
+                ) : (
+                  <ActivityIndicator size="small" color={themeColors.primary} />
+                )}
+              </View>
+              <Text style={[styles.passQrInstruction, { color: themeColors.textMuted }]}>
+                Present this QR code to event organizers for instant Check-In & Check-Out
+              </Text>
+            </View>
           </View>
         )}
       </BottomSheet>
-</SafeAreaView>
+
+      {/* 📍 Location & GPS Setup Modal */}
+      <LocationPermissionModal
+        visible={locationModalVisible}
+        onClose={() => setLocationModalVisible(false)}
+        onPermissionGranted={() => setIsGpsEnabled(true)}
+      />
+
+      {/* 🔔 Contextual Push Notification Permission Modal */}
+      <NotificationPermissionModal
+        visible={notifModalVisible}
+        onClose={() => setNotifModalVisible(false)}
+      />
+    </SafeAreaView>
   );
 }
 
@@ -1932,4 +2037,73 @@ const styles = StyleSheet.create({
   passTokenVal: { fontSize: 14, fontWeight: '900', letterSpacing: 1 },
   passStatusBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 8 },
   passStatusBadgeText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
+  passQrWrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 16,
+    gap: 8,
+  },
+  passQrBox: {
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+  },
+  passQrInstruction: {
+    fontSize: 11,
+    textAlign: 'center',
+    maxWidth: 240,
+    lineHeight: 15,
+  },
+
+  // Geofence Zone Badge
+  geofenceZoneBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 10,
+  },
+  geofenceIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  geofenceZoneTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  geofenceZoneSub: {
+    fontSize: 11,
+    marginTop: 2,
+    lineHeight: 15,
+  },
+  gpsWarningPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 8,
+  },
+  gpsWarningTitle: {
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  gpsWarningSub: {
+    fontSize: 11,
+    marginTop: 1,
+    lineHeight: 15,
+  },
 });

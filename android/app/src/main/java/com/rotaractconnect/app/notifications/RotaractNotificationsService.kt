@@ -56,7 +56,12 @@ class RotaractPresentationDelegate(context: Context) : ExpoPresentationDelegate(
 
     val payload = ChatPayload.from(content.body, content.title, content.text)
     if (payload == null) {
-      super.presentNotification(notification, behavior)
+      CoroutineScope(Dispatchers.IO).launch {
+        val built = createNotification(notification, behavior)
+        val tag = notification.notificationRequest.identifier
+        NotificationManagerCompat.from(context)
+          .notify(tag, getNotifyId(notification.notificationRequest), built)
+      }
       return
     }
     // Don't interrupt someone about the conversation they already have open.

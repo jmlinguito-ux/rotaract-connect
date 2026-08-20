@@ -65,6 +65,25 @@ export interface Club {
   president_name: string;
   club_type?: ClubType;
   institution_name?: string;
+  email?: string;
+  meeting_address?: string;
+}
+
+export interface EmergencyAlert {
+  id: string;
+  user_id: string;
+  full_name: string;
+  avatar_url?: string;
+  club_id: string;
+  club_name: string;
+  contact_number?: string;
+  latitude: number;
+  longitude: number;
+  map_url: string;
+  address_hint?: string;
+  message?: string;
+  created_at: string;
+  status: 'ACTIVE' | 'RESOLVED' | 'CANCELLED';
 }
 
 export interface RotaractEvent {
@@ -103,6 +122,8 @@ export interface RotaractEvent {
   approved_by_club_ids?: string[];
   /** Optional reason provided when the event is cancelled. */
   cancellation_reason?: string;
+  /** Custom geofence perimeter radius in meters for automatic check-in. Default: 300. */
+  geofence_radius_meters?: number;
 }
 
 export interface AppUser {
@@ -146,14 +167,14 @@ export interface EventParticipant {
   check_in_longitude?: number;
   /** Distance from the venue at check-in, kept as an audit trail. */
   check_in_distance_m?: number;
-  /** Who produced the check-in record: the attendee's own GPS check-in, or the organizer manually (no GPS proof). */
-  check_in_method?: 'SELF_GPS' | 'ORGANIZER';
-  /** Set once the participant checks out (manual or 60m perimeter auto-leave) */
+  /** Who produced the check-in record: the attendee's own GPS check-in, organizer manual override, or QR pass scan. */
+  check_in_method?: 'SELF_GPS' | 'ORGANIZER' | 'ORGANIZER_QR';
+  /** Set once the participant checks out (manual, QR scan, or auto-leave) */
   checked_out_at?: string;
   check_out_latitude?: number;
   check_out_longitude?: number;
   check_out_distance_m?: number;
-  check_out_method?: 'SELF_GPS' | 'AUTO_PERIMETER_LEAVE' | 'ORGANIZER';
+  check_out_method?: 'SELF_GPS' | 'AUTO_PERIMETER_LEAVE' | 'EVENT_CONCLUDED' | 'ORGANIZER' | 'ORGANIZER_QR';
 }
 
 export interface EventInvitation {
@@ -220,7 +241,8 @@ export type NotificationKind =
   | 'EVENT_APPROVAL_REQUEST'
   | 'EVENT_APPROVED'
   | 'MEMBERSHIP_REQUEST'
-  | 'INQUIRY_RECEIVED';
+  | 'INQUIRY_RECEIVED'
+  | 'EMERGENCY_BROADCAST';
 
 /** Organizer banner priority. HIGH triggers sound + vibration where the OS allows. */
 export type NotificationPriority = 'NORMAL' | 'ALERT' | 'HIGH';

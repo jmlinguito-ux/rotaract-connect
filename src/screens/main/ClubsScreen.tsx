@@ -45,6 +45,7 @@ const CITIES_BY_PROVINCE: Record<string, string[]> = {
     'Caloocan',
     'Navotas',
     'Marikina',
+    'Pasig',
     'Mandaluyong',
     'San Juan',
   ],
@@ -70,7 +71,7 @@ export default function ClubsScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { user } = useAuth();
   const { clubs, users, getOrCreateConversation, addClub, applicationsForRole, removeUser } = useData();
-  const { colors: themeColors } = useTheme();
+  const { colors: themeColors, isNightMode } = useTheme();
   const { showToast } = useToast();
   const refreshControl = useAppRefreshControl();
 
@@ -81,11 +82,14 @@ export default function ClubsScreen() {
   const [zoneId, setZoneId] = useState<string | 'ALL'>('ALL');
   const [typeFilter, setTypeFilter] = useState<'ALL' | 'COMMUNITY' | 'INSTITUTION'>('ALL');
   const [activeTab, setActiveTab] = useState<SearchTab>('CLUBS');
+  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
 
   // Add Club Modal State
   const [isAddClubModalOpen, setIsAddClubModalOpen] = useState(false);
   const [newClubIdInput, setNewClubIdInput] = useState('');
   const [newClubName, setNewClubName] = useState('');
+  const [newClubEmail, setNewClubEmail] = useState('');
+  const [newClubMeetingAddress, setNewClubMeetingAddress] = useState('');
   const [newClubCity, setNewClubCity] = useState('');
   const [newClubProvince, setNewClubProvince] = useState('');
   const [newClubZoneId, setNewClubZoneId] = useState('z1');
@@ -95,6 +99,8 @@ export default function ClubsScreen() {
   const [isZoneDropdownOpen, setIsZoneDropdownOpen] = useState(false);
 
   const isDistrictAdmin = user?.role === 'DISTRICT_ADMIN' || user?.role === 'APP_ADMIN';
+
+  const activeFilterCount = (zoneId !== 'ALL' ? 1 : 0) + (typeFilter !== 'ALL' ? 1 : 0);
 
   // District Admin Review Requests — only applications still needing a decision.
   // Once approved (VERIFIED) or rejected, they leave the Requests bucket.
@@ -118,9 +124,10 @@ export default function ClubsScreen() {
       const cityMatch = c.city.toLowerCase().includes(query);
       const presidentMatch = c.president_name.toLowerCase().includes(query);
       const instMatch = c.institution_name?.toLowerCase().includes(query);
+      const addressMatch = c.meeting_address?.toLowerCase().includes(query);
       const memberMatch = users.some(u => u.club_id === c.id && u.full_name.toLowerCase().includes(query));
 
-      return nameMatch || cityMatch || presidentMatch || instMatch || memberMatch;
+      return nameMatch || cityMatch || presidentMatch || instMatch || addressMatch || memberMatch;
     });
   }, [clubs, users, q, zoneId, typeFilter]);
 
@@ -172,6 +179,8 @@ export default function ClubsScreen() {
     addClub({
       club_code: newClubIdInput.trim(),
       club_name: newClubName.trim(),
+      email: newClubEmail.trim() || undefined,
+      meeting_address: newClubMeetingAddress.trim() || undefined,
       city: newClubCity.trim(),
       province: newClubProvince.trim(),
       zone_id: newClubZoneId,
@@ -182,6 +191,8 @@ export default function ClubsScreen() {
     setIsAddClubModalOpen(false);
     setNewClubIdInput('');
     setNewClubName('');
+    setNewClubEmail('');
+    setNewClubMeetingAddress('');
     setNewClubCity('');
     setNewClubProvince('');
     setNewClubPresident('');
@@ -190,7 +201,7 @@ export default function ClubsScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.bg }]} edges={['top']}>
-      {/* Header with District Admin Add Club button */}
+      {/* Header with District Admin Add Club circular FAB button */}
       <View style={styles.headerRow}>
         <View style={{ flex: 1 }}>
           <Text style={[styles.headerTitle, { color: themeColors.text }]}>Clubs & Members</Text>
@@ -201,30 +212,62 @@ export default function ClubsScreen() {
 
         {isDistrictAdmin && (
           <TouchableOpacity
-            style={[styles.addClubBtn, { backgroundColor: themeColors.primary }]}
+            style={[styles.fab, { backgroundColor: themeColors.primary }]}
             onPress={() => setIsAddClubModalOpen(true)}
+            accessibilityLabel="Add Club"
           >
-            <Ionicons name="add" size={18} color="#fff" />
-            <Text style={styles.addClubBtnText}>Add Club</Text>
+            <Ionicons name="add" size={22} color="#fff" />
           </TouchableOpacity>
         )}
       </View>
 
-      {/* Search Input */}
-      <View style={[styles.searchWrap, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}>
-        <Ionicons name="search" size={18} color={themeColors.textMuted} />
-        <TextInput
-          style={[styles.search, { color: themeColors.text }]}
-          placeholder="Search clubs, cities, members, or requests…"
-          placeholderTextColor={themeColors.textMuted}
-          value={q}
-          onChangeText={setQ}
-        />
-        {q ? (
-          <TouchableOpacity onPress={() => setQ('')}>
-            <Ionicons name="close-circle" size={18} color={themeColors.textMuted} />
+      {/* Search Bar + Filter Trigger Row */}
+      <View style={styles.searchRow}>
+        <View style={[styles.searchWrap, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}>
+          <Ionicons name="search" size={18} color={themeColors.textMuted} />
+          <TextInput
+            style={[styles.search, { color: themeColors.text }]}
+            placeholder={
+              activeTab === 'CLUBS'
+                ? 'Search clubs, cities, or meeting venues…'
+                : activeTab === 'MEMBERS'
+                ? 'Search members, clubs, or positions…'
+                : 'Search pending requests…'
+            }
+            placeholderTextColor={themeColors.textMuted}
+            value={q}
+            onChangeText={setQ}
+          />
+          {q ? (
+            <TouchableOpacity onPress={() => setQ('')}>
+              <Ionicons name="close-circle" size={18} color={themeColors.textMuted} />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+
+        {activeTab !== 'REQUESTS' && (
+          <TouchableOpacity
+            style={[
+              styles.filterBtn,
+              {
+                backgroundColor: activeFilterCount > 0 ? themeColors.primary + '1A' : themeColors.cardBg,
+                borderColor: activeFilterCount > 0 ? themeColors.primary : themeColors.border,
+              },
+            ]}
+            onPress={() => setIsFilterModalOpen(true)}
+          >
+            <Ionicons
+              name="funnel-outline"
+              size={18}
+              color={activeFilterCount > 0 ? themeColors.primary : themeColors.textMuted}
+            />
+            {activeFilterCount > 0 && (
+              <View style={[styles.filterCountBadge, { backgroundColor: themeColors.primary }]}>
+                <Text style={styles.filterCountBadgeText}>{activeFilterCount}</Text>
+              </View>
+            )}
           </TouchableOpacity>
-        ) : null}
+        )}
       </View>
 
       {/* Segmented Control: Clubs | Members | (Requests if District Admin) */}
@@ -283,69 +326,39 @@ export default function ClubsScreen() {
         )}
       </View>
 
-      {/* Zone Pill Bar (only show for Clubs and Members) */}
-      {activeTab !== 'REQUESTS' && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.zoneScroll}
-          contentContainerStyle={styles.zoneContent}
-        >
-          <ZoneChip label="All Zones" active={zoneId === 'ALL'} colors={themeColors} onPress={() => setZoneId('ALL')} />
-          {zones.map(z => (
-            <ZoneChip key={z.id} label={z.zone_name} active={zoneId === z.id} colors={themeColors} onPress={() => setZoneId(z.id)} />
-          ))}
-        </ScrollView>
-      )}
-
-      {/* Charter Type Filter (only show for Clubs tab) */}
-      {activeTab === 'CLUBS' && (
-        <View style={styles.charterFilterRow}>
+      {/* Active Filters Pill Row (Clean and compact, only shown if filters active) */}
+      {activeFilterCount > 0 && activeTab !== 'REQUESTS' && (
+        <View style={styles.activeFiltersRow}>
+          {zoneId !== 'ALL' && (
+            <TouchableOpacity
+              style={[styles.activeFilterChip, { backgroundColor: themeColors.primary }]}
+              onPress={() => setZoneId('ALL')}
+            >
+              <Text style={styles.activeFilterChipText}>
+                {zones.find(z => z.id === zoneId)?.zone_name || zoneId}
+              </Text>
+              <Ionicons name="close-circle" size={14} color="#fff" />
+            </TouchableOpacity>
+          )}
+          {typeFilter !== 'ALL' && (
+            <TouchableOpacity
+              style={[styles.activeFilterChip, { backgroundColor: themeColors.primary }]}
+              onPress={() => setTypeFilter('ALL')}
+            >
+              <Text style={styles.activeFilterChipText}>
+                {typeFilter === 'COMMUNITY' ? 'Community' : 'University'}
+              </Text>
+              <Ionicons name="close-circle" size={14} color="#fff" />
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
-            style={[
-              styles.charterChip,
-              {
-                backgroundColor: typeFilter === 'ALL' ? themeColors.primary : themeColors.cardBg,
-                borderColor: typeFilter === 'ALL' ? themeColors.primary : themeColors.border,
-              },
-            ]}
-            onPress={() => setTypeFilter('ALL')}
+            onPress={() => {
+              setZoneId('ALL');
+              setTypeFilter('ALL');
+            }}
+            style={styles.resetFilterBtn}
           >
-            <Text style={[styles.charterChipText, { color: typeFilter === 'ALL' ? '#fff' : themeColors.textMuted }]}>
-              All Types
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.charterChip,
-              {
-                backgroundColor: typeFilter === 'COMMUNITY' ? themeColors.primary : themeColors.cardBg,
-                borderColor: typeFilter === 'COMMUNITY' ? themeColors.primary : themeColors.border,
-              },
-            ]}
-            onPress={() => setTypeFilter('COMMUNITY')}
-          >
-            <Ionicons name="business-outline" size={12} color={typeFilter === 'COMMUNITY' ? '#fff' : themeColors.textMuted} />
-            <Text style={[styles.charterChipText, { color: typeFilter === 'COMMUNITY' ? '#fff' : themeColors.textMuted }]}>
-              Community-Based
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.charterChip,
-              {
-                backgroundColor: typeFilter === 'INSTITUTION' ? themeColors.primary : themeColors.cardBg,
-                borderColor: typeFilter === 'INSTITUTION' ? themeColors.primary : themeColors.border,
-              },
-            ]}
-            onPress={() => setTypeFilter('INSTITUTION')}
-          >
-            <Ionicons name="school-outline" size={12} color={typeFilter === 'INSTITUTION' ? '#fff' : themeColors.textMuted} />
-            <Text style={[styles.charterChipText, { color: typeFilter === 'INSTITUTION' ? '#fff' : themeColors.textMuted }]}>
-              University-Based
-            </Text>
+            <Text style={[styles.resetFilterText, { color: themeColors.primary }]}>Reset</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -394,44 +407,39 @@ export default function ClubsScreen() {
                       </Text>
                     </View>
                   </View>
+
                   <Text style={[styles.meta, { color: themeColors.textMuted }]}>
                     {zone?.zone_name} • {item.city}
                     {item.institution_name ? ` • ${item.institution_name}` : ''}
                   </Text>
-                  <Text style={[styles.metaSmall, { color: themeColors.textMuted }]}>{memberCount} members • President: {item.president_name}</Text>
 
-                  {/* Leadership Quick Actions Row */}
+                  {item.meeting_address ? (
+                    <View style={styles.addressMetaRow}>
+                      <Ionicons name="location-outline" size={11} color={themeColors.primary} />
+                      <Text style={[styles.addressMetaText, { color: themeColors.text }]} numberOfLines={1}>
+                        {item.meeting_address}
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  <Text style={[styles.metaSmall, { color: themeColors.textMuted }]}>
+                    {memberCount} members • Pres: {item.president_name}
+                  </Text>
+
+                  {/* Quick Actions Row: Email Club & Meeting Venue */}
                   <View style={styles.quickActionRow}>
                     <TouchableOpacity
                       style={[styles.quickActionBtn, { backgroundColor: themeColors.surface, borderColor: themeColors.border }]}
                       onPress={(e) => {
                         e.stopPropagation();
-                        if (presUser?.contact_number) {
-                          callNumber(presUser.contact_number);
-                        } else {
-                          showToast({
-                            type: 'info',
-                            title: 'Contact Unlisted',
-                            message: 'President phone number is not publicly listed.',
-                          });
-                        }
-                      }}
-                    >
-                      <Ionicons name="call-outline" size={12} color={themeColors.primary} />
-                      <Text style={[styles.quickActionText, { color: themeColors.primary }]}>Call</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[styles.quickActionBtn, { backgroundColor: themeColors.surface, borderColor: themeColors.border }]}
-                      onPress={(e) => {
-                        e.stopPropagation();
-                        if (presUser?.email) {
-                          sendEmail(presUser.email);
+                        const targetEmail = item.email || presUser?.email;
+                        if (targetEmail) {
+                          sendEmail(targetEmail);
                         } else {
                           showToast({
                             type: 'info',
                             title: 'Email Unlisted',
-                            message: 'Club email address is not publicly listed.',
+                            message: 'Club/President email address is not publicly listed.',
                           });
                         }
                       }}
@@ -444,7 +452,12 @@ export default function ClubsScreen() {
                       style={[styles.quickActionBtn, { backgroundColor: themeColors.surface, borderColor: themeColors.border }]}
                       onPress={(e) => {
                         e.stopPropagation();
-                        openNavigationApp(item.latitude, item.longitude, item.club_name, `${item.city}, ${item.province}`);
+                        openNavigationApp(
+                          item.latitude,
+                          item.longitude,
+                          item.club_name,
+                          item.meeting_address || `${item.city}, ${item.province}`
+                        );
                       }}
                     >
                       <Ionicons name="navigate-outline" size={12} color={themeColors.primary} />
@@ -523,6 +536,130 @@ export default function ClubsScreen() {
         />
       )}
 
+      {/* Filter BottomSheet */}
+      <BottomSheet
+        visible={isFilterModalOpen}
+        onClose={() => setIsFilterModalOpen(false)}
+        cardStyle={[styles.modalCard, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}
+      >
+        <View style={styles.modalHeader}>
+          <Text style={[styles.modalTitle, { color: themeColors.text }]}>Filters</Text>
+          <TouchableOpacity onPress={() => setIsFilterModalOpen(false)}>
+            <Ionicons name="close" size={24} color={themeColors.textMuted} />
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView style={{ maxHeight: 400 }} showsVerticalScrollIndicator={false}>
+          {/* Zone Filter */}
+          <Text style={[styles.filterSectionTitle, { color: themeColors.text }]}>Zone</Text>
+          <View style={styles.filterChipGrid}>
+            <TouchableOpacity
+              style={[
+                styles.filterModalChip,
+                {
+                  backgroundColor: zoneId === 'ALL' ? themeColors.primary : themeColors.bg,
+                  borderColor: zoneId === 'ALL' ? themeColors.primary : themeColors.border,
+                },
+              ]}
+              onPress={() => setZoneId('ALL')}
+            >
+              <Text style={[styles.filterModalChipText, { color: zoneId === 'ALL' ? '#fff' : themeColors.text }]}>
+                All Zones
+              </Text>
+            </TouchableOpacity>
+            {zones.map(z => (
+              <TouchableOpacity
+                key={z.id}
+                style={[
+                  styles.filterModalChip,
+                  {
+                    backgroundColor: zoneId === z.id ? themeColors.primary : themeColors.bg,
+                    borderColor: zoneId === z.id ? themeColors.primary : themeColors.border,
+                  },
+                ]}
+                onPress={() => setZoneId(z.id)}
+              >
+                <Text style={[styles.filterModalChipText, { color: zoneId === z.id ? '#fff' : themeColors.text }]}>
+                  {z.zone_name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Charter Type Filter (only relevant for Clubs) */}
+          {activeTab === 'CLUBS' && (
+            <>
+              <Text style={[styles.filterSectionTitle, { color: themeColors.text, marginTop: 16 }]}>
+                Club Type
+              </Text>
+              <View style={styles.filterChipGrid}>
+                <TouchableOpacity
+                  style={[
+                    styles.filterModalChip,
+                    {
+                      backgroundColor: typeFilter === 'ALL' ? themeColors.primary : themeColors.bg,
+                      borderColor: typeFilter === 'ALL' ? themeColors.primary : themeColors.border,
+                    },
+                  ]}
+                  onPress={() => setTypeFilter('ALL')}
+                >
+                  <Text style={[styles.filterModalChipText, { color: typeFilter === 'ALL' ? '#fff' : themeColors.text }]}>
+                    All Types
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.filterModalChip,
+                    {
+                      backgroundColor: typeFilter === 'COMMUNITY' ? themeColors.primary : themeColors.bg,
+                      borderColor: typeFilter === 'COMMUNITY' ? themeColors.primary : themeColors.border,
+                    },
+                  ]}
+                  onPress={() => setTypeFilter('COMMUNITY')}
+                >
+                  <Text style={[styles.filterModalChipText, { color: typeFilter === 'COMMUNITY' ? '#fff' : themeColors.text }]}>
+                    Community-Based
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.filterModalChip,
+                    {
+                      backgroundColor: typeFilter === 'INSTITUTION' ? themeColors.primary : themeColors.bg,
+                      borderColor: typeFilter === 'INSTITUTION' ? themeColors.primary : themeColors.border,
+                    },
+                  ]}
+                  onPress={() => setTypeFilter('INSTITUTION')}
+                >
+                  <Text style={[styles.filterModalChipText, { color: typeFilter === 'INSTITUTION' ? '#fff' : themeColors.text }]}>
+                    University-Based
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
+        </ScrollView>
+
+        <View style={styles.filterModalActions}>
+          <TouchableOpacity
+            style={[styles.filterResetBtn, { borderColor: themeColors.border }]}
+            onPress={() => {
+              setZoneId('ALL');
+              setTypeFilter('ALL');
+              setIsFilterModalOpen(false);
+            }}
+          >
+            <Text style={[styles.filterResetBtnText, { color: themeColors.text }]}>Reset All</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.filterApplyBtn, { backgroundColor: themeColors.primary }]}
+            onPress={() => setIsFilterModalOpen(false)}
+          >
+            <Text style={styles.filterApplyBtnText}>Apply</Text>
+          </TouchableOpacity>
+        </View>
+      </BottomSheet>
+
       {/* Add Club BottomSheet */}
       <BottomSheet
         visible={isAddClubModalOpen}
@@ -567,7 +704,29 @@ export default function ClubsScreen() {
             keyboardType="numeric"
           />
 
-          {/* 3. President Name */}
+          {/* 3. Club Email Address */}
+          <Text style={[styles.inputLabel, { color: themeColors.text }]}>Club Email Address</Text>
+          <TextInput
+            style={[styles.modalInput, { backgroundColor: themeColors.bg, color: themeColors.text, borderColor: themeColors.border }]}
+            placeholder="e.g. rotaract.pasig@district3800.org"
+            placeholderTextColor={themeColors.textMuted}
+            value={newClubEmail}
+            onChangeText={setNewClubEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+          />
+
+          {/* 4. Meeting Place Address */}
+          <Text style={[styles.inputLabel, { color: themeColors.text }]}>Meeting Place Address / Venue Pin</Text>
+          <TextInput
+            style={[styles.modalInput, { backgroundColor: themeColors.bg, color: themeColors.text, borderColor: themeColors.border }]}
+            placeholder="e.g. Pasig City Hall Activity Center, Caruncho Ave"
+            placeholderTextColor={themeColors.textMuted}
+            value={newClubMeetingAddress}
+            onChangeText={setNewClubMeetingAddress}
+          />
+
+          {/* 5. President Name */}
           <Text style={[styles.inputLabel, { color: themeColors.text }]}>President Name</Text>
           <TextInput
             style={[styles.modalInput, { backgroundColor: themeColors.bg, color: themeColors.text, borderColor: themeColors.border }]}
@@ -577,11 +736,11 @@ export default function ClubsScreen() {
             onChangeText={setNewClubPresident}
           />
 
-          {/* 4. Province / Region Selector */}
-          <View style={{ zIndex: isProvinceDropdownOpen ? 1000 : 1, position: 'relative' }}>
+          {/* 6. Province / Region Selector */}
+          <View style={{ marginBottom: 12 }}>
             <Text style={[styles.inputLabel, { color: themeColors.text }]}>Province / Region *</Text>
             <TouchableOpacity
-              style={[styles.modalSelector, { backgroundColor: themeColors.bg, borderColor: themeColors.border }]}
+              style={[styles.modalSelector, { backgroundColor: themeColors.bg, borderColor: isProvinceDropdownOpen ? themeColors.primary : themeColors.border }]}
               onPress={() => {
                 setIsProvinceDropdownOpen(!isProvinceDropdownOpen);
                 setIsCityDropdownOpen(false);
@@ -595,38 +754,49 @@ export default function ClubsScreen() {
             </TouchableOpacity>
 
             {isProvinceDropdownOpen && (
-              <View style={[styles.overlayDropdownMenu, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}>
-                {PROVINCES.map(p => {
-                  const isSelected = newClubProvince === p;
-                  return (
-                    <TouchableOpacity
-                      key={p}
-                      style={styles.overlayDropdownItem}
-                      onPress={() => {
-                        setNewClubProvince(p);
-                        setIsProvinceDropdownOpen(false);
-                        const cities = CITIES_BY_PROVINCE[p] || [];
-                        if (!cities.includes(newClubCity)) {
-                          setNewClubCity('');
-                        }
-                      }}
-                    >
-                      <View style={styles.checkmarkWrap}>
-                        {isSelected && <Ionicons name="checkmark-sharp" size={18} color={themeColors.text} />}
-                      </View>
-                      <Text style={[styles.overlayDropdownText, { color: themeColors.text, fontWeight: isSelected ? '700' : '400' }]}>{p}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
+              <View style={[styles.inlineDropdownMenu, { backgroundColor: isNightMode ? themeColors.surface : '#F8FAFC', borderColor: themeColors.border }]}>
+                <ScrollView
+                  nestedScrollEnabled={true}
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={true}
+                  style={{ maxHeight: 180 }}
+                >
+                  {PROVINCES.map(p => {
+                    const isSelected = newClubProvince === p;
+                    return (
+                      <TouchableOpacity
+                        key={p}
+                        style={[styles.overlayDropdownItem, isSelected && { backgroundColor: themeColors.primary + '14' }]}
+                        onPress={() => {
+                          setNewClubProvince(p);
+                          setIsProvinceDropdownOpen(false);
+                          const cities = CITIES_BY_PROVINCE[p] || [];
+                          if (!cities.includes(newClubCity)) {
+                            setNewClubCity('');
+                          }
+                        }}
+                      >
+                        <View style={styles.checkmarkWrap}>
+                          {isSelected ? (
+                            <Ionicons name="checkmark-circle" size={18} color={themeColors.primary} />
+                          ) : (
+                            <Ionicons name="ellipse-outline" size={14} color={themeColors.textMuted} />
+                          )}
+                        </View>
+                        <Text style={[styles.overlayDropdownText, { color: isSelected ? themeColors.primary : themeColors.text, fontWeight: isSelected ? '700' : '400' }]}>{p}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
               </View>
             )}
           </View>
 
-          {/* 5. City / Municipality Selector */}
-          <View style={{ zIndex: isCityDropdownOpen ? 900 : 1, position: 'relative' }}>
+          {/* 7. City / Municipality Selector */}
+          <View style={{ marginBottom: 12 }}>
             <Text style={[styles.inputLabel, { color: themeColors.text }]}>City / Municipality *</Text>
             <TouchableOpacity
-              style={[styles.modalSelector, { backgroundColor: themeColors.bg, borderColor: themeColors.border }]}
+              style={[styles.modalSelector, { backgroundColor: themeColors.bg, borderColor: isCityDropdownOpen ? themeColors.primary : themeColors.border }]}
               onPress={() => {
                 if (!newClubProvince) {
                   setNewClubProvince('Metro Manila (NCR)');
@@ -643,23 +813,32 @@ export default function ClubsScreen() {
             </TouchableOpacity>
 
             {isCityDropdownOpen && (
-              <View style={[styles.overlayDropdownMenuUp, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border, maxHeight: 220 }]}>
-                <ScrollView nestedScrollEnabled style={{ maxHeight: 220 }}>
+              <View style={[styles.inlineDropdownMenu, { backgroundColor: isNightMode ? themeColors.surface : '#F8FAFC', borderColor: themeColors.border }]}>
+                <ScrollView
+                  nestedScrollEnabled={true}
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={true}
+                  style={{ maxHeight: 200 }}
+                >
                   {(CITIES_BY_PROVINCE[newClubProvince || 'Metro Manila (NCR)'] || []).map(c => {
                     const isSelected = newClubCity === c;
                     return (
                       <TouchableOpacity
                         key={c}
-                        style={styles.overlayDropdownItem}
+                        style={[styles.overlayDropdownItem, isSelected && { backgroundColor: themeColors.primary + '14' }]}
                         onPress={() => {
                           setNewClubCity(c);
                           setIsCityDropdownOpen(false);
                         }}
                       >
                         <View style={styles.checkmarkWrap}>
-                          {isSelected && <Ionicons name="checkmark-sharp" size={18} color={themeColors.text} />}
+                          {isSelected ? (
+                            <Ionicons name="checkmark-circle" size={18} color={themeColors.primary} />
+                          ) : (
+                            <Ionicons name="ellipse-outline" size={14} color={themeColors.textMuted} />
+                          )}
                         </View>
-                        <Text style={[styles.overlayDropdownText, { color: themeColors.text, fontWeight: isSelected ? '700' : '400' }]}>{c}</Text>
+                        <Text style={[styles.overlayDropdownText, { color: isSelected ? themeColors.primary : themeColors.text, fontWeight: isSelected ? '700' : '400' }]}>{c}</Text>
                       </TouchableOpacity>
                     );
                   })}
@@ -668,11 +847,11 @@ export default function ClubsScreen() {
             )}
           </View>
 
-          {/* 6. Zone Dropdown */}
-          <View style={{ zIndex: isZoneDropdownOpen ? 800 : 1, position: 'relative' }}>
+          {/* 8. Zone Dropdown */}
+          <View style={{ marginBottom: 12 }}>
             <Text style={[styles.inputLabel, { color: themeColors.text }]}>Zone *</Text>
             <TouchableOpacity
-              style={[styles.modalSelector, { backgroundColor: themeColors.bg, borderColor: themeColors.border }]}
+              style={[styles.modalSelector, { backgroundColor: themeColors.bg, borderColor: isZoneDropdownOpen ? themeColors.primary : themeColors.border }]}
               onPress={() => {
                 setIsZoneDropdownOpen(!isZoneDropdownOpen);
                 setIsProvinceDropdownOpen(false);
@@ -686,25 +865,36 @@ export default function ClubsScreen() {
             </TouchableOpacity>
 
             {isZoneDropdownOpen && (
-              <View style={[styles.overlayDropdownMenuUp, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}>
-                {zones.map(z => {
-                  const isSelected = newClubZoneId === z.id;
-                  return (
-                    <TouchableOpacity
-                      key={z.id}
-                      style={styles.overlayDropdownItem}
-                      onPress={() => {
-                        setNewClubZoneId(z.id);
-                        setIsZoneDropdownOpen(false);
-                      }}
-                    >
-                      <View style={styles.checkmarkWrap}>
-                        {isSelected && <Ionicons name="checkmark-sharp" size={18} color={themeColors.text} />}
-                      </View>
-                      <Text style={[styles.overlayDropdownText, { color: themeColors.text, fontWeight: isSelected ? '700' : '400' }]}>{z.zone_name}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
+              <View style={[styles.inlineDropdownMenu, { backgroundColor: isNightMode ? themeColors.surface : '#F8FAFC', borderColor: themeColors.border }]}>
+                <ScrollView
+                  nestedScrollEnabled={true}
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={true}
+                  style={{ maxHeight: 180 }}
+                >
+                  {zones.map(z => {
+                    const isSelected = newClubZoneId === z.id;
+                    return (
+                      <TouchableOpacity
+                        key={z.id}
+                        style={[styles.overlayDropdownItem, isSelected && { backgroundColor: themeColors.primary + '14' }]}
+                        onPress={() => {
+                          setNewClubZoneId(z.id);
+                          setIsZoneDropdownOpen(false);
+                        }}
+                      >
+                        <View style={styles.checkmarkWrap}>
+                          {isSelected ? (
+                            <Ionicons name="checkmark-circle" size={18} color={themeColors.primary} />
+                          ) : (
+                            <Ionicons name="ellipse-outline" size={14} color={themeColors.textMuted} />
+                          )}
+                        </View>
+                        <Text style={[styles.overlayDropdownText, { color: isSelected ? themeColors.primary : themeColors.text, fontWeight: isSelected ? '700' : '400' }]}>{z.zone_name}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
               </View>
             )}
           </View>
@@ -760,19 +950,7 @@ function RequestCard({ app, colors: c, onPress }: { app: VerificationApplication
   );
 }
 
-function ZoneChip({ label, active, colors: c, onPress }: { label: string; active: boolean; colors: any; onPress: () => void }) {
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      style={[
-        styles.chip,
-        { backgroundColor: active ? c.primary : c.cardBg, borderColor: active ? c.primary : c.border },
-      ]}
-    >
-      <Text style={[styles.chipText, { color: active ? '#fff' : c.textMuted }]}>{label}</Text>
-    </TouchableOpacity>
-  );
-}
+
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
@@ -785,25 +963,39 @@ const styles = StyleSheet.create({
   },
   headerTitle: { fontSize: 28, fontWeight: '800' },
   headerSubtitle: { fontSize: 13, marginTop: 2 },
-  addClubBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  addClubBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  fab: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  searchRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16 },
   searchWrap: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginHorizontal: 16,
     paddingHorizontal: 12,
     borderRadius: 12,
     borderWidth: 1,
   },
   search: { flex: 1, paddingVertical: 12, fontSize: 15 },
+  filterBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  filterCountBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  filterCountBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
   segmentedRow: { flexDirection: 'row', gap: 8, marginHorizontal: 16, marginTop: 12 },
   segmentBtn: {
     flex: 1,
@@ -818,24 +1010,34 @@ const styles = StyleSheet.create({
   },
   segmentText: { fontSize: 12, fontWeight: '700' },
   badgeDot: { width: 8, height: 8, borderRadius: 4, position: 'absolute', top: 6, right: 6 },
-  zoneScroll: { flexGrow: 0, flexShrink: 0, marginTop: 10, marginBottom: 6 },
-  zoneContent: { paddingHorizontal: 16, gap: 8, alignItems: 'center' },
-  charterFilterRow: { flexDirection: 'row', gap: 6, marginHorizontal: 16, marginBottom: 8 },
-  charterChip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, borderWidth: 1 },
-  charterChipText: { fontSize: 11, fontWeight: '700' },
-  chip: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16, borderWidth: 1 },
-  chipText: { fontSize: 12, fontWeight: '700' },
+  activeFiltersRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    marginTop: 10,
+    flexWrap: 'wrap',
+  },
+  activeFilterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  activeFilterChipText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  resetFilterBtn: { paddingHorizontal: 6, paddingVertical: 4 },
+  resetFilterText: { fontSize: 12, fontWeight: '700' },
   list: { padding: 16, paddingTop: 6, paddingBottom: 40 },
   card: { borderRadius: 14, padding: 14, borderWidth: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
   clubTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
   typeBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, borderWidth: 1 },
   typeBadgeText: { fontSize: 10, fontWeight: '700' },
-  logo: { width: 48, height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  logoText: { color: '#fff', fontSize: 18, fontWeight: '800' },
-  avatarLogo: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
-  avatarLogoText: { color: '#fff', fontSize: 16, fontWeight: '800' },
   name: { fontSize: 15, fontWeight: '700' },
   meta: { fontSize: 12, marginTop: 1 },
+  addressMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2 },
+  addressMetaText: { fontSize: 11, fontWeight: '500' },
   metaSmall: { fontSize: 11, marginTop: 2 },
   quickActionRow: { flexDirection: 'row', gap: 6, marginTop: 8 },
   quickActionBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, borderWidth: 1 },
@@ -844,6 +1046,17 @@ const styles = StyleSheet.create({
   statusText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
   chatIconBtn: { width: 36, height: 36, borderRadius: 18, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   empty: { textAlign: 'center', marginTop: 40 },
+
+  // Filter BottomSheet styles
+  filterSectionTitle: { fontSize: 14, fontWeight: '800', marginBottom: 8 },
+  filterChipGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  filterModalChip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 12, borderWidth: 1 },
+  filterModalChipText: { fontSize: 12, fontWeight: '700' },
+  filterModalActions: { flexDirection: 'row', gap: 10, marginTop: 16 },
+  filterResetBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, borderWidth: 1, alignItems: 'center' },
+  filterResetBtnText: { fontSize: 14, fontWeight: '700' },
+  filterApplyBtn: { flex: 1.5, paddingVertical: 12, borderRadius: 12, alignItems: 'center' },
+  filterApplyBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
 
   // Modal styles
   modalOverlay: {
@@ -896,16 +1109,16 @@ const styles = StyleSheet.create({
   modalSubmitBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
   modalSelector: {
     borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 4,
   },
-  selectorText: { fontSize: 14, fontWeight: '600' },
-  selectorPlaceholder: { fontSize: 14 },
+  selectorText: { fontSize: 15, fontWeight: '600' },
+  selectorPlaceholder: { fontSize: 15 },
   overlayDropdownMenu: {
     position: 'absolute',
     top: 72,
@@ -934,12 +1147,24 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 10,
   },
+  inlineDropdownMenu: {
+    borderRadius: 14,
+    borderWidth: 1,
+    marginTop: 6,
+    marginBottom: 6,
+    overflow: 'hidden',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+  },
   overlayDropdownItem: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 14,
-    paddingVertical: 10,
-    gap: 6,
+    paddingVertical: 11,
+    gap: 8,
   },
   checkmarkWrap: {
     width: 22,

@@ -14,10 +14,13 @@ import { ROLE_BADGES, getHighestRoleBadge, positionRoleLabel } from '../../utils
 import { getRotaryYear } from '../../utils/hoursCalculation';
 import TermsAndPrivacyModal from '../../components/TermsAndPrivacyModal';
 import { SignatureModal } from '../../components/SignatureModal';
+import { SignatureImage } from '../../components/SignatureImage';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { useData } from '../../context/DataContext';
 import { useToast } from '../../context/ToastContext';
 import { exportUserDataArchive } from '../../utils/csvExport';
+import { isSafetyNetworkEnabled, setSafetyNetworkEnabled } from '../../services/backgroundLocation';
+import { registerForPushNotificationsAsync } from '../../services/notifications';
 import { Club } from '../../types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
@@ -28,6 +31,22 @@ export default function SettingsScreen({ navigation }: Props) {
   const { showToast } = useToast();
   const { themeMode, setThemeMode, isNightMode, colors: themeColors } = useTheme();
   const { pushEnabled, setPushEnabled, showActiveStatus, setShowActiveStatus, highAccuracyGps, setHighAccuracyGps, autoCheckIn, setAutoCheckIn } = usePreferences();
+
+  const [safetyNetworkActive, setSafetyNetworkActive] = useState(true);
+
+  React.useEffect(() => {
+    isSafetyNetworkEnabled().then(setSafetyNetworkActive);
+  }, []);
+
+  const handleToggleSafetyNetwork = async (val: boolean) => {
+    setSafetyNetworkActive(val);
+    await setSafetyNetworkEnabled(val);
+    showToast({
+      title: 'Safety Network',
+      message: val ? 'Emergency Safety Network enabled' : 'Emergency Safety Network disabled',
+      type: 'info',
+    });
+  };
 
   const [confirmDeleteAccountVisible, setConfirmDeleteAccountVisible] = useState(false);
 
@@ -586,6 +605,33 @@ export default function SettingsScreen({ navigation }: Props) {
           </View>
         </View>
 
+        {/* 🔔 NOTIFICATIONS & ALERTS */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: themeColors.primary }]}>NOTIFICATIONS & ALERTS</Text>
+          <View style={cardStyle}>
+            <View style={styles.row}>
+              <View style={[styles.rowIconWrap, { backgroundColor: themeColors.primary + '1A' }]}>
+                <Ionicons name="notifications-outline" size={18} color={themeColors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={titleStyle}>Push Notifications</Text>
+                <Text style={subStyle}>Event invitations, approvals, live attendance passes & SOS alerts</Text>
+              </View>
+              <Switch
+                value={pushEnabled}
+                onValueChange={async (val) => {
+                  setPushEnabled(val);
+                  if (val) {
+                    await registerForPushNotificationsAsync();
+                  }
+                }}
+                trackColor={{ false: themeColors.border, true: themeColors.primary }}
+                thumbColor="#fff"
+              />
+            </View>
+          </View>
+        </View>
+
         {/* 📍 GPS & CHECK-IN SETTINGS */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: themeColors.primary }]}>GPS & EVENT CHECK-IN</Text>
@@ -620,6 +666,26 @@ export default function SettingsScreen({ navigation }: Props) {
                 value={autoCheckIn}
                 onValueChange={setAutoCheckIn}
                 trackColor={{ false: themeColors.border, true: themeColors.primary }}
+                thumbColor="#fff"
+              />
+            </View>
+
+            <View style={dividerStyle} />
+
+            <View style={styles.row}>
+              <View style={[styles.rowIconWrap, { backgroundColor: '#EF4444' + '1A' }]}>
+                <Ionicons name="shield-half-outline" size={18} color="#EF4444" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={titleStyle}>Emergency SOS Proximity Alerts</Text>
+                <Text style={subStyle}>
+                  Alerts you with instant chime when a member within 5 km triggers an SOS distress signal (0% idle battery)
+                </Text>
+              </View>
+              <Switch
+                value={safetyNetworkActive}
+                onValueChange={handleToggleSafetyNetwork}
+                trackColor={{ false: themeColors.border, true: '#EF4444' }}
                 thumbColor="#fff"
               />
             </View>
@@ -672,7 +738,7 @@ export default function SettingsScreen({ navigation }: Props) {
               {user.signature_url && (
                 <View style={{ paddingHorizontal: 12, paddingBottom: 14, paddingTop: 4 }}>
                   <View style={[styles.signaturePreviewBox, { backgroundColor: themeColors.bg, borderColor: themeColors.border }]}>
-                    <Image source={{ uri: user.signature_url }} style={styles.signaturePreviewImg} resizeMode="contain" />
+                    <SignatureImage signatureUrl={user.signature_url} style={styles.signaturePreviewImg} />
                     <View style={styles.signatureBadge}>
                       <Ionicons name="checkmark-circle" size={12} color="#16A34A" />
                       <Text style={styles.signatureBadgeText}>Registered Signatory</Text>

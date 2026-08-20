@@ -115,6 +115,7 @@ export async function loadAll(signal?: AbortSignal): Promise<LoadedData> {
     club_role: p.club_role ?? undefined,
     verification_status: p.verification_status,
     avatar_url: p.avatar_url ?? undefined,
+    signature_url: p.signature_url ?? undefined,
     contact_number: p.contact_number ?? undefined,
     // Required by canMessageUser: without it every other member reads as
     // "undefined", which is not false, so the messaging gate never engaged.

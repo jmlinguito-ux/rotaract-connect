@@ -45,6 +45,7 @@ export default function CreateEventScreen({ route, navigation }: Props) {
   const [selectedPartnerClubs, setSelectedPartnerClubs] = useState<string[]>([]);
   const [partnerClubQuery, setPartnerClubQuery] = useState('');
   const [isPartnerClubFocused, setIsPartnerClubFocused] = useState(false);
+
   const [location, setLocation] = useState<LocationValue>(
     template
       ? {
@@ -61,6 +62,7 @@ export default function CreateEventScreen({ route, navigation }: Props) {
   const [visibility, setVisibility] = useState<EventVisibility>(template?.visibility ?? 'VERIFIED_ROTARACTORS');
   const [requiresApproval, setRequiresApproval] = useState(template?.requires_approval ?? false);
   const [allowInvites, setAllowInvites] = useState(template?.allow_participant_invites ?? true);
+  const [geofenceRadius, setGeofenceRadius] = useState<number>(template?.geofence_radius_meters ?? 300);
   const [contactNumber, setContactNumber] = useState(user?.contact_number ?? '0917 123 4567');
   const [contactEmail, setContactEmail] = useState(user?.email ?? '');
   const [lockCutoffHours, setLockCutoffHours] = useState<number>(24);
@@ -264,6 +266,7 @@ export default function CreateEventScreen({ route, navigation }: Props) {
       areas_of_focus: isServiceProject ? areasOfFocus : undefined,
       lock_leave_cutoff_hours: lockCutoffHours,
       approved_by_club_ids: approvedByClubIds,
+      geofence_radius_meters: geofenceRadius,
     });
 
     if (initialStatus === 'RECRUITING') {
@@ -616,7 +619,48 @@ export default function CreateEventScreen({ route, navigation }: Props) {
             </View>
           )}
 
-          <LocationPicker value={location} onChange={setLocation} />
+          <LocationPicker value={location} onChange={setLocation} geofenceRadius={geofenceRadius} />
+
+          {/* Check-In Geofence Perimeter Radius */}
+          <Text style={styles.label}>Check-In Geofence Perimeter</Text>
+          <Text style={styles.subHint}>
+            Participants entering this {geofenceRadius}m radius during the event window will check in automatically.
+          </Text>
+          <View style={styles.radiusPillsRow}>
+            {[
+              { label: '100m (Indoor)', value: 100 },
+              { label: '300m (Standard)', value: 300 },
+              { label: '500m (Campus)', value: 500 },
+              { label: '1km (District)', value: 1000 },
+            ].map(r => {
+              const isSelected = geofenceRadius === r.value;
+              return (
+                <TouchableOpacity
+                  key={r.value}
+                  activeOpacity={0.7}
+                  style={[
+                    styles.radiusPill,
+                    isSelected && styles.radiusPillActive,
+                  ]}
+                  onPress={() => setGeofenceRadius(r.value)}
+                >
+                  <Ionicons
+                    name={isSelected ? 'shield-checkmark' : 'ellipse-outline'}
+                    size={13}
+                    color={isSelected ? '#fff' : colors.textMuted}
+                  />
+                  <Text
+                    style={[
+                      styles.radiusPillText,
+                      isSelected && styles.radiusPillTextActive,
+                    ]}
+                  >
+                    {r.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
 
           <Field label="Max Participants" value={maxP} onChangeText={setMaxP} keyboardType="number-pad" placeholder="50" />
           <Field label="Contact Number" value={contactNumber} onChangeText={handleContactNumberChange} keyboardType="phone-pad" placeholder="0917 123 4567" maxLength={13} />
@@ -846,4 +890,37 @@ const styles = StyleSheet.create({
   pickerHeaderTitle: { fontSize: 13, fontWeight: '700', color: colors.text },
   pickerDoneBtn: { backgroundColor: colors.primary, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 8 },
   pickerDoneText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+
+  // Geofence radius pills
+  radiusPillsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+    marginTop: 4,
+  },
+  radiusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  radiusPillActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  radiusPillText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  radiusPillTextActive: {
+    color: '#fff',
+    fontWeight: '700',
+  },
 });

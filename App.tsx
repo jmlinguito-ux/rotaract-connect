@@ -11,6 +11,7 @@ import { ToastProvider } from './src/context/ToastContext';
 import { AuthProvider } from './src/context/AuthContext';
 import { DataProvider } from './src/context/DataContext';
 import RootNavigator from './src/navigation/RootNavigator';
+import ActiveSosBanner from './src/components/ActiveSosBanner';
 
 // Hold the native splash until AuthContext has resolved the stored session.
 // Hiding it here (the previous behaviour) exposed the navigator while `user` was
@@ -28,6 +29,7 @@ export default function App() {
             <PreferencesProvider>
               <AuthProvider>
                 <DataProvider>
+                  <ActiveSosBanner />
                   <RootNavigator />
                 </DataProvider>
               </AuthProvider>
