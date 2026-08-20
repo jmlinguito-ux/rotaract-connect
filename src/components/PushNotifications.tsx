@@ -19,6 +19,8 @@ interface PushData {
   notificationId?: string;
   kind?: string;
   type?: string;
+  title?: string;
+  body?: string;
   event_id?: string;
   eventId?: string;
   application_id?: string;
@@ -81,7 +83,13 @@ export function PushNotifications() {
       // Any interaction counts as "seen" — silence a looping urgent alert.
       RotaractNotifications?.stopUrgentAlert();
       if (resp.actionIdentifier === 'dismiss') return;
-      setPending((resp.notification.request.content.data ?? {}) as PushData);
+      const content = resp.notification.request.content;
+      const rawData = (content.data ?? {}) as PushData;
+      setPending({
+        ...rawData,
+        title: content.title || rawData.title,
+        body: content.body || rawData.body,
+      });
     };
     const sub = Notifications.addNotificationResponseReceivedListener(accept);
     Notifications.getLastNotificationResponseAsync().then(resp => {
@@ -105,24 +113,39 @@ export function PushNotifications() {
 
     // 1. Emergency SOS Broadcast tap -> open Map & trigger distress modal
     if (data.type === 'EMERGENCY_SOS' || data.kind === 'EMERGENCY_SOS' || data.kind === 'EMERGENCY_BROADCAST') {
-      const broadcaster = users.find(u => (data.user_id && u.id === data.user_id) || (data.full_name && u.full_name?.toLowerCase() === data.full_name.toLowerCase()));
-      const lat = typeof data.latitude === 'number' ? data.latitude : 14.6948;
-      const lng = typeof data.longitude === 'number' ? data.longitude : 120.9664;
+      const rawTitle = data.title || '';
+      const rawBody = data.body || '';
+
+      const broadcasterName = data.full_name || rawTitle.replace(/^🚨\s*(?:EMERGENCY\s*SOS|NEARBY\s*EMERGENCY|SOS):\s*/i, '').trim() || 'Rotaract Member in Distress';
+      const broadcaster = users.find(u => (data.user_id && u.id === data.user_id) || (u.full_name && u.full_name.toLowerCase() === broadcasterName.toLowerCase()));
+
+      const clubMatch = rawBody.match(/\((Rotaract Club of [^)]+|RC [^)]+|District 3800)\)/i);
+      const clubName = data.club_name || (clubMatch ? clubMatch[1] : (broadcaster?.club_name || 'District 3800'));
+
+      const msgMatch = rawBody.match(/"([^"]+)"/);
+      const customNote = data.message || (msgMatch ? msgMatch[1] : '');
+
+      const coordsMatch = rawBody.match(/maps\.google\.com\/\?q=([0-9.-]+),([0-9.-]+)/);
+      const lat = typeof data.latitude === 'number' ? data.latitude : (coordsMatch ? parseFloat(coordsMatch[1]) : 14.6948);
+      const lng = typeof data.longitude === 'number' ? data.longitude : (coordsMatch ? parseFloat(coordsMatch[2]) : 120.9664);
+
+      const addrMatch = rawBody.match(/near\s+(.*?)(?:\.|\"|\s+Map:|\s+Location:|$)/i);
+      const addressHint = data.address_hint || (addrMatch ? addrMatch[1].trim() : (customNote ? 'Coordinates provided' : (rawBody || 'Location coordinates provided')));
 
       dispatchLocalAlert({
         id: data.broadcastId || data.notificationId || `sos_${Date.now()}`,
         user_id: data.user_id || broadcaster?.id || '',
-        full_name: data.full_name || broadcaster?.full_name || 'Rotaract Member in Distress',
+        full_name: broadcaster?.full_name || broadcasterName,
         avatar_url: data.avatar_url || broadcaster?.avatar_url,
         club_id: data.club_id || broadcaster?.club_id || '',
-        club_name: data.club_name || broadcaster?.club_name || 'District 3800',
+        club_name: clubName,
         contact_number: data.contact_number || broadcaster?.contact_number,
         latitude: lat,
         longitude: lng,
         status: 'ACTIVE',
         map_url: `https://maps.google.com/?q=${lat},${lng}`,
-        address_hint: data.address_hint,
-        message: data.message,
+        address_hint: addressHint,
+        message: customNote || undefined,
         created_at: new Date().toISOString(),
       });
       navigate('Main', { screen: 'MapTab' } as any);

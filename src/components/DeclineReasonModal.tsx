@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, Modal, StyleSheet, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, ScrollView, Keyboard } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
@@ -53,6 +53,8 @@ export function DeclineReasonModal({
     onConfirm(remarks.trim());
   };
 
+  const scrollRef = useRef<ScrollView>(null);
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
       <KeyboardAvoidingView
@@ -60,6 +62,7 @@ export function DeclineReasonModal({
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView
+          ref={scrollRef}
           contentContainerStyle={[
             styles.backdrop,
             {
@@ -91,6 +94,9 @@ export function DeclineReasonModal({
               placeholderTextColor={themeColors.textMuted}
               value={remarks}
               onChangeText={setRemarks}
+              onFocus={() => {
+                setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 120);
+              }}
               multiline
               numberOfLines={4}
             />

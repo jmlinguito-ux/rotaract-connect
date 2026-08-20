@@ -152,8 +152,9 @@ export function EventMap({ events, userCoords, style, interactive = false, showA
         style={styles.map}
         initialRegion={region}
         customMapStyle={isNightMode ? darkMapStyle : lightMapStyle}
-        showsUserLocation={!!userCoords}
+        showsUserLocation={false}
         showsMyLocationButton={false}
+        onUserLocationChange={() => {}}
         showsCompass={interactive}
         scrollEnabled={true}
         zoomEnabled={true}
@@ -180,6 +181,22 @@ export function EventMap({ events, userCoords, style, interactive = false, showA
           if (details?.isGesture) userInteracted.current = true;
         }}
       >
+      {/* Custom User Location Marker */}
+      {userCoords && (
+        <Marker
+          key="user_location_marker"
+          coordinate={userCoords}
+          title="Your Current Location"
+          anchor={{ x: 0.5, y: 0.5 }}
+          tracksViewChanges={false}
+          zIndex={999}
+        >
+          <View style={styles.userDotOuter}>
+            <View style={styles.userDotInner} />
+          </View>
+        </Marker>
+      )}
+
       {showAreas &&
         validEvents.map(event => {
           const color = statusColor(event.status);
@@ -234,8 +251,14 @@ export function EventMap({ events, userCoords, style, interactive = false, showA
 }
 
 const styles = StyleSheet.create({
-  container: { position: 'relative', overflow: 'hidden' },
-  map: { width: '100%', height: '100%' },
+  container: {
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  map: {
+    width: '100%',
+    height: '100%',
+  },
   locateBtn: {
     position: 'absolute',
     top: 12,
@@ -266,5 +289,26 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 3,
+  },
+  userDotOuter: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(2, 132, 199, 0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  userDotInner: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#0284C7',
+    borderWidth: 2.5,
+    borderColor: '#fff',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.25,
+    shadowRadius: 2,
   },
 });

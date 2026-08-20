@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
   KeyboardAvoidingView,
   ScrollView,
   Platform,
+  Keyboard,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
@@ -30,10 +31,27 @@ export default function EmergencySosButton({ variant = 'icon', style }: Props) {
   const { users, pushNotification } = useData();
   const { colors: themeColors } = useTheme();
 
+  const scrollRef = useRef<ScrollView>(null);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [customMsg, setCustomMsg] = useState('');
   const [activeAlert, setActiveAlert] = useState<EmergencyAlert | null>(null);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      () => setIsKeyboardVisible(true)
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setIsKeyboardVisible(false)
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   if (!user) return null;
 
@@ -136,10 +154,18 @@ export default function EmergencySosButton({ variant = 'icon', style }: Props) {
       >
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={{ flex: 1 }}
+          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' }}
         >
           <ScrollView
-            contentContainerStyle={styles.modalBackdrop}
+            ref={scrollRef}
+            contentContainerStyle={[
+              styles.modalBackdrop,
+              isKeyboardVisible && Platform.OS === 'android' && {
+                justifyContent: 'flex-start',
+                paddingTop: 50,
+                paddingBottom: 20,
+              },
+            ]}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
             bounces={false}
@@ -198,6 +224,9 @@ export default function EmergencySosButton({ variant = 'icon', style }: Props) {
                   placeholderTextColor={themeColors.textMuted}
                   value={customMsg}
                   onChangeText={setCustomMsg}
+                  onFocus={() => {
+                    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 120);
+                  }}
                   maxLength={120}
                 />
               </View>

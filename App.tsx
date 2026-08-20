@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { LogBox } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -12,6 +13,24 @@ import { AuthProvider } from './src/context/AuthContext';
 import { DataProvider } from './src/context/DataContext';
 import RootNavigator from './src/navigation/RootNavigator';
 import ActiveSosBanner from './src/components/ActiveSosBanner';
+
+// Ignore known Fabric New Architecture event name mismatch from react-native-maps
+LogBox.ignoreLogs([
+  'Unsupported top level event type "topUserLocationChange" dispatched',
+  'topUserLocationChange',
+]);
+
+// Intercept unhandled Fabric event error before it triggers dev red screen
+if (typeof (global as any).ErrorUtils !== 'undefined') {
+  const originalHandler = (global as any).ErrorUtils.getGlobalHandler();
+  (global as any).ErrorUtils.setGlobalHandler((error: any, isFatal?: boolean) => {
+    if (error?.message && typeof error.message === 'string' && error.message.includes('topUserLocationChange')) {
+      // Harmless Fabric event plugin mismatch from native Google Maps on Android
+      return;
+    }
+    originalHandler?.(error, isFatal);
+  });
+}
 
 // Hold the native splash until AuthContext has resolved the stored session.
 // Hiding it here (the previous behaviour) exposed the navigator while `user` was

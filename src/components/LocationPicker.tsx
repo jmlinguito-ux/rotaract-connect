@@ -78,6 +78,8 @@ export function LocationPicker({ value, onChange, geofenceRadius = 300 }: Locati
             latitudeDelta: 0.02,
             longitudeDelta: 0.02,
           }}
+          showsUserLocation={false}
+          onUserLocationChange={() => {}}
           onPress={onMapPress}
           onMapReady={() => {
             isMapReady.current = true;
