@@ -84,6 +84,7 @@ export interface EmergencyAlert {
   message?: string;
   created_at: string;
   status: 'ACTIVE' | 'RESOLVED' | 'CANCELLED';
+  playSound?: boolean;
 }
 
 export interface RotaractEvent {

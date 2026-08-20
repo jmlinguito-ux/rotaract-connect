@@ -7,6 +7,7 @@ import { AuthStackParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
+import { useTheme } from '../../context/ThemeContext';
 import { zones } from '../../data/mockData';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -428,15 +429,22 @@ export default function RegisterScreen({ navigation }: Props) {
 
 function Field(props: any) {
   const { label, ...rest } = props;
+  const { colors: themeColors } = useTheme();
+  const [focused, setFocused] = useState(false);
   const kavOnFocus = useKeyboardAwareOnFocus();
   return (
     <>
-      <Text style={styles.label}>{label}</Text>
+      <Text style={[styles.label, { color: themeColors.text }]}>{label}</Text>
       <TextInput
-        style={styles.input}
-        placeholderTextColor={colors.textMuted}
+        style={[
+          styles.input,
+          { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text },
+          focused && { borderColor: themeColors.primary, borderWidth: 1.5 },
+        ]}
+        placeholderTextColor={themeColors.textMuted}
         {...rest}
         onFocus={(e: any) => {
+          setFocused(true);
           if (Platform.OS === 'web' && e?.target?.scrollIntoView) {
             setTimeout(() => {
               e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -444,6 +452,10 @@ function Field(props: any) {
           }
           kavOnFocus();       // lift above the keyboard (native)
           rest.onFocus?.(e);
+        }}
+        onBlur={(e: any) => {
+          setFocused(false);
+          rest.onBlur?.(e);
         }}
       />
     </>
@@ -467,20 +479,33 @@ function PasswordField({
   setShowPassword: (show: boolean) => void;
   error?: string;
 }) {
+  const { colors: themeColors } = useTheme();
+  const [focused, setFocused] = useState(false);
   const kavOnFocus = useKeyboardAwareOnFocus();
   return (
     <>
-      <Text style={styles.label}>{label}</Text>
-      <View style={[styles.passwordWrap, !!error && styles.inputError]}>
+      <Text style={[styles.label, { color: themeColors.text }]}>{label}</Text>
+      <View
+        style={[
+          styles.passwordWrap,
+          { backgroundColor: themeColors.surface, borderColor: themeColors.border },
+          focused && { borderColor: themeColors.primary, borderWidth: 1.5 },
+          !!error && styles.inputError,
+        ]}
+      >
         <TextInput
-          style={styles.passwordInput}
+          style={[styles.passwordInput, { color: themeColors.text }]}
           value={value}
           onChangeText={onChangeText}
           placeholder={placeholder || '••••••••'}
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={themeColors.textMuted}
           secureTextEntry={!showPassword}
           autoCapitalize="none"
-          onFocus={kavOnFocus}
+          onFocus={(e: any) => {
+            setFocused(true);
+            kavOnFocus();
+          }}
+          onBlur={() => setFocused(false)}
         />
         <TouchableOpacity
           style={styles.eyeBtn}
@@ -490,7 +515,7 @@ function PasswordField({
           <Ionicons
             name={showPassword ? 'eye-off-outline' : 'eye-outline'}
             size={20}
-            color={colors.textMuted}
+            color={focused ? themeColors.primary : themeColors.textMuted}
           />
         </TouchableOpacity>
       </View>

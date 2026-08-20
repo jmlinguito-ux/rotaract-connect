@@ -154,7 +154,7 @@ async function planFromNotification(
   n: NotificationRecord,
 ): Promise<Plan | null> {
   const isChat = !!n.conversation_id;
-  const type = typeForNotification(n.kind, n.priority, isChat);
+  const type = typeForNotification(n.kind, n.priority, isChat, n.message);
   const rule = RULES[type];
 
   let image: string | undefined;
@@ -254,6 +254,12 @@ async function plansFromGroupMessage(
   const eventId = m.event_id ?? conv.event_id;
   if (!eventId) return []; // group membership is derived from the event
 
+  const { data: ev } = await supabase
+    .from('events')
+    .select('organizer_user_id, co_organizer_user_ids, title')
+    .eq('id', eventId)
+    .maybeSingle();
+
   const { data: parts, error } = await supabase
     .from('event_participants')
     .select('user_id')
@@ -264,7 +270,18 @@ async function plansFromGroupMessage(
     console.error('[send-push] participant lookup failed', error);
     return [];
   }
-  const participants = (parts ?? []).map((p) => p.user_id as string);
+
+  const participantSet = new Set<string>((parts ?? []).map((p) => p.user_id as string));
+  if (ev?.organizer_user_id && ev.organizer_user_id !== m.sender_id) {
+    participantSet.add(ev.organizer_user_id);
+  }
+  if (Array.isArray(ev?.co_organizer_user_ids)) {
+    ev.co_organizer_user_ids.forEach((id: string) => {
+      if (id && id !== m.sender_id) participantSet.add(id);
+    });
+  }
+
+  const participants = [...participantSet];
   if (participants.length === 0) return [];
 
   const { data: sender } = await supabase
@@ -275,7 +292,7 @@ async function plansFromGroupMessage(
 
   const senderName = sender?.full_name ?? 'Rotaractor';
   const firstName = senderName.split(' ')[0];
-  const title = conv.event_title ?? (await eventTitle(supabase, eventId)) ?? 'Group Chat';
+  const title = conv.event_title ?? ev?.title ?? (await eventTitle(supabase, eventId)) ?? 'Group Chat';
   const rawText = m.text?.trim() || (m.attachment_path ? '📷 Sent a photo' : 'New message');
   const image = (await signedChatMedia(supabase, m.attachment_path))
     ?? (await eventCover(supabase, eventId))
@@ -308,6 +325,16 @@ async function plansFromGroupMessage(
   // Anyone mentioned or replied to gets their dedicated push INSTEAD of the general group one.
   const groupRecipients = participants.filter((id) => !mentioned.includes(id) && id !== repliedAuthorId);
 
+  const isUrgent = m.text?.startsWith('🚨') ?? false;
+  const isAnnouncement = (m.text?.startsWith('📢') ?? false) || isUrgent;
+  const notifType: PushType = isUrgent
+    ? 'organizer_high'
+    : isAnnouncement
+    ? 'organizer_alert'
+    : 'chat_message';
+  const rule = RULES[notifType];
+  const chatRule = RULES.chat_message;
+
   const sharedData = {
     kind: 'GROUP_MESSAGE',
     event_id: eventId,
@@ -329,56 +356,56 @@ async function plansFromGroupMessage(
     plans.push({
       recipients: [repliedAuthorId],
       content: {
-        type: 'chat',
+        type: 'chat_message',
         dedupeKey: `msg:${m.id}:reply`,
         title,
         subtitle: `${senderName} replied to your message`,
         body: `${firstName} replied to you${replySnippet}: "${rawText}"`,
-        data: { ...sharedData, type: 'chat', message_preview: rawText },
+        data: { ...sharedData, type: 'chat_message', message_preview: rawText },
         image,
-        channelId: rule.channelId,
-        categoryId: rule.categoryId,
-        sound: rule.sound,
+        channelId: chatRule.channelId,
+        categoryId: chatRule.categoryId,
+        sound: chatRule.sound,
         collapseKey: m.conversation_id,
         highPriority: true,
       },
     });
   }
 
-    let activeRecipients = groupRecipients;
-    if (!isAnnouncement && rule.respectsMute) {
-      const { data: mutedStates } = await supabase
-        .from('conversation_states')
-        .select('user_id')
-        .eq('conversation_id', m.conversation_id)
-        .eq('muted', true)
-        .in('user_id', groupRecipients);
-      const mutedIds = new Set((mutedStates ?? []).map((s: any) => s.user_id));
-      activeRecipients = groupRecipients.filter(id => !mutedIds.has(id));
-    }
+  let activeRecipients = groupRecipients;
+  if (!isAnnouncement && rule.respectsMute) {
+    const { data: mutedStates } = await supabase
+      .from('conversation_states')
+      .select('user_id')
+      .eq('conversation_id', m.conversation_id)
+      .eq('muted', true)
+      .in('user_id', groupRecipients);
+    const mutedIds = new Set((mutedStates ?? []).map((s: any) => s.user_id));
+    activeRecipients = groupRecipients.filter(id => !mutedIds.has(id));
+  }
 
-    if (activeRecipients.length) {
-      plans.push({
-        recipients: activeRecipients,
-        content: {
-          type: notifType,
-          dedupeKey: `msg:${m.id}:group`,
-          title: isAnnouncement ? `📢 Announcement: ${title}` : title,
-          subtitle: isAnnouncement ? `${senderName} posted an announcement` : `${senderName} sent a message`,
-          body: m.text?.trim() ? `${firstName}: ${m.text.trim()}` : `${firstName}: ${rawText}`,
-          data: { ...sharedData, type: notifType, message_preview: rawText },
-          image,
-          channelId: rule.channelId,
-          categoryId: rule.categoryId,
-          sound: rule.sound,
-          collapseKey: m.conversation_id,
-          highPriority: rule.highPriority,
-        },
-      });
-    }
+  if (activeRecipients.length) {
+    plans.push({
+      recipients: activeRecipients,
+      content: {
+        type: notifType,
+        dedupeKey: `msg:${m.id}:group`,
+        title: isUrgent ? `🚨 URGENT: ${title}` : isAnnouncement ? `📢 Announcement: ${title}` : title,
+        subtitle: isUrgent ? `${senderName} posted an urgent alert` : isAnnouncement ? `${senderName} posted an announcement` : `${senderName} sent a message`,
+        body: m.text?.trim() ? `${firstName}: ${m.text.trim()}` : `${firstName}: ${rawText}`,
+        data: { ...sharedData, type: notifType, message_preview: rawText },
+        image,
+        channelId: rule.channelId,
+        categoryId: rule.categoryId,
+        sound: rule.sound,
+        collapseKey: m.conversation_id,
+        highPriority: rule.highPriority,
+      },
+    });
+  }
 
   if (mentioned.length) {
-    const rule = RULES.mention;
+    const mentionRule = RULES.mention;
     plans.push({
       recipients: mentioned,
       content: {
@@ -387,17 +414,13 @@ async function plansFromGroupMessage(
         title,
         subtitle: `Mentioned by ${senderName}`,
         body: `@You were mentioned by ${senderName}: "${rawText}"`,
-        // respects_mute:false travels to the client, which is where mute lives —
-        // the device silences a muted thread, so it must know not to silence this.
         data: { ...sharedData, type: 'mention', message_preview: rawText, respects_mute: 'false' },
         image,
-        channelId: rule.channelId,
-        categoryId: rule.categoryId,
-        sound: rule.sound,
-        // Its own collapse key so a mention never replaces (or is replaced by) the
-        // ordinary group notification.
+        channelId: mentionRule.channelId,
+        categoryId: mentionRule.categoryId,
+        sound: mentionRule.sound,
         collapseKey: `${m.conversation_id}:mention`,
-        highPriority: rule.highPriority,
+        highPriority: mentionRule.highPriority,
       },
     });
   }
@@ -444,22 +467,22 @@ const RULES: Record<PushType, TypeRule> = {
   event_reminder:  { channelId: 'events_v3',          categoryId: 'general_actions', sound: 'chime.wav',     respectsMute: true,  highPriority: false },
   invitation:      { channelId: 'events_v3',          categoryId: 'general_actions', sound: 'chime.wav',     respectsMute: true,  highPriority: false },
   join_approved:   { channelId: 'events_v3',          categoryId: 'general_actions', sound: 'chime.wav',     respectsMute: true,  highPriority: false },
-  organizer_high:  { channelId: 'organizer_high_v2',  categoryId: 'general_actions', sound: 'alarm.wav',     respectsMute: true,  highPriority: true  },
+  organizer_high:  { channelId: 'organizer_high_v2',  categoryId: 'general_actions', sound: 'alert.wav',     respectsMute: true,  highPriority: true  },
   organizer_alert: { channelId: 'organizer_alert_v3', categoryId: 'general_actions', sound: 'alert.wav',     respectsMute: true,  highPriority: true  },
-  announcement:    { channelId: 'general_v5',         categoryId: 'general_actions', sound: 'chime.wav',     respectsMute: true,  highPriority: false },
-  emergency_sos:   { channelId: 'emergency_sos_v1',   categoryId: 'general_actions', sound: 'emergency.wav', respectsMute: false, highPriority: true  },
+  announcement:    { channelId: 'organizer_alert_v3', categoryId: 'general_actions', sound: 'alert.wav',     respectsMute: true,  highPriority: true  },
+  emergency_sos:   { channelId: 'emergency_sos_v3',   categoryId: 'general_actions', sound: 'emergency.wav', respectsMute: false, highPriority: true  },
 };
 
 /** Classifies a notification row. Organizer urgency outranks the kind. */
-function typeForNotification(kind: string, priority: string | null, isChat: boolean): PushType {
+function typeForNotification(kind: string, priority: string | null, isChat: boolean, message?: string | null): PushType {
   if (kind === 'EMERGENCY_BROADCAST') return 'emergency_sos';
-  if (priority === 'HIGH') return 'organizer_high';
-  if (priority === 'ALERT') return 'organizer_alert';
+  if (priority === 'HIGH' || message?.startsWith('🚨')) return 'organizer_high';
+  if (priority === 'ALERT' || message?.startsWith('📢') || kind === 'ANNOUNCEMENT') return 'organizer_alert';
   if (isChat) return 'chat_message';
   if (kind === 'EVENT_REMINDER') return 'event_reminder';
   if (kind === 'INVITATION_RECEIVED') return 'invitation';
   if (kind === 'JOIN_APPROVED') return 'join_approved';
-  return 'announcement';
+  return 'organizer_alert';
 }
 
 /**
@@ -702,7 +725,7 @@ async function deliver(
   // user turns push off, so an opted-out user simply has no row here.
   const { data: tokens, error } = await supabase
     .from('push_tokens')
-    .select('token, device_token, platform')
+    .select('token, device_token, platform, user_id')
     .in('user_id', recipients);
 
   if (error) {
@@ -711,16 +734,38 @@ async function deliver(
   }
   if (!tokens?.length) return { sent: 0, pruned: 0 };
 
-  // Android goes direct to FCM as a data-only message so the native conversation
-  // builder runs in every app state. Everything else (iOS, and any Android device
-  // that predates device-token registration) keeps using the Expo push service.
-  const fcmTokens = tokens
-    .filter((t) => t.platform === 'android' && t.device_token)
-    .map((t) => t.device_token as string);
-  const expoTokens = tokens.filter((t) => !(t.platform === 'android' && t.device_token));
+  // Deduplicate per user to prevent duplicate push deliveries:
+  // - If an Android user has a registered native FCM device_token, send to FCM only.
+  // - Otherwise (iOS or Android without raw device_token), send via Expo push service.
+  const fcmTokenSet = new Set<string>();
+  const expoTargets: { token: string; platform: string | null }[] = [];
+  const seenExpoTokens = new Set<string>();
 
+  // Group tokens by user_id
+  const userTokensMap = new Map<string, typeof tokens>();
+  for (const t of tokens) {
+    const list = userTokensMap.get(t.user_id) ?? [];
+    list.push(t);
+    userTokensMap.set(t.user_id, list);
+  }
+
+  for (const [, userTokens] of userTokensMap) {
+    const androidFcm = userTokens.find((t) => t.platform === 'android' && t.device_token);
+    if (androidFcm?.device_token) {
+      fcmTokenSet.add(androidFcm.device_token);
+    } else {
+      // Pick the latest token for this user
+      const latestToken = userTokens[userTokens.length - 1];
+      if (latestToken?.token && !seenExpoTokens.has(latestToken.token)) {
+        seenExpoTokens.add(latestToken.token);
+        expoTargets.push({ token: latestToken.token, platform: latestToken.platform });
+      }
+    }
+  }
+
+  const fcmTokens = Array.from(fcmTokenSet);
   const staleDeviceTokens = fcmTokens.length ? await sendViaFcm(fcmTokens, c) : [];
-  const staleExpoTokens = expoTokens.length ? await sendViaExpo(expoTokens, c) : [];
+  const staleExpoTokens = expoTargets.length ? await sendViaExpo(expoTargets, c) : [];
 
   // Prune what the providers say is dead so we stop paying to send to it.
   if (staleDeviceTokens.length) {
@@ -730,7 +775,7 @@ async function deliver(
     await supabase.from('push_tokens').delete().in('token', staleExpoTokens);
   }
 
-  const attempted = fcmTokens.length + expoTokens.length;
+  const attempted = fcmTokens.length + expoTargets.length;
   const pruned = staleDeviceTokens.length + staleExpoTokens.length;
   return { sent: attempted - pruned, pruned };
 }

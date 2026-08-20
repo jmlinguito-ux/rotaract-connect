@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { AuthStackParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
 import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
 import RotaryWheel from '../../components/RotaryWheel';
 import { KeyboardAwareScrollView, KeyboardAwareScrollHandle, useKeyboardAwareFocus } from '../../components/KeyboardAwareScrollView';
 
@@ -31,6 +32,8 @@ function maskEmail(email: string): string {
 
 export default function ForgotPasswordScreen({ navigation, route }: Props) {
   const { requestPasswordReset, confirmPasswordReset } = useAuth();
+  const { colors: themeColors } = useTheme();
+  const [focusedField, setFocusedField] = useState<string | null>(null);
 
   const [phase, setPhase] = useState<'request' | 'reset' | 'done'>('request');
   const [username, setUsername] = useState(route.params?.username ?? '');
@@ -154,9 +157,14 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
             <>
               <Text style={styles.fieldLabel}>Username</Text>
               <TextInput
-                style={styles.input}
+                style={[
+                  styles.input,
+                  focusedField === 'username' && { borderColor: themeColors.primary, borderWidth: 1.5 },
+                ]}
                 value={username}
                 onChangeText={setUsername}
+                onFocus={() => setFocusedField('username')}
+                onBlur={() => setFocusedField(null)}
                 placeholder="your username"
                 placeholderTextColor={colors.textMuted}
                 autoCapitalize="none"
@@ -188,7 +196,10 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
 
               <Text style={styles.fieldLabel}>Reset Code</Text>
               <TextInput
-                style={styles.input}
+                style={[
+                  styles.input,
+                  focusedField === 'code' && { borderColor: themeColors.primary, borderWidth: 1.5 },
+                ]}
                 value={code}
                 onChangeText={setCode}
                 placeholder="6-digit code"
@@ -196,11 +207,20 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
                 keyboardType="number-pad"
                 autoCapitalize="none"
                 maxLength={10}
-                onFocus={onInputFocus}
+                onFocus={() => {
+                  setFocusedField('code');
+                  onInputFocus();
+                }}
+                onBlur={() => setFocusedField(null)}
               />
 
               <Text style={styles.fieldLabel}>New Password</Text>
-              <View style={styles.passwordWrap}>
+              <View
+                style={[
+                  styles.passwordWrap,
+                  focusedField === 'newPw' && { borderColor: themeColors.primary, borderWidth: 1.5 },
+                ]}
+              >
                 <TextInput
                   style={styles.passwordInput}
                   value={newPw}
@@ -209,16 +229,23 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
                   placeholderTextColor={colors.textMuted}
                   secureTextEntry={!showPw}
                   autoCapitalize="none"
-                  onFocus={onInputFocus}
+                  onFocus={() => {
+                    setFocusedField('newPw');
+                    onInputFocus();
+                  }}
+                  onBlur={() => setFocusedField(null)}
                 />
                 <TouchableOpacity style={styles.eyeBtn} onPress={() => setShowPw(v => !v)} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-                  <Ionicons name={showPw ? 'eye-off-outline' : 'eye-outline'} size={20} color={colors.textMuted} />
+                  <Ionicons name={showPw ? 'eye-off-outline' : 'eye-outline'} size={20} color={focusedField === 'newPw' ? themeColors.primary : colors.textMuted} />
                 </TouchableOpacity>
               </View>
 
               <Text style={styles.fieldLabel}>Confirm New Password</Text>
               <TextInput
-                style={styles.input}
+                style={[
+                  styles.input,
+                  focusedField === 'confirmPw' && { borderColor: themeColors.primary, borderWidth: 1.5 },
+                ]}
                 value={confirmPw}
                 onChangeText={setConfirmPw}
                 placeholder="Re-enter new password"
@@ -226,7 +253,11 @@ export default function ForgotPasswordScreen({ navigation, route }: Props) {
                 secureTextEntry={!showPw}
                 autoCapitalize="none"
                 onSubmitEditing={submitReset}
-                onFocus={onInputFocus}
+                onFocus={() => {
+                  setFocusedField('confirmPw');
+                  onInputFocus();
+                }}
+                onBlur={() => setFocusedField(null)}
               />
 
               <TouchableOpacity

@@ -24,6 +24,7 @@ export default function EditEventScreen({ route, navigation }: Props) {
   const { eventId } = route.params;
   const { user } = useAuth();
   const { colors: themeColors, isNightMode } = useTheme();
+  const onFocusAware = useKeyboardAwareOnFocus();
   const { events, updateEvent, users, clubs, participantsFor, resetEventApprovals } = useData();
 
   const event = events.find(e => e.id === eventId);
@@ -277,7 +278,11 @@ export default function EditEventScreen({ route, navigation }: Props) {
           {/* Tag Input Container Box with Inline Pills */}
           <TouchableOpacity
             activeOpacity={1}
-            style={[styles.pillBoxContainer, isCoOrgFocused && styles.pillBoxFocused]}
+            style={[
+              styles.pillBoxContainer,
+              { backgroundColor: themeColors.surface, borderColor: themeColors.border },
+              isCoOrgFocused && { borderColor: themeColors.primary, borderWidth: 1.5 },
+            ]}
             onPress={() => coOrgInputRef.current?.focus()}
           >
             {selectedCoOrganizers.map(id => {
@@ -307,6 +312,7 @@ export default function EditEventScreen({ route, navigation }: Props) {
               onChangeText={setCoOrgQuery}
               onFocus={(e: any) => {
                 setIsCoOrgFocused(true);
+                onFocusAware();
                 if (Platform.OS === 'web' && e?.target?.scrollIntoView) {
                   setTimeout(() => {
                     e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -394,12 +400,21 @@ export default function EditEventScreen({ route, navigation }: Props) {
 
           <View style={styles.coOrgSearchWrap}>
             <TextInput
-              style={[styles.input, styles.coOrgSearchInput, { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text }]}
+              style={[
+                styles.input,
+                styles.coOrgSearchInput,
+                { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text },
+                isPartnerClubFocused && { borderColor: themeColors.primary, borderWidth: 1.5 },
+              ]}
               placeholder="Search clubs to add as co-hosts..."
               placeholderTextColor={themeColors.textMuted}
               value={partnerClubQuery}
               onChangeText={setPartnerClubQuery}
-              onFocus={() => setIsPartnerClubFocused(true)}
+              onFocus={() => {
+                setIsPartnerClubFocused(true);
+                onFocusAware();
+              }}
+              onBlur={() => setIsPartnerClubFocused(false)}
             />
             {isPartnerClubFocused && partnerClubQuery.trim().length > 0 && (
               <View style={[styles.coOrgDropdown, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border, zIndex: 3 }]}>

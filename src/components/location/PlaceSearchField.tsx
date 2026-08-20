@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../../theme/colors';
+import { useTheme } from '../../context/ThemeContext';
 import { PlaceSuggestion, searchPlaces, DISTRICT_3800_PRESET_VENUES } from '../../services/placeSearch';
 import { LocationValue, styles } from './shared';
 
@@ -15,7 +16,9 @@ export function PlaceSearchField({
   address: string;
   onSelect: (value: Omit<LocationValue, never>) => void;
 }) {
+  const { colors: themeColors } = useTheme();
   const [query, setQuery] = useState(address);
+  const [focused, setFocused] = useState(false);
   const [results, setResults] = useState<PlaceSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -104,24 +107,31 @@ export function PlaceSearchField({
 
       <View style={styles.searchRow}>
         <TextInput
-          style={[styles.input, styles.searchInput]}
+          style={[
+            styles.input,
+            styles.searchInput,
+            { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text },
+            focused && { borderColor: themeColors.primary, borderWidth: 1.5 },
+          ]}
           value={query}
           onChangeText={text => {
             setQuery(text);
             setDismissed(false);
           }}
           onFocus={(e: any) => {
+            setFocused(true);
             if (Platform.OS === 'web' && e?.target?.scrollIntoView) {
               setTimeout(() => {
                 e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
               }, 100);
             }
           }}
+          onBlur={() => setFocused(false)}
           placeholder="Search venue"
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={themeColors.textMuted}
           autoCorrect={false}
         />
-        {loading && <ActivityIndicator style={styles.searchSpinner} color={colors.primary} />}
+        {loading && <ActivityIndicator style={styles.searchSpinner} color={themeColors.primary} />}
       </View>
 
       {results.length > 0 && (

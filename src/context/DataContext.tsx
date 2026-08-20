@@ -27,6 +27,7 @@ import {
   updateBadgeCount,
 } from '../services/notifications';
 import { syncEventGeofences } from '../services/backgroundGeofencing';
+import { stopAlertSound } from '../services/sound';
 
 export type CheckInRecord = {
   checkedInAt: string;
@@ -168,6 +169,7 @@ interface DataContextValue {
   markNotificationsRead: (userId: string) => void;
   markNotificationRead: (notificationId: string) => void;
   deleteNotification: (notificationId: string) => void;
+  deleteAllNotifications: (userId: string) => void;
   /**
    * Promotes or updates user system and club leadership roles. `actor` is recorded
    * in the audit log and notification sent to the target.
@@ -1386,6 +1388,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     // message history the native builder accumulates for it, so reopening the app
     // never leaves a stale banner behind.
     RotaractNotifications?.clearConversation(conversationId);
+    stopAlertSound();
   }, [messages]);
 
   const broadcastToEvent = useCallback(async (eventId: string, title: string, message: string, priority: NotificationPriority) => {
@@ -1609,16 +1612,24 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const markNotificationsRead = useCallback((userId: string) => {
     setNotifications(prev => prev.map(n => (n.user_id === userId ? { ...n, is_read: true } : n)));
     db.markNotificationsRead(userId);
+    stopAlertSound();
   }, []);
 
   const markNotificationRead = useCallback((notificationId: string) => {
     setNotifications(prev => prev.map(n => (n.id === notificationId ? { ...n, is_read: true } : n)));
     db.markNotificationRead(notificationId);
+    stopAlertSound();
   }, []);
 
   const deleteNotification = useCallback((notificationId: string) => {
     setNotifications(prev => prev.filter(n => n.id !== notificationId));
     db.deleteNotification(notificationId);
+  }, []);
+
+  const deleteAllNotifications = useCallback((userId: string) => {
+    setNotifications(prev => prev.filter(n => n.user_id !== userId));
+    db.deleteAllNotifications(userId);
+    stopAlertSound();
   }, []);
 
   const participantsFor = useCallback((eventId: string) => participants.filter(p => p.event_id === eventId), [participants]);
@@ -1722,7 +1733,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       refresh,
       createEvent, updateEvent, updateEventStatus, resetEventApprovals, cancelEvent, approveEvent, rejectEvent, requestDistrictEventReview,
       joinEvent, leaveEvent, approveParticipant, declineParticipant, markAttendance, checkIn, checkOut, addClub,
-      invite, respondInvitation, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, sendDirectMessage, retryMessage, deleteMessageForMe, unsendMessage, markConversationRead, readCursorsFor, conversationStateFor, setConversationPinned, setConversationMuted, setConversationArchived, deleteConversationForMe, reactionsFor, toggleMessageReaction, broadcastToEvent, saveImpact, reviewApplication, resubmitApplication, pushNotification: pushNotif, markNotificationsRead, markNotificationRead, deleteNotification, updateUserRole, removeUser, addApplication,
+      invite, respondInvitation, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, sendDirectMessage, retryMessage, deleteMessageForMe, unsendMessage, markConversationRead, readCursorsFor, conversationStateFor, setConversationPinned, setConversationMuted, setConversationArchived, deleteConversationForMe, reactionsFor, toggleMessageReaction, broadcastToEvent, saveImpact, reviewApplication, resubmitApplication, pushNotification: pushNotif, markNotificationsRead, markNotificationRead, deleteNotification, deleteAllNotifications, updateUserRole, removeUser, addApplication,
       participantsFor, invitationFor, participationFor, impactFor, notificationsFor, unreadCountForUser, unreadInboxCountForUser, messagesForConversation, auditFor,
       applicationsForRole, userStats,
   }), [
@@ -1730,7 +1741,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     refresh,
     createEvent, updateEvent, updateEventStatus, resetEventApprovals, cancelEvent, approveEvent, rejectEvent, requestDistrictEventReview,
     joinEvent, leaveEvent, approveParticipant, declineParticipant, markAttendance, checkIn, checkOut, addClub,
-    invite, respondInvitation, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, sendDirectMessage, retryMessage, deleteMessageForMe, unsendMessage, markConversationRead, readCursorsFor, conversationStateFor, setConversationPinned, setConversationMuted, setConversationArchived, deleteConversationForMe, reactionsFor, toggleMessageReaction, broadcastToEvent, saveImpact, reviewApplication, resubmitApplication, pushNotif, markNotificationsRead, markNotificationRead, deleteNotification, updateUserRole, removeUser, addApplication,
+    invite, respondInvitation, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, sendDirectMessage, retryMessage, deleteMessageForMe, unsendMessage, markConversationRead, readCursorsFor, conversationStateFor, setConversationPinned, setConversationMuted, setConversationArchived, deleteConversationForMe, reactionsFor, toggleMessageReaction, broadcastToEvent, saveImpact, reviewApplication, resubmitApplication, pushNotif, markNotificationsRead, markNotificationRead, deleteNotification, deleteAllNotifications, updateUserRole, removeUser, addApplication,
     participantsFor, invitationFor, participationFor, impactFor, notificationsFor, unreadCountForUser, unreadInboxCountForUser, messagesForConversation, auditFor,
     applicationsForRole, userStats,
   ]);

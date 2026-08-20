@@ -54,7 +54,7 @@ export default function NotificationsScreen({ navigation }: Props) {
   const { user } = useAuth();
   const { colors: themeColors, isNightMode } = useTheme();
   const {
-    notificationsFor, markNotificationsRead, deleteNotification, participantsFor, invitationFor,
+    notificationsFor, markNotificationsRead, deleteNotification, deleteAllNotifications, participantsFor, invitationFor,
     approveParticipant, declineParticipant, respondInvitation, users, events,
   } = useData();
 
@@ -78,7 +78,9 @@ export default function NotificationsScreen({ navigation }: Props) {
 
   const [categoryTab, setCategoryTab] = useState<'ALL' | 'EVENTS' | 'APPROVALS' | 'MESSAGES'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [confirmClearVisible, setConfirmClearVisible] = useState(false);
+  const [confirmDeleteAllVisible, setConfirmDeleteAllVisible] = useState(false);
 
   React.useEffect(() => {
     if (user) {
@@ -118,6 +120,13 @@ export default function NotificationsScreen({ navigation }: Props) {
     setConfirmClearVisible(false);
   };
 
+  const handleDeleteAll = () => {
+    if (user) {
+      deleteAllNotifications(user.id);
+    }
+    setConfirmDeleteAllVisible(false);
+  };
+
   const handleRowPress = (item: AppNotification) => {
     if (!item.is_read) {
       markNotificationsRead(item.id);
@@ -154,8 +163,8 @@ export default function NotificationsScreen({ navigation }: Props) {
         address_hint: addressHint,
         message: customNote || undefined,
         created_at: item.created_at,
+        playSound: false,
       });
-      navigation.navigate('Main', { screen: 'MapTab' } as any);
       return;
     }
     if (item.conversation_id) {
@@ -199,14 +208,16 @@ export default function NotificationsScreen({ navigation }: Props) {
     <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.bg }]} edges={['bottom']}>
       {/* Top Search & Actions Bar */}
       <View style={styles.topControlContainer}>
-        <View style={[styles.searchBox, { backgroundColor: themeColors.surface, borderColor: themeColors.border }]}>
-          <Ionicons name="search" size={16} color={themeColors.textMuted} />
+        <View style={[styles.searchBox, { backgroundColor: themeColors.surface, borderColor: isSearchFocused ? themeColors.primary : themeColors.border }, isSearchFocused && { borderWidth: 1.5 }]}>
+          <Ionicons name="search" size={16} color={isSearchFocused ? themeColors.primary : themeColors.textMuted} />
           <TextInput
             style={[styles.searchInput, { color: themeColors.text }]}
             placeholder="Search notifications..."
             placeholderTextColor={themeColors.textMuted}
             value={searchQuery}
             onChangeText={setSearchQuery}
+            onFocus={() => setIsSearchFocused(true)}
+            onBlur={() => setIsSearchFocused(false)}
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={() => setSearchQuery('')}>
@@ -215,13 +226,13 @@ export default function NotificationsScreen({ navigation }: Props) {
           )}
         </View>
 
-        {readCount > 0 && (
+        {notifs.length > 0 && (
           <TouchableOpacity
-            style={[styles.clearBtn, { backgroundColor: themeColors.surface, borderColor: themeColors.border }]}
-            onPress={() => setConfirmClearVisible(true)}
+            style={[styles.clearBtn, { backgroundColor: isNightMode ? themeColors.surface : '#FEF2F2', borderColor: isNightMode ? '#EF444466' : '#FCA5A5' }]}
+            onPress={() => setConfirmDeleteAllVisible(true)}
           >
-            <Ionicons name="trash-outline" size={14} color={themeColors.textMuted} />
-            <Text style={[styles.clearBtnText, { color: themeColors.textMuted }]}>Clear Read ({readCount})</Text>
+            <Ionicons name="trash-outline" size={14} color="#EF4444" />
+            <Text style={[styles.clearBtnText, { color: '#EF4444' }]}>Delete All</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -528,6 +539,17 @@ export default function NotificationsScreen({ navigation }: Props) {
         destructive
         onConfirm={handleClearRead}
         onClose={() => setConfirmClearVisible(false)}
+      />
+
+      {/* Confirm Delete All Notifications Dialog */}
+      <ConfirmDialog
+        visible={confirmDeleteAllVisible}
+        title="Delete All Notifications?"
+        message={`Are you sure you want to delete all ${notifs.length} notification${notifs.length === 1 ? '' : 's'}? This action cannot be undone.`}
+        confirmLabel="Delete All"
+        destructive
+        onConfirm={handleDeleteAll}
+        onClose={() => setConfirmDeleteAllVisible(false)}
       />
     </SafeAreaView>
   );

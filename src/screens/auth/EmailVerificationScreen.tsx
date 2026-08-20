@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { AuthStackParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
 import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
 import { KeyboardAwareScrollView, KeyboardAwareScrollHandle, useKeyboardAwareFocus } from '../../components/KeyboardAwareScrollView';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'EmailVerification'>;
@@ -16,9 +17,11 @@ const RESEND_COOLDOWN = 60; // seconds; client guard on top of Supabase's rate l
 
 export default function EmailVerificationScreen({ navigation, route }: Props) {
   const { confirmEmailVerification, resendVerificationEmail } = useAuth();
+  const { colors: themeColors } = useTheme();
   const email = route.params.email;
 
   const [code, setCode] = useState('');
+  const [isFocused, setIsFocused] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -93,17 +96,25 @@ export default function EmailVerificationScreen({ navigation, route }: Props) {
             </View>
           ) : null}
 
-          <Text style={styles.fieldLabel}>Verification Code</Text>
+          <Text style={[styles.fieldLabel, { color: themeColors.primary }]}>Verification Code</Text>
           <TextInput
-            style={styles.input}
+            style={[
+              styles.input,
+              { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text },
+              isFocused && { borderColor: themeColors.primary, borderWidth: 1.5 },
+            ]}
             value={code}
             onChangeText={setCode}
             placeholder="6-digit code"
-            placeholderTextColor={colors.textMuted}
+            placeholderTextColor={themeColors.textMuted}
             keyboardType="number-pad"
             autoCapitalize="none"
             maxLength={10}
-            onFocus={onInputFocus}
+            onFocus={() => {
+              setIsFocused(true);
+              onInputFocus();
+            }}
+            onBlur={() => setIsFocused(false)}
             onSubmitEditing={verify}
           />
 

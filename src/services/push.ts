@@ -59,6 +59,7 @@ export async function configurePushNotifications() {
       'chat_v3', 'mentions_v1', 'events_v1', 'general_v3',
       'organizer_high_v1', 'organizer_alert_v1',
       'chat_v4', 'mentions_v2', 'events_v2', 'general_v4', 'organizer_alert_v2',
+      'emergency_sos_v1', 'emergency_sos_v2',
     ]) {
       await Notifications.deleteNotificationChannelAsync(retired).catch(() => {});
     }
@@ -76,7 +77,7 @@ export async function configurePushNotifications() {
     const emergency = 'emergency.wav';
 
     try {
-      await Notifications.setNotificationChannelAsync('emergency_sos_v1', {
+      await Notifications.setNotificationChannelAsync('emergency_sos_v3', {
         name: 'Emergency SOS Broadcasts',
         description: 'Urgent emergency distress broadcasts from nearby members.',
         importance: Notifications.AndroidImportance.MAX,
@@ -90,7 +91,7 @@ export async function configurePushNotifications() {
     } catch {
       // Fallback to alert sound on dev builds compiled before emergency.wav was added
       try {
-        await Notifications.setNotificationChannelAsync('emergency_sos_v1', {
+        await Notifications.setNotificationChannelAsync('emergency_sos_v3', {
           name: 'Emergency SOS Broadcasts',
           description: 'Urgent emergency distress broadcasts from nearby members.',
           importance: Notifications.AndroidImportance.MAX,
@@ -270,6 +271,19 @@ export async function registerForPushNotificationsAsync(userId: string): Promise
       { onConflict: 'token' },
     );
     if (error) console.warn('[push] token upsert failed', error.message);
+
+    // Clean up any stale tokens for this user on the same platform to prevent duplicate delivery
+    try {
+      await supabase
+        .from('push_tokens')
+        .delete()
+        .eq('user_id', userId)
+        .eq('platform', Platform.OS)
+        .neq('token', token);
+    } catch {
+      // ignore
+    }
+
     return token;
   } catch (e) {
     console.warn('[push] getExpoPushTokenAsync failed', e);

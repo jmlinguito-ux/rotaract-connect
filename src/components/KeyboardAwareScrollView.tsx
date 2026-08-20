@@ -46,10 +46,10 @@ export const KeyboardAwareScrollView = forwardRef<KeyboardAwareScrollHandle, Pro
         if (typeof node.measureInWindow === 'function') {
           node.measureInWindow((_x: number, winY: number, _w: number, winH: number) => {
             if (typeof winY !== 'number' || isNaN(winY) || typeof winH !== 'number' || isNaN(winH)) return;
-            const screenH = Dimensions.get('window').height;
-            const kb = kbHeightRef.current || 300;
+            const screenH = Dimensions.get('screen').height;
+            const kb = kbHeightRef.current || 320;
             const keyboardTop = screenH - kb;
-            const clearanceMargin = 28;
+            const clearanceMargin = 40;
             const keyboardBoundary = keyboardTop - clearanceMargin;
 
             // 1. Is the bottom of the input cut off by or under the keyboard?

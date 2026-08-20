@@ -168,6 +168,7 @@ export default function ClubDetailScreen({ route }: Props) {
             </View>
             <TouchableOpacity
               style={[styles.chatIconBtn, { backgroundColor: themeColors.primary + '1A', borderColor: themeColors.primary + '3D' }]}
+              hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
               onPress={(e) => {
                 e.stopPropagation();
                 const target = presidentUser || { id: club.president_id || 'u_pres', full_name: club.president_name };
@@ -206,6 +207,7 @@ export default function ClubDetailScreen({ route }: Props) {
                   </View>
                   <TouchableOpacity
                     style={[styles.chatIconBtn, { backgroundColor: themeColors.primary + '1A', borderColor: themeColors.primary + '3D' }]}
+                    hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
                     onPress={(e) => {
                       e.stopPropagation();
                       handleChatWithMember(m);

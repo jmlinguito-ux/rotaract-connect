@@ -79,14 +79,18 @@ export default function ActiveSosBanner() {
   const handleResolve = () => {
     Alert.alert(
       "Confirm You're Safe",
-      'This will cancel the emergency distress broadcast and notify nearby responders that you are safe.',
+      'This will cancel your emergency distress broadcast and notify nearby responders that you are safe.',
       [
         { text: 'Keep Active', style: 'cancel' },
         {
           text: "Yes, I'm Safe",
           style: 'destructive',
           onPress: async () => {
-            await cancelEmergencySOS(activeAlert.id);
+            const alertId = activeAlert?.id;
+            setActiveAlert(null);
+            if (alertId) {
+              await cancelEmergencySOS(alertId);
+            }
           },
         },
       ]
@@ -112,12 +116,22 @@ export default function ActiveSosBanner() {
         </View>
 
         <View style={styles.rightCol}>
-          <TouchableOpacity style={styles.quick911Btn} onPress={handleCall911}>
+          <TouchableOpacity
+            style={styles.quick911Btn}
+            onPress={handleCall911}
+            hitSlop={{ top: 12, bottom: 12, left: 10, right: 10 }}
+            activeOpacity={0.7}
+          >
             <Ionicons name="call" size={13} color="#EF4444" />
             <Text style={styles.quick911Text}>911</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.safeBtn} onPress={handleResolve}>
+          <TouchableOpacity
+            style={styles.safeBtn}
+            onPress={handleResolve}
+            hitSlop={{ top: 12, bottom: 12, left: 10, right: 10 }}
+            activeOpacity={0.7}
+          >
             <Ionicons name="checkmark-circle" size={14} color="#fff" />
             <Text style={styles.safeBtnText}>I'm Safe</Text>
           </TouchableOpacity>

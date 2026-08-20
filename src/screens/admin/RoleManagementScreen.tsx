@@ -47,6 +47,7 @@ export default function RoleManagementScreen({ navigation }: Props) {
   const { colors: themeColors } = useTheme();
 
   const [query, setQuery] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [filter, setFilter] = useState<Filter>('ALL');
   const [selectedUser, setSelectedUser] = useState<AppUser | null>(null);
   const [fullImageUri, setFullImageUri] = useState<string | null>(null);
@@ -99,14 +100,16 @@ export default function RoleManagementScreen({ navigation }: Props) {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.bg }]} edges={['bottom']}>
-      <View style={[styles.searchWrap, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}>
-        <Ionicons name="search" size={16} color={themeColors.textMuted} />
+      <View style={[styles.searchWrap, { backgroundColor: themeColors.cardBg, borderColor: isSearchFocused ? themeColors.primary : themeColors.border }, isSearchFocused && { borderWidth: 1.5 }]}>
+        <Ionicons name="search" size={16} color={isSearchFocused ? themeColors.primary : themeColors.textMuted} />
         <TextInput
           style={[styles.searchInput, { color: themeColors.text }]}
           placeholder="Search by name, club, or position..."
           placeholderTextColor={themeColors.textMuted}
           value={query}
           onChangeText={setQuery}
+          onFocus={() => setIsSearchFocused(true)}
+          onBlur={() => setIsSearchFocused(false)}
           autoCapitalize="none"
         />
         {query.length > 0 && (

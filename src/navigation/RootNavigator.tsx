@@ -65,7 +65,10 @@ export default function RootNavigator() {
 
   return (
     <NavigationContainer theme={navTheme} ref={navigationRef}>
-      <StatusBar style={isNightMode ? 'light' : 'dark'} />
+      {/* The nav header is themeColors.primary (deep pink) in BOTH themes, and the
+          status bar sits on top of it — so its glyphs must always be light. Keying
+          this off isNightMode put dark glyphs on the pink header in light mode. */}
+      <StatusBar style="light" />
       <Stack.Navigator
         screenOptions={{
           headerStyle: { backgroundColor: themeColors.primary },
@@ -90,7 +93,11 @@ export default function RootNavigator() {
             <Stack.Screen name="ActivityPortfolio" component={ActivityPortfolioScreen} options={{ title: 'Activity Portfolio' }} />
             <Stack.Screen name="Analytics" component={AnalyticsScreen} options={{ title: 'Analytics Dashboard' }} />
             <Stack.Screen name="Scoreboard" component={ScoreboardScreen} options={{ title: 'Member Scoreboard' }} />
-            <Stack.Screen name="Chat" component={ChatScreen} options={({ route }) => ({ title: route.params.recipientName || 'Chat', gestureEnabled: false })} />
+            {/* Edge-swipe-back stays ENABLED: it is a core iOS affordance and the
+                default native-stack gesture is edge-only, so it does not collide
+                with SwipeableRow's mid-bubble swipe-to-reply. (Do not turn on
+                fullScreenGestureEnabled — that one would collide.) */}
+            <Stack.Screen name="Chat" component={ChatScreen} options={({ route }) => ({ title: route.params.recipientName || 'Chat' })} />
             <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: 'Settings & Preferences' }} />
             <Stack.Screen name="RoleManagement" component={RoleManagementScreen} options={{ title: 'Roles & Permissions' }} />
             <Stack.Screen name="OrganizerBroadcast" component={OrganizerBroadcastScreen} options={{ title: 'Send Banner Notification' }} />

@@ -469,6 +469,9 @@ export const db = {
   deleteNotification: async (id: string) => {
     reportError('deleteNotification', (await supabase.from('notifications').delete().eq('id', id)).error);
   },
+  deleteAllNotifications: async (userId: string) => {
+    reportError('deleteAllNotifications', (await supabase.from('notifications').delete().eq('user_id', userId)).error);
+  },
   insertConversation: async (c: Conversation) => {
     const { participant_name, organizer_name, ...row } = c;
     reportError('insertConversation', (await supabase.from('conversations').insert(row)).error);

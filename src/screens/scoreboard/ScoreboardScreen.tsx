@@ -34,6 +34,7 @@ export default function ScoreboardScreen({ navigation }: Props) {
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
   const [metric, setMetric] = useState<SortMetric>('POINTS');
   const [search, setSearch] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [selectedUser, setSelectedUser] = useState<AppUser | null>(null);
   const [showFormulaInfo, setShowFormulaInfo] = useState(false);
   const insets = useSafeAreaInsets();
@@ -367,14 +368,16 @@ export default function ScoreboardScreen({ navigation }: Props) {
 
       {/* Search & Sort Controls */}
       <View style={styles.controlsRow}>
-        <View style={[styles.searchBox, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}>
-          <Ionicons name="search" size={16} color={themeColors.textMuted} />
+        <View style={[styles.searchBox, { backgroundColor: themeColors.cardBg, borderColor: isSearchFocused ? themeColors.primary : themeColors.border }, isSearchFocused && { borderWidth: 1.5 }]}>
+          <Ionicons name="search" size={16} color={isSearchFocused ? themeColors.primary : themeColors.textMuted} />
           <TextInput
             style={[styles.searchInput, { color: themeColors.text }]}
             placeholder={viewMode === 'INDIVIDUAL' ? 'Search member or club...' : 'Search club name or city...'}
             placeholderTextColor={themeColors.textMuted}
             value={search}
             onChangeText={setSearch}
+            onFocus={() => setIsSearchFocused(true)}
+            onBlur={() => setIsSearchFocused(false)}
           />
           {search ? (
             <TouchableOpacity onPress={() => setSearch('')}>

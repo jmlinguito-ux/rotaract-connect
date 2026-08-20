@@ -12,6 +12,8 @@ import { useTheme } from '../../context/ThemeContext';
 import { useAppRefreshControl } from '../../hooks/useAppRefreshControl';
 import { DeclineReasonModal } from '../../components/DeclineReasonModal';
 import { SwipeableRow, SwipeAction } from '../../components/SwipeableRow';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
+import { dispatchLocalAlert } from '../../services/emergencyBroadcast';
 import UserAvatar from '../../components/UserAvatar';
 import VerifiedCheck from '../../components/VerifiedCheck';
 import { relativeTime } from '../../utils/relativeTime';
@@ -73,6 +75,7 @@ export default function InboxScreen() {
     getOrCreateEventGroupConversation,
     participantsFor,
     deleteNotification,
+    deleteAllNotifications,
     messagesForConversation,
     readCursorsFor,
     markConversationRead,
@@ -87,6 +90,7 @@ export default function InboxScreen() {
 
   const [tab, setTab] = useState<Tab>('notifications');
   const [showArchived, setShowArchived] = useState(false);
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState(false);
   const [inviteDeclineTarget, setInviteDeclineTarget] = useState<{
     invitationId: string;
     inviterName?: string;
@@ -195,6 +199,42 @@ export default function InboxScreen() {
 
   const handleNotificationPress = (item: AppNotification) => {
     if (user && !item.is_read) markNotificationRead(item.id);
+    if (item.kind === 'EMERGENCY_BROADCAST') {
+      const broadcasterName = item.title.replace(/^🚨\s*(?:EMERGENCY\s*SOS|NEARBY\s*EMERGENCY|SOS):\s*/i, '').trim() || 'Rotaract Member in Distress';
+      const broadcaster = users.find(u => u.id === item.user_id || (u.full_name && u.full_name.toLowerCase() === broadcasterName.toLowerCase()));
+
+      const clubMatch = item.message.match(/\((Rotaract Club of [^)]+|RC [^)]+|District 3800)\)/i);
+      const clubName = clubMatch ? clubMatch[1] : (broadcaster?.club_name || 'District 3800');
+
+      const msgMatch = item.message.match(/"([^"]+)"/);
+      const customNote = msgMatch ? msgMatch[1] : '';
+
+      const coordsMatch = item.message.match(/maps\.google\.com\/\?q=([0-9.-]+),([0-9.-]+)/);
+      const lat = coordsMatch ? parseFloat(coordsMatch[1]) : 14.6948;
+      const lng = coordsMatch ? parseFloat(coordsMatch[2]) : 120.9664;
+
+      const addrMatch = item.message.match(/near\s+(.*?)(?:\.|\"|\s+Map:|\s+Location:|$)/i);
+      const addressHint = addrMatch ? addrMatch[1].trim() : (customNote ? 'Coordinates provided' : item.message);
+
+      dispatchLocalAlert({
+        id: item.id,
+        user_id: broadcaster?.id || item.user_id,
+        full_name: broadcaster?.full_name || broadcasterName,
+        avatar_url: broadcaster?.avatar_url,
+        club_id: broadcaster?.club_id || '',
+        club_name: clubName,
+        contact_number: broadcaster?.contact_number,
+        latitude: lat,
+        longitude: lng,
+        status: 'ACTIVE',
+        map_url: `https://maps.google.com/?q=${lat},${lng}`,
+        address_hint: addressHint,
+        message: customNote || undefined,
+        created_at: item.created_at,
+        playSound: false,
+      });
+      return;
+    }
     if (item.conversation_id) {
       const conv = conversations.find(c => c.id === item.conversation_id);
       if (conv?.is_group) {
@@ -437,6 +477,20 @@ export default function InboxScreen() {
     if (notifications.length === 0 && myInvites.length === 0) {
       rows.push({ key: 'notif_empty', render: () => emptyState('notifications-off-outline', 'No notifications yet.') });
     } else {
+      if (notifications.length > 0) {
+        rows.push({
+          key: 'h_notifs',
+          render: () => (
+            <SectionHeader
+              label="Notifications"
+              count={notifications.length}
+              colors={themeColors}
+              actionLabel="Clear All"
+              onAction={() => setConfirmDeleteAll(true)}
+            />
+          ),
+        });
+      }
       notifications.forEach(n => rows.push({
         key: `n_${n.id}`,
         render: () => (
@@ -547,19 +601,38 @@ export default function InboxScreen() {
         }}
         onCancel={() => setInviteDeclineTarget(null)}
       />
+      <ConfirmDialog
+        visible={confirmDeleteAll}
+        title="Delete All Notifications?"
+        message={`Are you sure you want to delete all ${notifications.length} notification${notifications.length === 1 ? '' : 's'}? This action cannot be undone.`}
+        confirmLabel="Delete All"
+        destructive
+        onConfirm={() => {
+          if (user) deleteAllNotifications(user.id);
+          setConfirmDeleteAll(false);
+        }}
+        onClose={() => setConfirmDeleteAll(false)}
+      />
     </SafeAreaView>
   );
 }
 
-function SectionHeader({ label, count, colors }: { label: string; count?: number; colors: any }) {
+function SectionHeader({ label, count, colors, actionLabel, onAction }: { label: string; count?: number; colors: any; actionLabel?: string; onAction?: () => void }) {
   return (
     <View style={styles.sectionHeader}>
-      <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>{label.toUpperCase()}</Text>
-      {count ? (
-        <View style={[styles.countPill, { backgroundColor: colors.primary + '1A' }]}>
-          <Text style={[styles.countPillText, { color: colors.primary }]}>{count}</Text>
-        </View>
-      ) : null}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+        <Text style={[styles.sectionLabel, { color: colors.textMuted }]}>{label.toUpperCase()}</Text>
+        {count ? (
+          <View style={[styles.countPill, { backgroundColor: colors.primary + '1A' }]}>
+            <Text style={[styles.countPillText, { color: colors.primary }]}>{count}</Text>
+          </View>
+        ) : null}
+      </View>
+      {actionLabel && onAction && (
+        <TouchableOpacity onPress={onAction} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Text style={{ fontSize: 11, fontWeight: '700', color: colors.danger || '#EF4444' }}>{actionLabel}</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }

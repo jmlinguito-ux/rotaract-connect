@@ -199,11 +199,11 @@ export function SegmentedTimeInput({ label, value, baseDate, onChangeTime, onOpe
         <View style={styles.segmentContainer}>
           {/* Hour Segment */}
           <TouchableOpacity
-            style={[styles.segmentBox, focusedSegment === 'hour' && styles.activeBlueHighlight]}
+            style={[styles.segmentBox, focusedSegment === 'hour' && { backgroundColor: themeColors.primary + '18' }]}
             onPress={() => selectSegment('hour')}
             activeOpacity={0.7}
           >
-            <Text style={[styles.segmentText, { color: themeColors.text }, focusedSegment === 'hour' && styles.activeBlueText]}>
+            <Text style={[styles.segmentText, { color: themeColors.text }, focusedSegment === 'hour' && { color: themeColors.primary, fontWeight: '700' }]}>
               {strHours}
             </Text>
           </TouchableOpacity>
@@ -212,11 +212,11 @@ export function SegmentedTimeInput({ label, value, baseDate, onChangeTime, onOpe
 
           {/* Minute Segment */}
           <TouchableOpacity
-            style={[styles.segmentBox, focusedSegment === 'minute' && styles.activeBlueHighlight]}
+            style={[styles.segmentBox, focusedSegment === 'minute' && { backgroundColor: themeColors.primary + '18' }]}
             onPress={() => selectSegment('minute')}
             activeOpacity={0.7}
           >
-            <Text style={[styles.segmentText, { color: themeColors.text }, focusedSegment === 'minute' && styles.activeBlueText]}>
+            <Text style={[styles.segmentText, { color: themeColors.text }, focusedSegment === 'minute' && { color: themeColors.primary, fontWeight: '700' }]}>
               {strMinutes}
             </Text>
           </TouchableOpacity>
@@ -225,11 +225,11 @@ export function SegmentedTimeInput({ label, value, baseDate, onChangeTime, onOpe
 
           {/* Period Segment (AM/PM) */}
           <TouchableOpacity
-            style={[styles.segmentBox, focusedSegment === 'period' && styles.activeBlueHighlight]}
+            style={[styles.segmentBox, focusedSegment === 'period' && { backgroundColor: themeColors.primary + '18' }]}
             onPress={() => selectSegment('period')}
             activeOpacity={0.7}
           >
-            <Text style={[styles.segmentText, { color: themeColors.text }, focusedSegment === 'period' && styles.activeBlueText]}>
+            <Text style={[styles.segmentText, { color: themeColors.text }, focusedSegment === 'period' && { color: themeColors.primary, fontWeight: '700' }]}>
               {periodStr}
             </Text>
           </TouchableOpacity>

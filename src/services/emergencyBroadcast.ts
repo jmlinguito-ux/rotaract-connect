@@ -2,8 +2,10 @@ import { supabase } from './supabase';
 import { AppUser, EmergencyAlert } from '../types';
 import { distanceMeters } from '../utils/checkIn';
 import * as Location from 'expo-location';
+import * as Notifications from 'expo-notifications';
 import { getDeviceLocationOnDemand, isSafetyNetworkEnabled } from './backgroundLocation';
 import { notifyEmergencyBroadcast } from './notifications';
+import { stopAlertSound } from './sound';
 
 const SOS_CHANNEL_NAME = 'rotaract-emergency-sos';
 export const MAX_EMERGENCY_RADIUS_METERS = 5000; // 5 km radius
@@ -137,15 +139,19 @@ export function initEmergencyListener(
         const isWithin5km = distance > 0 && distance <= MAX_EMERGENCY_RADIUS_METERS;
 
         if (isWithin5km || isClubPresident) {
-          // Trigger high-priority chime notification
-          await notifyEmergencyBroadcast(payload);
-          // Trigger in-app alert modal
+          // Trigger in-app alert modal & alarm sound directly for foreground instance
+          latestReceivedAlert = { alert: payload, distanceMetersAway: distance };
           alertListeners.forEach(cb => cb(payload, distance));
         }
       })
       .on('broadcast', { event: 'sos_cancel' }, ({ payload }: { payload: { alert_id: string } }) => {
         if (payload?.alert_id) {
           currentAlerts.delete(payload.alert_id);
+          stopAlertSound();
+          if (latestReceivedAlert?.alert.id === payload.alert_id) {
+            latestReceivedAlert = null;
+          }
+          Notifications.dismissNotificationAsync(`sos_${payload.alert_id}`).catch(() => {});
           resolveListeners.forEach(cb => cb(payload.alert_id));
         }
       })
@@ -287,6 +293,11 @@ export async function triggerEmergencySOS({
 export async function cancelEmergencySOS(alertId: string) {
   currentAlerts.delete(alertId);
   setActiveUserSos(null);
+  stopAlertSound();
+  if (latestReceivedAlert?.alert.id === alertId) {
+    latestReceivedAlert = null;
+  }
+  Notifications.dismissNotificationAsync(`sos_${alertId}`).catch(() => {});
 
   try {
     if (activeChannel) {

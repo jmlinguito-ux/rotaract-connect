@@ -30,6 +30,7 @@ export default function OrganizerBroadcastScreen({ route, navigation }: Props) {
   const event = events.find(e => e.id === eventId);
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
+  const [focusedInput, setFocusedInput] = useState<string | null>(null);
   const [priority, setPriority] = useState<NotificationPriority>('NORMAL');
   const [sending, setSending] = useState(false);
 
@@ -48,32 +49,28 @@ export default function OrganizerBroadcastScreen({ route, navigation }: Props) {
     setSending(true);
     const res = await broadcastToEvent(eventId, title.trim(), message.trim(), priority);
     setSending(false);
-    if (res.ok) {
-      Alert.alert('Banner Sent', `Your ${priority === 'HIGH' ? 'high priority ' : ''}announcement was sent to ${recipientCount} participant${recipientCount === 1 ? '' : 's'}.`);
-      navigation.goBack();
-    } else {
-      Alert.alert('Could not send', res.error || 'Please try again.');
+    if (!res.ok) {
+      Alert.alert('Broadcast failed', res.error || 'Could not deliver broadcast.');
+      return;
     }
-  };
-
-  if (!event) {
-    return (
-      <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]} edges={['bottom']}>
-        <Text style={[styles.emptyText, { color: colors.textMuted }]}>Event not found.</Text>
-      </SafeAreaView>
+    Alert.alert(
+      'Broadcast sent',
+      `Sent to ${recipientCount} participant${recipientCount === 1 ? '' : 's'}.`,
+      [{ text: 'OK', onPress: () => navigation.goBack() }]
     );
-  }
+  };
 
   if (!canBroadcast) {
     return (
-      <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]} edges={['bottom']}>
-        <View style={styles.centered}>
-          <Ionicons name="lock-closed" size={40} color={colors.textMuted} />
-          <Text style={[styles.emptyText, { color: colors.textMuted }]}>Only the event's organizing team can send participant banners.</Text>
-        </View>
+      <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]}>
+        <Text style={[styles.emptyText, { color: colors.textMuted }]}>
+          Only the organizing team can send broadcasts for this event.
+        </Text>
       </SafeAreaView>
     );
   }
+
+  if (!event) return null;
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]} edges={['bottom']}>
@@ -91,22 +88,35 @@ export default function OrganizerBroadcastScreen({ route, navigation }: Props) {
 
         <Text style={[styles.label, { color: colors.text }]}>Title</Text>
         <TextInput
-          style={[styles.input, { backgroundColor: colors.cardBg, borderColor: colors.border, color: colors.text }]}
+          style={[
+            styles.input,
+            { backgroundColor: colors.cardBg, borderColor: colors.border, color: colors.text },
+            focusedInput === 'title' && { borderColor: colors.primary, borderWidth: 1.5 },
+          ]}
           placeholder="e.g. Venue changed to the covered court"
           placeholderTextColor={colors.textMuted}
           value={title}
           onChangeText={t => setTitle(t.slice(0, TITLE_MAX))}
+          onFocus={() => setFocusedInput('title')}
+          onBlur={() => setFocusedInput(null)}
           maxLength={TITLE_MAX}
         />
         <Text style={[styles.counter, { color: colors.textMuted }]}>{title.length}/{TITLE_MAX}</Text>
 
         <Text style={[styles.label, { color: colors.text }]}>Message</Text>
         <TextInput
-          style={[styles.input, styles.multiline, { backgroundColor: colors.cardBg, borderColor: colors.border, color: colors.text }]}
+          style={[
+            styles.input,
+            styles.multiline,
+            { backgroundColor: colors.cardBg, borderColor: colors.border, color: colors.text },
+            focusedInput === 'message' && { borderColor: colors.primary, borderWidth: 1.5 },
+          ]}
           placeholder="Add the details participants need to know…"
           placeholderTextColor={colors.textMuted}
           value={message}
           onChangeText={t => setMessage(t.slice(0, BODY_MAX))}
+          onFocus={() => setFocusedInput('message')}
+          onBlur={() => setFocusedInput(null)}
           multiline
         />
         <Text style={[styles.counter, { color: colors.textMuted }]}>{message.length}/{BODY_MAX}</Text>

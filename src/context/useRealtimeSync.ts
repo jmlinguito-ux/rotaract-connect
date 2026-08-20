@@ -101,8 +101,12 @@ export function useRealtimeSync({
         setMessages(prev => {
           if (prev.some(m => m.id === msg.id)) return prev;
           if (authUser?.id && msg.sender_id !== authUser.id) {
-            if (msg.is_broadcast || msg.text?.startsWith('📢')) {
+            if (msg.text?.startsWith('🚨')) {
+              playAlertSound('HIGH');
+            } else if (msg.is_broadcast || msg.text?.startsWith('📢')) {
               playAlertSound('ALERT');
+            } else {
+              playAlertSound('CHIME');
             }
           }
           return [...prev, msg];
@@ -132,7 +136,9 @@ export function useRealtimeSync({
         };
         setNotifications(prev => {
           if (prev.some(x => x.id === notif.id)) return prev;
-          if (notif.priority === 'ALERT') {
+          if (notif.kind === 'EMERGENCY_BROADCAST') {
+            playAlertSound('EMERGENCY');
+          } else if (notif.priority === 'ALERT') {
             playAlertSound('ALERT');
           } else if (notif.priority === 'HIGH') {
             playAlertSound('HIGH');

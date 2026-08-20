@@ -28,7 +28,7 @@ export default function EmergencyAlertModal({
   onDismiss,
 }: Props) {
   useEffect(() => {
-    if (visible && alert) {
+    if (visible && alert && alert.playSound !== false) {
       playEmergencySound();
     } else {
       stopAlertSound();

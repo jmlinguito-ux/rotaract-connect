@@ -11,6 +11,7 @@ import {
   ViewStyle,
 } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
+import { useKeyboardOffset } from './keyboard/useKeyboardOffset';
 
 interface BottomSheetProps {
   visible: boolean;
@@ -35,6 +36,7 @@ export function BottomSheet({ visible, onClose, children, cardStyle }: BottomShe
   const [mounted, setMounted] = useState(visible);
   const [sheetHeight, setSheetHeight] = useState(SCREEN_HEIGHT * 0.5);
   const progress = useRef(new Animated.Value(0)).current;
+  const keyboardOffset = useKeyboardOffset();
 
   useEffect(() => {
     if (visible) {
@@ -70,7 +72,16 @@ export function BottomSheet({ visible, onClose, children, cardStyle }: BottomShe
         style={styles.keyboardAvoid}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <Animated.View style={[styles.backdrop, { opacity: progress }]}>
+        <Animated.View
+          style={[
+            styles.backdrop,
+            { opacity: progress },
+            // iOS is handled by KeyboardAvoidingView above; Android runs
+            // edge-to-edge where that is inert, so lift the bottom-anchored card
+            // by the live keyboard height instead.
+            Platform.OS === 'android' && keyboardOffset > 0 ? { paddingBottom: keyboardOffset } : null,
+          ]}
+        >
           <Pressable style={styles.backdropPress} onPress={onClose} />
           <Animated.View
             style={[styles.card, { backgroundColor: themeColors.cardBg }, cardStyle, { transform: [{ translateY }] }]}

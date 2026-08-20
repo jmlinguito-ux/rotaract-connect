@@ -21,6 +21,7 @@ import { useToast } from '../../context/ToastContext';
 import { exportUserDataArchive } from '../../utils/csvExport';
 import { isSafetyNetworkEnabled, setSafetyNetworkEnabled } from '../../services/backgroundLocation';
 import { registerForPushNotificationsAsync } from '../../services/notifications';
+import AppModalKeyboardWrapper from '../../components/keyboard/AppModalKeyboardWrapper';
 import { Club } from '../../types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Settings'>;
@@ -53,6 +54,7 @@ export default function SettingsScreen({ navigation }: Props) {
   // Club transfer state
   const [clubModalVisible, setClubModalVisible] = useState(false);
   const [clubSearch, setClubSearch] = useState('');
+  const [focusedInput, setFocusedInput] = useState<string | null>(null);
   const [pendingClubTransfer, setPendingClubTransfer] = useState<Club | null>(null);
   const [confirmTransferVisible, setConfirmTransferVisible] = useState(false);
 
@@ -930,11 +932,17 @@ export default function SettingsScreen({ navigation }: Props) {
               </TouchableOpacity>
             </View>
             <TextInput
-              style={[styles.pwInput, { backgroundColor: themeColors.surface, color: themeColors.text, borderColor: themeColors.border, minHeight: 44, marginVertical: 12 }]}
+              style={[
+                styles.pwInput,
+                { backgroundColor: themeColors.surface, color: themeColors.text, borderColor: themeColors.border, minHeight: 44, marginVertical: 12 },
+                focusedInput === 'clubSearch' && { borderColor: themeColors.primary, borderWidth: 1.5 },
+              ]}
               placeholder="Search clubs by name, city, province..."
               placeholderTextColor={themeColors.textMuted}
               value={clubSearch}
               onChangeText={setClubSearch}
+              onFocus={() => setFocusedInput('clubSearch')}
+              onBlur={() => setFocusedInput(null)}
             />
             <ScrollView style={{ maxHeight: 300 }}>
               {clubs
@@ -988,12 +996,9 @@ export default function SettingsScreen({ navigation }: Props) {
         onClose={() => setLegalModalVisible(false)}
       />
 
-      {/* 🔒 CHANGE PASSWORD MODAL */}
+      {/* 🔒 CHANGE EMAIL MODAL */}
       <Modal visible={emailModalVisible} transparent animationType="fade" onRequestClose={closeEmailModal}>
-        <KeyboardAvoidingView
-          style={styles.modalOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
+        <AppModalKeyboardWrapper>
           <View style={[styles.modalCard, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: themeColors.text }]}>
@@ -1015,9 +1020,15 @@ export default function SettingsScreen({ navigation }: Props) {
               <>
                 <Text style={[styles.pwLabel, { color: themeColors.primary }]}>New Email Address</Text>
                 <TextInput
-                  style={[styles.pwInput, { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text }]}
+                  style={[
+                    styles.pwInput,
+                    { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text },
+                    focusedInput === 'newEmail' && { borderColor: themeColors.primary, borderWidth: 1.5 },
+                  ]}
                   value={newEmail}
                   onChangeText={setNewEmail}
+                  onFocus={() => setFocusedInput('newEmail')}
+                  onBlur={() => setFocusedInput(null)}
                   placeholder="you@example.com"
                   placeholderTextColor={themeColors.textMuted}
                   autoCapitalize="none"
@@ -1039,9 +1050,15 @@ export default function SettingsScreen({ navigation }: Props) {
               <>
                 <Text style={[styles.pwLabel, { color: themeColors.primary }]}>Confirmation Code</Text>
                 <TextInput
-                  style={[styles.pwInput, { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text, letterSpacing: 4, textAlign: 'center' }]}
+                  style={[
+                    styles.pwInput,
+                    { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text, letterSpacing: 4, textAlign: 'center' },
+                    focusedInput === 'emailCode' && { borderColor: themeColors.primary, borderWidth: 1.5 },
+                  ]}
                   value={emailCode}
                   onChangeText={setEmailCode}
+                  onFocus={() => setFocusedInput('emailCode')}
+                  onBlur={() => setFocusedInput(null)}
                   placeholder="000000"
                   placeholderTextColor={themeColors.textMuted}
                   keyboardType="number-pad"
@@ -1070,14 +1087,12 @@ export default function SettingsScreen({ navigation }: Props) {
               </View>
             )}
           </View>
-        </KeyboardAvoidingView>
+        </AppModalKeyboardWrapper>
       </Modal>
 
+      {/* 🔒 CHANGE PASSWORD MODAL */}
       <Modal visible={pwModalVisible} transparent animationType="fade" onRequestClose={closePwModal}>
-        <KeyboardAvoidingView
-          style={styles.modalOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
+        <AppModalKeyboardWrapper>
           <View style={[styles.modalCard, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}>
             <View style={styles.modalHeader}>
               <Text style={[styles.modalTitle, { color: themeColors.text }]}>Change Password</Text>
@@ -1107,9 +1122,15 @@ export default function SettingsScreen({ navigation }: Props) {
 
                 <Text style={[styles.pwLabel, { color: themeColors.primary }]}>Current Password</Text>
                 <TextInput
-                  style={[styles.pwInput, { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text }]}
+                  style={[
+                    styles.pwInput,
+                    { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text },
+                    focusedInput === 'currentPw' && { borderColor: themeColors.primary, borderWidth: 1.5 },
+                  ]}
                   value={currentPw}
                   onChangeText={setCurrentPw}
+                  onFocus={() => setFocusedInput('currentPw')}
+                  onBlur={() => setFocusedInput(null)}
                   placeholder="Enter current password"
                   placeholderTextColor={themeColors.textMuted}
                   secureTextEntry={!showPw}
@@ -1118,9 +1139,15 @@ export default function SettingsScreen({ navigation }: Props) {
 
                 <Text style={[styles.pwLabel, { color: themeColors.primary }]}>New Password</Text>
                 <TextInput
-                  style={[styles.pwInput, { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text }]}
+                  style={[
+                    styles.pwInput,
+                    { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text },
+                    focusedInput === 'newPw' && { borderColor: themeColors.primary, borderWidth: 1.5 },
+                  ]}
                   value={newPw}
                   onChangeText={setNewPw}
+                  onFocus={() => setFocusedInput('newPw')}
+                  onBlur={() => setFocusedInput(null)}
                   placeholder="At least 6 characters"
                   placeholderTextColor={themeColors.textMuted}
                   secureTextEntry={!showPw}
@@ -1129,9 +1156,15 @@ export default function SettingsScreen({ navigation }: Props) {
 
                 <Text style={[styles.pwLabel, { color: themeColors.primary }]}>Retype New Password</Text>
                 <TextInput
-                  style={[styles.pwInput, { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text }]}
+                  style={[
+                    styles.pwInput,
+                    { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text },
+                    focusedInput === 'retypePw' && { borderColor: themeColors.primary, borderWidth: 1.5 },
+                  ]}
                   value={retypePw}
                   onChangeText={setRetypePw}
+                  onFocus={() => setFocusedInput('retypePw')}
+                  onBlur={() => setFocusedInput(null)}
                   placeholder="Re-enter new password"
                   placeholderTextColor={themeColors.textMuted}
                   secureTextEntry={!showPw}
@@ -1163,7 +1196,7 @@ export default function SettingsScreen({ navigation }: Props) {
               </>
             )}
           </View>
-        </KeyboardAvoidingView>
+        </AppModalKeyboardWrapper>
       </Modal>
 
       {/* ✍️ Signature Capture & Upload Modal */}

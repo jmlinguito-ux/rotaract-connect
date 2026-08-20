@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, Alert, Modal, KeyboardAvoidingView, Platform, Keyboard, Image } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, Alert, Modal, KeyboardAvoidingView, Platform, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,6 +8,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
 import { useTheme } from '../../context/ThemeContext';
 import { BottomSheet } from '../../components/BottomSheet';
+import { useKeyboardOffset } from '../../components/keyboard/useKeyboardOffset';
 import FullImageModal from '../../components/FullImageModal';
 import UserAvatar from '../../components/UserAvatar';
 import { getSignedImageUrl, isRemoteUrl } from '../../services/storage';
@@ -24,7 +25,7 @@ export default function ApplicationReviewScreen({ route, navigation }: Props) {
 
   const [rejectModalVisible, setRejectModalVisible] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
-  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const keyboardOffset = useKeyboardOffset();
   const [proofModalUri, setProofModalUri] = useState<string | null>(null);
   // proof_url is now an object path in the private verification-proofs bucket, so
   // resolve a short-lived signed URL to display it. Older rows may already hold a
@@ -36,27 +37,14 @@ export default function ApplicationReviewScreen({ route, navigation }: Props) {
   const [isClubDropdownOpen, setIsClubDropdownOpen] = useState(false);
   const [isPositionDropdownOpen, setIsPositionDropdownOpen] = useState(false);
 
-  useEffect(() => {
-    const showSub = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-      () => setIsKeyboardVisible(true),
-    );
-    const hideSub = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-      () => setIsKeyboardVisible(false),
-    );
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, []);
-
   const app = applications.find(a => a.id === applicationId);
 
   const [editMemberId, setEditMemberId] = useState(app?.member_id || '');
   const [editClubId, setEditClubId] = useState(app?.club_id || '');
   const [editClubName, setEditClubName] = useState(app?.club_name || '');
   const [editPosition, setEditPosition] = useState(app?.position || 'Member');
+  const [isRejectFocused, setIsRejectFocused] = useState(false);
+  const [isMemberIdFocused, setIsMemberIdFocused] = useState(false);
 
   useEffect(() => {
     if (app) {
@@ -268,10 +256,15 @@ export default function ApplicationReviewScreen({ route, navigation }: Props) {
       >
         <KeyboardAvoidingView
           style={styles.modalBackdrop}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           <TouchableOpacity
-            style={styles.modalBackdropPress}
+            style={[
+              styles.modalBackdropPress,
+              // Android runs edge-to-edge (KeyboardAvoidingView is inert), so lift
+              // the bottom-anchored card above the keyboard with live padding.
+              Platform.OS === 'android' && keyboardOffset > 0 ? { paddingBottom: keyboardOffset + 24 } : null,
+            ]}
             activeOpacity={1}
             onPress={() => setRejectModalVisible(false)}
           >
@@ -301,11 +294,14 @@ export default function ApplicationReviewScreen({ route, navigation }: Props) {
                 style={[
                   styles.modalInput,
                   { backgroundColor: themeColors.bg, color: themeColors.text, borderColor: themeColors.border },
+                  isRejectFocused && { borderColor: themeColors.primary, borderWidth: 1.5 },
                 ]}
                 placeholder="Reason for rejection (optional)..."
                 placeholderTextColor={themeColors.textMuted}
                 value={rejectReason}
                 onChangeText={setRejectReason}
+                onFocus={() => setIsRejectFocused(true)}
+                onBlur={() => setIsRejectFocused(false)}
                 multiline
               />
 
@@ -409,13 +405,19 @@ export default function ApplicationReviewScreen({ route, navigation }: Props) {
           {/* Member ID */}
           <Text style={[styles.inputLabel, { color: themeColors.text }]}>Member ID (8 digits)</Text>
           <TextInput
-            style={[styles.input, { backgroundColor: themeColors.bg, color: themeColors.text, borderColor: themeColors.border }]}
+            style={[
+              styles.input,
+              { backgroundColor: themeColors.bg, color: themeColors.text, borderColor: themeColors.border },
+              isMemberIdFocused && { borderColor: themeColors.primary, borderWidth: 1.5 },
+            ]}
             value={editMemberId}
             onChangeText={(t) => setEditMemberId(t.replace(/[^0-9]/g, '').slice(0, 8))}
             placeholder="10482910"
             placeholderTextColor={themeColors.textMuted}
             keyboardType="numeric"
             maxLength={8}
+            onFocus={() => setIsMemberIdFocused(true)}
+            onBlur={() => setIsMemberIdFocused(false)}
           />
           {editMemberId.length > 0 && editMemberId.length < 8 ? (
             <Text style={{ fontSize: 12, color: themeColors.danger, marginTop: 4 }}>Rotaract Member ID must be 8 digits</Text>

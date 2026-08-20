@@ -114,6 +114,7 @@ export default function MapScreen() {
 
   // Search & Modals
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [mapExpanded, setMapExpanded] = useState(false);
   const [userCoords, setUserCoords] = useState<{ latitude: number; longitude: number } | null>(null);
@@ -260,14 +261,16 @@ export default function MapScreen() {
 
       {/* Search & Multi-Select Dropdown Trigger */}
       <View style={styles.searchRowContainer}>
-        <View style={[styles.searchBox, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}>
-          <Ionicons name="search" size={16} color={themeColors.textMuted} />
+        <View style={[styles.searchBox, { backgroundColor: themeColors.cardBg, borderColor: isSearchFocused ? themeColors.primary : themeColors.border }, isSearchFocused && { borderWidth: 1.5 }]}>
+          <Ionicons name="search" size={16} color={isSearchFocused ? themeColors.primary : themeColors.textMuted} />
           <TextInput
             style={[styles.searchInput, { color: themeColors.text }]}
             placeholder="Search project, club, or location..."
             placeholderTextColor={themeColors.textMuted}
             value={searchQuery}
             onChangeText={setSearchQuery}
+            onFocus={() => setIsSearchFocused(true)}
+            onBlur={() => setIsSearchFocused(false)}
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={() => setSearchQuery('')}>

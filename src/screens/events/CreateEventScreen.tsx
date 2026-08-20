@@ -34,6 +34,7 @@ export default function CreateEventScreen({ route, navigation }: Props) {
   const { user } = useAuth();
   const { createEvent, users, clubs } = useData();
   const { colors: themeColors, isNightMode } = useTheme();
+  const onFocusAware = useKeyboardAwareOnFocus();
 
   const [title, setTitle] = useState(template ? `${template.title} (Copy)` : '');
   const [desc, setDesc] = useState(template?.description ?? '');
@@ -366,7 +367,11 @@ export default function CreateEventScreen({ route, navigation }: Props) {
           {/* Tag Input Container Box with Inline Pills */}
           <TouchableOpacity
             activeOpacity={1}
-            style={[styles.pillBoxContainer, isCoOrgFocused && styles.pillBoxFocused]}
+            style={[
+              styles.pillBoxContainer,
+              { backgroundColor: themeColors.surface, borderColor: themeColors.border },
+              isCoOrgFocused && { borderColor: themeColors.primary, borderWidth: 1.5 },
+            ]}
             onPress={() => coOrgInputRef.current?.focus()}
           >
             {selectedCoOrganizers.map(id => {
@@ -396,6 +401,7 @@ export default function CreateEventScreen({ route, navigation }: Props) {
               onChangeText={setCoOrgQuery}
               onFocus={(e: any) => {
                 setIsCoOrgFocused(true);
+                onFocusAware();
                 if (Platform.OS === 'web' && e?.target?.scrollIntoView) {
                   setTimeout(() => {
                     e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -483,12 +489,18 @@ export default function CreateEventScreen({ route, navigation }: Props) {
 
           <View style={styles.coOrgSearchWrap}>
             <TextInput
-              style={[styles.input, styles.coOrgSearchInput, { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text }]}
+              style={[
+                styles.input,
+                styles.coOrgSearchInput,
+                { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text },
+                isPartnerClubFocused && { borderColor: themeColors.primary, borderWidth: 1.5 },
+              ]}
               placeholder="Search clubs to add as co-hosts..."
               placeholderTextColor={themeColors.textMuted}
               value={partnerClubQuery}
               onChangeText={setPartnerClubQuery}
               onFocus={() => setIsPartnerClubFocused(true)}
+              onBlur={() => setIsPartnerClubFocused(false)}
             />
             {isPartnerClubFocused && partnerClubQuery.trim().length > 0 && (
               <View style={[styles.coOrgDropdown, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border, zIndex: 3 }]}>
@@ -523,11 +535,18 @@ export default function CreateEventScreen({ route, navigation }: Props) {
 
           {/* Date Selector Input Box */}
           <Text style={[styles.label, { color: themeColors.text }]}>Date</Text>
-          <TouchableOpacity style={[styles.inputBoxWithIcon, { backgroundColor: themeColors.surface, borderColor: themeColors.border }]} onPress={() => setCalendarModalVisible(true)}>
+          <TouchableOpacity
+            style={[
+              styles.inputBoxWithIcon,
+              { backgroundColor: themeColors.surface, borderColor: themeColors.border },
+              calendarModalVisible && { borderColor: themeColors.primary, borderWidth: 1.5 },
+            ]}
+            onPress={() => setCalendarModalVisible(true)}
+          >
             <Text style={[styles.inputBoxText, { color: themeColors.text }]}>
               {eventDate.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })}
             </Text>
-            <Ionicons name="calendar-outline" size={18} color={themeColors.text} />
+            <Ionicons name="calendar-outline" size={18} color={calendarModalVisible ? themeColors.primary : themeColors.text} />
           </TouchableOpacity>
 
           {/* Side-by-Side 3-Segment Time Inputs (Initial --:-- --) */}

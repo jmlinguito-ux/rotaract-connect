@@ -33,6 +33,7 @@ export default function AuditLogsScreen({ navigation }: Props) {
 
   const [category, setCategory] = useState<CategoryFilter>('ALL');
   const [search, setSearch] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
 
   const filteredLogs = useMemo(() => {
     let list = auditLogs;
@@ -141,14 +142,16 @@ export default function AuditLogsScreen({ navigation }: Props) {
 
       {/* Search Input */}
       <View style={styles.searchSection}>
-        <View style={[styles.searchBox, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}>
-          <Ionicons name="search" size={16} color={themeColors.textMuted} />
+        <View style={[styles.searchBox, { backgroundColor: themeColors.cardBg, borderColor: isSearchFocused ? themeColors.primary : themeColors.border }, isSearchFocused && { borderWidth: 1.5 }]}>
+          <Ionicons name="search" size={16} color={isSearchFocused ? themeColors.primary : themeColors.textMuted} />
           <TextInput
             style={[styles.searchInput, { color: themeColors.text }]}
             placeholder="Search by actor, target, action or notes..."
             placeholderTextColor={themeColors.textMuted}
             value={search}
             onChangeText={setSearch}
+            onFocus={() => setIsSearchFocused(true)}
+            onBlur={() => setIsSearchFocused(false)}
             clearButtonMode="while-editing"
           />
         </View>

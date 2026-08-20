@@ -14,6 +14,7 @@ import { canMessageUser, inquiryBlockedMessage } from '../../utils/messaging';
 import { Club } from '../../types';
 import { DeclineReasonModal } from '../../components/DeclineReasonModal';
 import { ConfirmRulesModal } from '../../components/ConfirmRulesModal';
+import { useKeyboardOffset } from '../../components/keyboard/useKeyboardOffset';
 import { LocationPermissionModal } from '../../components/location/LocationPermissionModal';
 import { NotificationPermissionModal } from '../../components/notifications/NotificationPermissionModal';
 import * as Notifications from 'expo-notifications';
@@ -55,10 +56,12 @@ export default function EventDetailScreen({ route, navigation }: Props) {
   // padding never reaches it. Read the inset directly and pad the footer with it,
   // so its buttons clear the Android gesture/nav bar instead of sitting under it.
   const insets = useSafeAreaInsets();
+  const keyboardOffset = useKeyboardOffset();
   const { events, clubs, users, notifications, participantsFor, participationFor, joinEvent, leaveEvent, checkIn, checkOut, impactFor, approveEvent, rejectEvent, cancelEvent, requestDistrictEventReview, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, approveParticipant, declineParticipant, invitationFor, respondInvitation, refresh } = useData();
 
   const [messageModalVisible, setMessageModalVisible] = useState(false);
   const [messageText, setMessageText] = useState('');
+  const [isMessageInputFocused, setIsMessageInputFocused] = useState(false);
   const [actionModalVisible, setActionModalVisible] = useState(false);
   const [optionsSheetVisible, setOptionsSheetVisible] = useState(false);
   const [inviteDeclineVisible, setInviteDeclineVisible] = useState(false);
@@ -1346,7 +1349,7 @@ export default function EventDetailScreen({ route, navigation }: Props) {
                 <Text style={[styles.actionSheetTitle, { color: themeColors.text }]}>Event Options</Text>
                 <Text style={[styles.actionSheetSub, { color: themeColors.textMuted }]} numberOfLines={1}>{event.title}</Text>
               </View>
-              <TouchableOpacity style={[styles.closeSheetBtn, { backgroundColor: themeColors.surface }]} onPress={() => setOptionsSheetVisible(false)}>
+              <TouchableOpacity style={[styles.closeSheetBtn, { backgroundColor: themeColors.surface }]} onPress={() => setOptionsSheetVisible(false)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
                 <Ionicons name="close" size={20} color={themeColors.textMuted} />
               </TouchableOpacity>
             </View>
@@ -1404,7 +1407,7 @@ export default function EventDetailScreen({ route, navigation }: Props) {
                 <Text style={[styles.actionSheetTitle, { color: themeColors.text }]}>Event Participation Actions</Text>
                 <Text style={[styles.actionSheetSub, { color: themeColors.textMuted }]} numberOfLines={1}>{event.title}</Text>
               </View>
-              <TouchableOpacity style={[styles.closeSheetBtn, { backgroundColor: themeColors.surface }]} onPress={() => setActionModalVisible(false)}>
+              <TouchableOpacity style={[styles.closeSheetBtn, { backgroundColor: themeColors.surface }]} onPress={() => setActionModalVisible(false)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
                 <Ionicons name="close" size={20} color={themeColors.textMuted} />
               </TouchableOpacity>
             </View>
@@ -1488,10 +1491,15 @@ export default function EventDetailScreen({ route, navigation }: Props) {
       <Modal visible={messageModalVisible} transparent animationType="fade" onRequestClose={() => setMessageModalVisible(false)}>
         <KeyboardAvoidingView
           style={styles.modalAvoidView}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           <ScrollView
-            contentContainerStyle={styles.modalBackdrop}
+            contentContainerStyle={[
+              styles.modalBackdrop,
+              // Android runs edge-to-edge (KeyboardAvoidingView is inert), so reserve
+              // live keyboard-height padding to lift the card above the keyboard.
+              Platform.OS === 'android' && keyboardOffset > 0 ? { paddingBottom: keyboardOffset + 24 } : null,
+            ]}
             keyboardShouldPersistTaps="handled"
             automaticallyAdjustKeyboardInsets={true}
             bounces={false}
@@ -1507,13 +1515,19 @@ export default function EventDetailScreen({ route, navigation }: Props) {
                 Send a direct inquiry regarding "{event.title}".
               </Text>
               <TextInput
-                style={[styles.modalInput, { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text }]}
+                style={[
+                  styles.modalInput,
+                  { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text },
+                  isMessageInputFocused && { borderColor: themeColors.primary, borderWidth: 1.5 },
+                ]}
                 placeholder="Write your question or inquiry here..."
                 placeholderTextColor={themeColors.textMuted}
                 multiline
                 numberOfLines={4}
                 value={messageText}
                 onChangeText={setMessageText}
+                onFocus={() => setIsMessageInputFocused(true)}
+                onBlur={() => setIsMessageInputFocused(false)}
               />
               <View style={styles.modalActions}>
                 <TouchableOpacity style={styles.cancelModalBtn} onPress={() => setMessageModalVisible(false)}>

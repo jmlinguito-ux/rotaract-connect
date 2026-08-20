@@ -22,6 +22,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { useAppRefreshControl } from '../../hooks/useAppRefreshControl';
 import { AppUser, VerificationApplication } from '../../types';
 import { BottomSheet } from '../../components/BottomSheet';
+import { KeyboardAwareScrollView } from '../../components/KeyboardAwareScrollView';
 import UserAvatar from '../../components/UserAvatar';
 import RotaryWheel from '../../components/RotaryWheel';
 import ClubLogo from '../../components/ClubLogo';
@@ -79,6 +80,8 @@ export default function ClubsScreen() {
   const [memberToRemove, setMemberToRemove] = useState<AppUser | null>(null);
 
   const [q, setQ] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [focusedAddClubField, setFocusedAddClubField] = useState<string | null>(null);
   const [zoneId, setZoneId] = useState<string | 'ALL'>('ALL');
   const [typeFilter, setTypeFilter] = useState<'ALL' | 'COMMUNITY' | 'INSTITUTION'>('ALL');
   const [activeTab, setActiveTab] = useState<SearchTab>('CLUBS');
@@ -223,8 +226,8 @@ export default function ClubsScreen() {
 
       {/* Search Bar + Filter Trigger Row */}
       <View style={styles.searchRow}>
-        <View style={[styles.searchWrap, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}>
-          <Ionicons name="search" size={18} color={themeColors.textMuted} />
+        <View style={[styles.searchWrap, { backgroundColor: themeColors.cardBg, borderColor: isSearchFocused ? themeColors.primary : themeColors.border }, isSearchFocused && { borderWidth: 1.5 }]}>
+          <Ionicons name="search" size={18} color={isSearchFocused ? themeColors.primary : themeColors.textMuted} />
           <TextInput
             style={[styles.search, { color: themeColors.text }]}
             placeholder={
@@ -237,6 +240,8 @@ export default function ClubsScreen() {
             placeholderTextColor={themeColors.textMuted}
             value={q}
             onChangeText={setQ}
+            onFocus={() => setIsSearchFocused(true)}
+            onBlur={() => setIsSearchFocused(false)}
           />
           {q ? (
             <TouchableOpacity onPress={() => setQ('')}>
@@ -496,6 +501,7 @@ export default function ClubsScreen() {
                 </View>
                 <TouchableOpacity
                   style={[styles.chatIconBtn, { backgroundColor: themeColors.primary + '1A', borderColor: themeColors.primary + '3D' }]}
+                  hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
                   onPress={() => handleChatWithMember(item)}
                 >
                   <Ionicons name="chatbubble-ellipses-outline" size={18} color={themeColors.primary} />
@@ -503,6 +509,7 @@ export default function ClubsScreen() {
                 {isAppAdmin && item.id !== user?.id && (
                   <TouchableOpacity
                     style={[styles.chatIconBtn, { backgroundColor: themeColors.danger + '1A', borderColor: themeColors.danger + '3D' }]}
+                    hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
                     onPress={() => setMemberToRemove(item)}
                   >
                     <Ionicons name="trash-outline" size={18} color={themeColors.danger} />
@@ -678,62 +685,92 @@ export default function ClubsScreen() {
           </TouchableOpacity>
         </View>
 
-        <ScrollView
+        <KeyboardAwareScrollView
           style={styles.modalBody}
-          contentContainerStyle={{ paddingBottom: 8 }}
+          contentContainerStyle={{ paddingBottom: 24 }}
           keyboardShouldPersistTaps="handled"
         >
           {/* 1. Club Name */}
           <Text style={[styles.inputLabel, { color: themeColors.text }]}>Club Name *</Text>
           <TextInput
-            style={[styles.modalInput, { backgroundColor: themeColors.bg, color: themeColors.text, borderColor: themeColors.border }]}
+            style={[
+              styles.modalInput,
+              { backgroundColor: themeColors.bg, color: themeColors.text, borderColor: themeColors.border },
+              focusedAddClubField === 'name' && { borderColor: themeColors.primary, borderWidth: 1.5 },
+            ]}
             placeholder="e.g. Rotaract Club of Pasig"
             placeholderTextColor={themeColors.textMuted}
             value={newClubName}
             onChangeText={setNewClubName}
+            onFocus={() => setFocusedAddClubField('name')}
+            onBlur={() => setFocusedAddClubField(null)}
           />
 
           {/* 2. Club ID */}
           <Text style={[styles.inputLabel, { color: themeColors.text }]}>Club ID *</Text>
           <TextInput
-            style={[styles.modalInput, { backgroundColor: themeColors.bg, color: themeColors.text, borderColor: themeColors.border }]}
+            style={[
+              styles.modalInput,
+              { backgroundColor: themeColors.bg, color: themeColors.text, borderColor: themeColors.border },
+              focusedAddClubField === 'id' && { borderColor: themeColors.primary, borderWidth: 1.5 },
+            ]}
             placeholder="e.g. 21543"
             placeholderTextColor={themeColors.textMuted}
             value={newClubIdInput}
             onChangeText={text => setNewClubIdInput(text.replace(/[^0-9]/g, ''))}
             keyboardType="numeric"
+            onFocus={() => setFocusedAddClubField('id')}
+            onBlur={() => setFocusedAddClubField(null)}
           />
 
           {/* 3. Club Email Address */}
           <Text style={[styles.inputLabel, { color: themeColors.text }]}>Club Email Address</Text>
           <TextInput
-            style={[styles.modalInput, { backgroundColor: themeColors.bg, color: themeColors.text, borderColor: themeColors.border }]}
+            style={[
+              styles.modalInput,
+              { backgroundColor: themeColors.bg, color: themeColors.text, borderColor: themeColors.border },
+              focusedAddClubField === 'email' && { borderColor: themeColors.primary, borderWidth: 1.5 },
+            ]}
             placeholder="e.g. rotaract.pasig@district3800.org"
             placeholderTextColor={themeColors.textMuted}
             value={newClubEmail}
             onChangeText={setNewClubEmail}
             keyboardType="email-address"
             autoCapitalize="none"
+            onFocus={() => setFocusedAddClubField('email')}
+            onBlur={() => setFocusedAddClubField(null)}
           />
 
           {/* 4. Meeting Place Address */}
           <Text style={[styles.inputLabel, { color: themeColors.text }]}>Meeting Place Address / Venue Pin</Text>
           <TextInput
-            style={[styles.modalInput, { backgroundColor: themeColors.bg, color: themeColors.text, borderColor: themeColors.border }]}
+            style={[
+              styles.modalInput,
+              { backgroundColor: themeColors.bg, color: themeColors.text, borderColor: themeColors.border },
+              focusedAddClubField === 'address' && { borderColor: themeColors.primary, borderWidth: 1.5 },
+            ]}
             placeholder="e.g. Pasig City Hall Activity Center, Caruncho Ave"
             placeholderTextColor={themeColors.textMuted}
             value={newClubMeetingAddress}
             onChangeText={setNewClubMeetingAddress}
+            onFocus={() => setFocusedAddClubField('address')}
+            onBlur={() => setFocusedAddClubField(null)}
           />
 
           {/* 5. President Name */}
           <Text style={[styles.inputLabel, { color: themeColors.text }]}>President Name</Text>
           <TextInput
-            style={[styles.modalInput, { backgroundColor: themeColors.bg, color: themeColors.text, borderColor: themeColors.border }]}
+            style={[
+              styles.modalInput,
+              { backgroundColor: themeColors.bg, color: themeColors.text, borderColor: themeColors.border },
+              focusedAddClubField === 'president' && { borderColor: themeColors.primary, borderWidth: 1.5 },
+            ]}
             placeholder="e.g. Juan Dela Cruz"
             placeholderTextColor={themeColors.textMuted}
             value={newClubPresident}
             onChangeText={setNewClubPresident}
+            onFocus={() => setFocusedAddClubField('president')}
+            onBlur={() => setFocusedAddClubField(null)}
           />
 
           {/* 6. Province / Region Selector */}
@@ -898,7 +935,7 @@ export default function ClubsScreen() {
               </View>
             )}
           </View>
-        </ScrollView>
+        </KeyboardAwareScrollView>
 
         <View style={styles.modalFooter}>
           <TouchableOpacity

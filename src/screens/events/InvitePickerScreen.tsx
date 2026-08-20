@@ -21,6 +21,7 @@ export default function InvitePickerScreen({ route, navigation }: Props) {
   const { colors: themeColors, isNightMode } = useTheme();
   const [q, setQ] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
   // Absolutely positioned children ignore their parent's padding in RN, so the
   // footer below needs the bottom inset applied directly to clear the Android nav bar.
   const insets = useSafeAreaInsets();
@@ -68,14 +69,16 @@ export default function InvitePickerScreen({ route, navigation }: Props) {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.bg }]} edges={['bottom']}>
-      <View style={[styles.searchWrap, { backgroundColor: themeColors.surface, borderBottomColor: themeColors.border }]}>
-        <Ionicons name="search" size={18} color={themeColors.textMuted} />
+      <View style={[styles.searchWrap, { backgroundColor: themeColors.surface, borderBottomColor: isSearchFocused ? themeColors.primary : themeColors.border }, isSearchFocused && { borderBottomWidth: 2 }]}>
+        <Ionicons name="search" size={18} color={isSearchFocused ? themeColors.primary : themeColors.textMuted} />
         <TextInput
           style={[styles.search, { color: themeColors.text }]}
           placeholder="Search verified Rotaractors"
           placeholderTextColor={themeColors.textMuted}
           value={q}
           onChangeText={setQ}
+          onFocus={() => setIsSearchFocused(true)}
+          onBlur={() => setIsSearchFocused(false)}
           autoFocus
         />
       </View>

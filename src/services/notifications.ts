@@ -56,15 +56,19 @@ export async function setupNotificationChannels(): Promise<void> {
     });
 
     // 4. Emergency SOS Safety Network channel (urgent alarm)
-    await Notifications.setNotificationChannelAsync('emergency_sos_v2', {
+    await Notifications.deleteNotificationChannelAsync('emergency_sos_v1').catch(() => {});
+    await Notifications.deleteNotificationChannelAsync('emergency_sos_v2').catch(() => {});
+
+    await Notifications.setNotificationChannelAsync('emergency_sos_v3', {
       name: 'Emergency SOS Broadcasts',
       description: 'High-priority distress alerts from nearby Rotaractors in need of help',
       importance: Notifications.AndroidImportance.MAX,
       sound: EMERGENCY_SOUND,
-      vibrationPattern: [0, 500, 200, 500, 200, 500],
+      vibrationPattern: [0, 800, 400, 800, 400, 800],
       lightColor: '#EF4444',
       bypassDnd: true,
       showBadge: true,
+      lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
     });
   } catch (error) {
     console.warn('Failed to set up notification channels:', error);
@@ -193,6 +197,7 @@ export async function notifyAttendance(
 export async function notifyEmergencyBroadcast(broadcast: EmergencyAlert): Promise<void> {
   try {
     await Notifications.scheduleNotificationAsync({
+      identifier: `sos_${broadcast.id}`,
       content: {
         title: `🚨 EMERGENCY SOS: ${broadcast.full_name}`,
         body: `${broadcast.full_name} (${broadcast.club_name}) triggered a distress signal${broadcast.address_hint ? ` near ${broadcast.address_hint}` : ''}. Tap to view location on map.`,
@@ -213,7 +218,7 @@ export async function notifyEmergencyBroadcast(broadcast: EmergencyAlert): Promi
           longitude: broadcast.longitude,
         },
       },
-      trigger: null, // Immediate
+      trigger: { channelId: 'emergency_sos_v3' } as any, // Immediate with high priority channel
     });
   } catch (err) {
     console.warn('Failed to trigger emergency notification:', err);

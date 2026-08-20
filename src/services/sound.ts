@@ -21,7 +21,6 @@ try {
 
 const CHIME = require('../../assets/sounds/chime.wav');
 const ALERT = require('../../assets/sounds/alert.wav');
-const ALARM = require('../../assets/sounds/alarm.wav');
 const EMERGENCY = require('../../assets/sounds/emergency.wav');
 
 let player: AudioPlayer | null = null;
@@ -38,16 +37,17 @@ function ensureAudioMode() {
   }
 }
 
-/** Plays the notification chime (CHIME), organizer alert (ALERT), or looping alarm (HIGH/EMERGENCY). */
+/** Plays the notification chime (CHIME), organizer alert (ALERT), continuous alert (HIGH), or emergency alarm (EMERGENCY). */
 export function playAlertSound(priority: 'CHIME' | 'ALERT' | 'HIGH' | 'EMERGENCY' = 'CHIME') {
   if (!audio?.createAudioPlayer) return;
   try {
     stopAlertSound();
     ensureAudioMode();
-    const source = priority === 'EMERGENCY' ? EMERGENCY : priority === 'HIGH' ? ALARM : priority === 'ALERT' ? ALERT : CHIME;
+    // HIGH (Urgent) uses ALERT sound on a continuous loop until dismissed or read.
+    const source = priority === 'EMERGENCY' ? EMERGENCY : (priority === 'HIGH' || priority === 'ALERT') ? ALERT : CHIME;
     player = audio.createAudioPlayer(source);
     if (player) {
-      player.loop = priority === 'HIGH' || priority === 'EMERGENCY'; // Keeps sounding until dismissed
+      player.loop = priority === 'HIGH' || priority === 'EMERGENCY'; // Continuous until dismissed / read
       player.volume = 1.0;
       player.play();
     }

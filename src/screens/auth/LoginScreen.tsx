@@ -26,6 +26,7 @@ export default function LoginScreen({ navigation }: Props) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [focusedInput, setFocusedInput] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -72,10 +73,18 @@ export default function LoginScreen({ navigation }: Props) {
 
           <Text style={[styles.fieldLabel, { color: themeColors.primary }]}>Email or Username</Text>
           <TextInput
-            style={[styles.input, { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text }]}
+            style={[
+              styles.input,
+              { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text },
+              focusedInput === 'email' && { borderColor: themeColors.primary, borderWidth: 1.5 },
+            ]}
             value={email}
             onChangeText={setEmail}
-            onFocus={onFocusAware}
+            onFocus={() => {
+              setFocusedInput('email');
+              onFocusAware();
+            }}
+            onBlur={() => setFocusedInput(null)}
             placeholder="you@example.com or username"
             placeholderTextColor={themeColors.textMuted}
             keyboardType="default"
@@ -84,12 +93,22 @@ export default function LoginScreen({ navigation }: Props) {
           />
 
           <Text style={[styles.fieldLabel, { color: themeColors.primary }]}>Password</Text>
-          <View style={[styles.passwordWrap, { backgroundColor: themeColors.surface, borderColor: themeColors.border }]}>
+          <View 
+            style={[
+              styles.passwordWrap, 
+              { backgroundColor: themeColors.surface, borderColor: themeColors.border },
+              focusedInput === 'password' && { borderColor: themeColors.primary, borderWidth: 1.5 },
+            ]}
+          >
             <TextInput
               style={[styles.passwordInput, { color: themeColors.text }]}
               value={password}
               onChangeText={setPassword}
-              onFocus={onFocusAware}
+              onFocus={() => {
+                setFocusedInput('password');
+                onFocusAware();
+              }}
+              onBlur={() => setFocusedInput(null)}
               placeholder="••••••••"
               placeholderTextColor={themeColors.textMuted}
               secureTextEntry={!showPassword}

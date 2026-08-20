@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { AppState, View, Text, FlatList, ScrollView, StyleSheet, TextInput, TouchableOpacity, Platform, Image, Alert, ActivityIndicator, Keyboard, KeyboardAvoidingView, Clipboard } from 'react-native';
+import { AppState, View, Text, FlatList, ScrollView, StyleSheet, TextInput, TouchableOpacity, Platform, Image, Alert, ActivityIndicator, Keyboard, Clipboard } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useIsFocused } from '@react-navigation/native';
@@ -27,6 +27,8 @@ import { useToast } from '../../context/ToastContext';
 import RotaractNotifications from '../../../modules/rotaract-notifications';
 import { formatTime } from '../../utils/timeFormat';
 import { DirectMessage } from '../../types';
+import { stopAlertSound } from '../../services/sound';
+import { useKeyboardOffset } from '../../components/keyboard/useKeyboardOffset';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Chat'>;
 
@@ -61,6 +63,11 @@ export default function ChatScreen({ route, navigation }: Props) {
     }
   }, []);
 
+  // Distance from the screen bottom to the keyboard top — the exact amount the
+  // composer must be lifted. See useKeyboardOffset for why `height` is wrong here.
+  const keyboardOffset = useKeyboardOffset();
+  const isKeyboardVisible = keyboardOffset > 0;
+
   useEffect(() => {
     const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const showSub = Keyboard.addListener(showEvt, () => {
@@ -68,7 +75,9 @@ export default function ChatScreen({ route, navigation }: Props) {
         listRef.current?.scrollToOffset({ offset: 0, animated: true });
       }
     });
-    return () => { showSub.remove(); };
+    return () => {
+      showSub.remove();
+    };
   }, []);
 
   const [text, setText] = useState('');
@@ -124,7 +133,7 @@ export default function ChatScreen({ route, navigation }: Props) {
     return reversedMessages
       .filter(m => {
         if (m.deleted_at) return false;
-        if (searchFilter === 'announcements' && !m.is_broadcast && !m.text?.startsWith('📢')) return false;
+        if (searchFilter === 'announcements' && !m.is_broadcast && !m.text?.startsWith('📢') && !m.text?.startsWith('🚨')) return false;
         if (searchFilter === 'photos' && (!m.attachment_path || m.attachment_type !== 'image')) return false;
         if (!q) return true;
         const matchesText = !!m.text && m.text.toLowerCase().includes(q);
@@ -179,7 +188,7 @@ export default function ChatScreen({ route, navigation }: Props) {
     return messages
       .slice()
       .reverse()
-      .find(m => m.text?.startsWith('📢') && !m.deleted_at);
+      .find(m => (m.text?.startsWith('📢') || m.text?.startsWith('🚨')) && !m.deleted_at);
   }, [isGroupChat, event, messages]);
 
   const convState = conversationStateFor(conversationId, user?.id);
@@ -187,7 +196,15 @@ export default function ChatScreen({ route, navigation }: Props) {
 
   const [announcementDismissed, setAnnouncementDismissed] = useState(false);
   const [announcementExpanded, setAnnouncementExpanded] = useState(false);
-  const [isAnnouncementMode, setIsAnnouncementMode] = useState(false);
+  const [broadcastPriority, setBroadcastPriority] = useState<'none' | 'ALERT' | 'HIGH'>('none');
+
+  const toggleBroadcastPriority = () => {
+    setBroadcastPriority(prev => {
+      if (prev === 'none') return 'ALERT';
+      if (prev === 'ALERT') return 'HIGH';
+      return 'none';
+    });
+  };
 
   // Presence + typing over an ephemeral realtime channel (no DB writes).
   const me = user ? { id: user.id, name: user.full_name } : null;
@@ -203,6 +220,7 @@ export default function ChatScreen({ route, navigation }: Props) {
   // entirely. Native also expires it, so the two guard each other.
   useEffect(() => {
     if (!isFocused) return;
+    stopAlertSound();
     const assert = () => RotaractNotifications?.setActiveConversation(conversationId);
     assert();
     const heartbeat = setInterval(assert, 60_000);
@@ -324,11 +342,16 @@ export default function ChatScreen({ route, navigation }: Props) {
   const handleSend = () => {
     if (!text.trim() || !user || cannotMessage || isArchived) return;
     const finalMentions = mentions.filter(m => text.includes(`@${m.full_name}`));
-    const finalText = isAnnouncementMode ? `📢 [ANNOUNCEMENT]\n${text.trim()}` : text.trim();
+    const finalText =
+      broadcastPriority === 'HIGH'
+        ? `🚨 [URGENT ANNOUNCEMENT]\n${text.trim()}`
+        : broadcastPriority === 'ALERT'
+        ? `📢 [ANNOUNCEMENT]\n${text.trim()}`
+        : text.trim();
     const replyMeta = replyingTo ? {
       id: replyingTo.id,
       senderName: replyingTo.sender_name,
-      text: replyingTo.text ? replyingTo.text.replace(/^📢\s*(\[ANNOUNCEMENT\])?\s*/i, '') : (replyingTo.attachment_path ? '📷 Photo' : ''),
+      text: replyingTo.text ? replyingTo.text.replace(/^(📢|🚨)\s*(\[(URGENT\s+)?ANNOUNCEMENT\])?\s*/i, '') : (replyingTo.attachment_path ? '📷 Photo' : ''),
     } : undefined;
 
     sendDirectMessage(
@@ -348,7 +371,7 @@ export default function ChatScreen({ route, navigation }: Props) {
     setText('');
     setMentions([]);
     setReplyingTo(null);
-    setIsAnnouncementMode(false);
+    setBroadcastPriority('none');
     sendTyping(false);
     listRef.current?.scrollToOffset({ offset: 0, animated: true });
   };
@@ -377,7 +400,7 @@ export default function ChatScreen({ route, navigation }: Props) {
         const replyMeta = replyingTo ? {
           id: replyingTo.id,
           senderName: replyingTo.sender_name,
-          text: replyingTo.text ? replyingTo.text.replace(/^📢\s*(\[ANNOUNCEMENT\])?\s*/i, '') : (replyingTo.attachment_path ? '📷 Photo' : ''),
+          text: replyingTo.text ? replyingTo.text.replace(/^(📢|🚨)\s*(\[(URGENT\s+)?ANNOUNCEMENT\])?\s*/i, '') : (replyingTo.attachment_path ? '📷 Photo' : ''),
         } : undefined;
 
         sendDirectMessage(
@@ -469,7 +492,7 @@ export default function ChatScreen({ route, navigation }: Props) {
     : `${typingUsers.length} people are typing…`;
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.bg }]} edges={['bottom']}>
+    <View style={[styles.safe, { backgroundColor: themeColors.bg }]}>
       {/* Header Card */}
       <View style={[styles.userHeaderCard, { backgroundColor: themeColors.cardBg, borderBottomColor: themeColors.border }]}>
         {isGroupChat ? (
@@ -682,74 +705,82 @@ export default function ChatScreen({ route, navigation }: Props) {
         </TouchableOpacity>
       ) : null}
 
-      {/* 📢 Pinned Organizer Announcement Banner */}
-      {isGroupChat && latestAnnouncement && !announcementDismissed && (
-        <View style={[styles.announcementBanner, { backgroundColor: isNightMode ? themeColors.cardBg : '#FFFBEB', borderColor: '#F59E0B' }]}>
-          <View style={styles.announcementTopRow}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
-              <Ionicons name="megaphone" size={14} color="#D97706" />
-              <Text style={[styles.announcementTag, { color: '#D97706' }]}>OFFICER ANNOUNCEMENT</Text>
-            </View>
-            <TouchableOpacity onPress={() => setAnnouncementDismissed(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Ionicons name="close" size={16} color={themeColors.textMuted} />
-            </TouchableOpacity>
-          </View>
-          <TouchableOpacity onPress={() => setAnnouncementExpanded(prev => !prev)} activeOpacity={0.8}>
-            <Text
-              style={[styles.announcementText, { color: themeColors.text }]}
-              numberOfLines={announcementExpanded ? undefined : 2}
-            >
-              {latestAnnouncement.text.replace(/^📢\s*(\[ANNOUNCEMENT\])?\s*/i, '')}
-            </Text>
-            <View style={styles.announcementMetaRow}>
-              <Text style={[styles.announcementAuthor, { color: themeColors.textMuted }]}>
-                Pinned by {latestAnnouncement.sender_name} • {formatTime(latestAnnouncement.created_at)}
-              </Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                {(() => {
-                  const readers = readersFor(latestAnnouncement);
-                  const pCount = readers.length;
-                  return (
-                    <TouchableOpacity
-                      onPress={() => setExpandedSeenId(prev => (prev === latestAnnouncement.id ? null : latestAnnouncement.id))}
-                      style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
-                    >
-                      <Ionicons name="checkmark-done" size={13} color={pCount > 0 ? READ_TICK_COLOR : themeColors.textMuted} />
-                      {pCount > 0 ? (
-                        <View style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 2 }}>
-                          {readers.slice(0, 4).map((r, i) => (
-                            <View key={r.id} style={{ marginLeft: i > 0 ? -6 : 0, borderRadius: 9, borderWidth: 1.5, borderColor: themeColors.cardBg }}>
-                              <UserAvatar user={r} size={16} showBadge={false} />
-                            </View>
-                          ))}
-                          {pCount > 4 && (
-                            <Text style={{ fontSize: 10, fontWeight: '700', color: themeColors.textMuted, marginLeft: 4 }}>
-                              +{pCount - 4}
-                            </Text>
-                          )}
-                        </View>
-                      ) : (
-                        <Text style={{ fontSize: 11, fontWeight: '600', color: themeColors.textMuted }}>
-                          Not seen yet
-                        </Text>
-                      )}
-                    </TouchableOpacity>
-                  );
-                })()}
-                <Text style={[styles.announcementToggleText, { color: themeColors.primary }]}>
-                  {announcementExpanded ? 'Show less' : 'Read full'}
+      {/* 📢 / 🚨 Pinned Organizer Announcement Banner */}
+      {isGroupChat && latestAnnouncement && !announcementDismissed && (() => {
+        const isUrgent = latestAnnouncement.text.startsWith('🚨');
+        return (
+          <View
+            style={[
+              styles.announcementBanner,
+              isUrgent
+                ? { backgroundColor: isNightMode ? '#3B1212' : '#FEF2F2', borderColor: '#EF4444' }
+                : { backgroundColor: isNightMode ? themeColors.cardBg : '#FFFBEB', borderColor: '#F59E0B' },
+            ]}
+          >
+            <View style={styles.announcementTopRow}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                <Ionicons name={isUrgent ? 'warning' : 'megaphone'} size={14} color={isUrgent ? '#EF4444' : '#D97706'} />
+                <Text style={[styles.announcementTag, { color: isUrgent ? '#EF4444' : '#D97706' }]}>
+                  {isUrgent ? 'URGENT ANNOUNCEMENT' : 'ORGANIZER ANNOUNCEMENT'}
                 </Text>
               </View>
+              <TouchableOpacity onPress={() => setAnnouncementDismissed(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="close" size={16} color={themeColors.textMuted} />
+              </TouchableOpacity>
             </View>
-          </TouchableOpacity>
-        </View>
-      )}
+            <TouchableOpacity onPress={() => setAnnouncementExpanded(prev => !prev)} activeOpacity={0.8}>
+              <Text
+                style={[styles.announcementText, { color: themeColors.text }]}
+                numberOfLines={announcementExpanded ? undefined : 2}
+              >
+                {latestAnnouncement.text.replace(/^(📢|🚨)\s*(\[(URGENT\s+)?ANNOUNCEMENT\])?\s*/i, '')}
+              </Text>
+              <View style={styles.announcementMetaRow}>
+                <Text style={[styles.announcementAuthor, { color: themeColors.textMuted }]}>
+                  Pinned by {latestAnnouncement.sender_name} • {formatTime(latestAnnouncement.created_at)}
+                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  {(() => {
+                    const readers = readersFor(latestAnnouncement);
+                    const pCount = readers.length;
+                    return (
+                      <TouchableOpacity
+                        onPress={() => setExpandedSeenId(prev => (prev === latestAnnouncement.id ? null : latestAnnouncement.id))}
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                      >
+                        <Ionicons name="checkmark-done" size={13} color={pCount > 0 ? READ_TICK_COLOR : themeColors.textMuted} />
+                        {pCount > 0 ? (
+                          <View style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 2 }}>
+                            {readers.slice(0, 4).map((r, i) => (
+                              <View key={r.id} style={{ marginLeft: i > 0 ? -6 : 0, borderRadius: 9, borderWidth: 1.5, borderColor: themeColors.cardBg }}>
+                                <UserAvatar user={r} size={16} showBadge={false} />
+                              </View>
+                            ))}
+                            {pCount > 4 && (
+                              <Text style={{ fontSize: 10, fontWeight: '700', color: themeColors.textMuted, marginLeft: 4 }}>
+                                +{pCount - 4}
+                              </Text>
+                            )}
+                          </View>
+                        ) : (
+                          <Text style={{ fontSize: 11, fontWeight: '600', color: themeColors.textMuted }}>
+                            Not seen yet
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })()}
+                  <Text style={[styles.announcementToggleText, { color: themeColors.primary }]}>
+                    {announcementExpanded ? 'Show less' : 'Read full'}
+                  </Text>
+                </View>
+              </View>
+            </TouchableOpacity>
+          </View>
+        );
+      })()}
 
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? headerHeight + 10 : 0}
-      >
+      <View style={{ flex: 1 }}>
         {reversedMessages.length === 0 ? (
           <View style={[styles.emptyChatWrap, { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 }]}>
             <View style={[styles.emptyIconCircle, { backgroundColor: themeColors.primary + '18' }]}>
@@ -777,7 +808,8 @@ export default function ChatScreen({ route, navigation }: Props) {
             }}
             renderItem={({ item, index }) => {
             const isMe = item.sender_id === user.id;
-            const isAnnouncement = !!item.is_broadcast || !!item.text?.startsWith('📢');
+            const isUrgent = !!item.text?.startsWith('🚨');
+            const isAnnouncement = !!item.is_broadcast || !!item.text?.startsWith('📢') || isUrgent;
             const senderUser = users.find(u => u.id === item.sender_id);
             const readCount = readCountFor(item);
             const isRead = readCount > 0;
@@ -817,7 +849,9 @@ export default function ChatScreen({ route, navigation }: Props) {
                     delayLongPress={300}
                     style={[
                       styles.bubble,
-                      isAnnouncement
+                      isUrgent
+                        ? [styles.announcementBubble, { backgroundColor: isNightMode ? '#3B1212' : '#FEF2F2', borderColor: '#EF4444' }]
+                        : isAnnouncement
                         ? [styles.announcementBubble, { backgroundColor: isNightMode ? '#2B1E05' : '#FFFBEB', borderColor: '#F59E0B' }]
                         : isMe
                         ? [styles.myBubble, { backgroundColor: themeColors.primary }]
@@ -830,9 +864,11 @@ export default function ChatScreen({ route, navigation }: Props) {
                     ]}
                   >
                     {isAnnouncement && !item.deleted_at && (
-                      <View style={styles.announcementBubbleHeader}>
-                        <Ionicons name="megaphone" size={12} color="#D97706" />
-                        <Text style={styles.announcementBubbleHeaderText}>OFFICER ANNOUNCEMENT</Text>
+                      <View style={[styles.announcementBubbleHeader, isUrgent && { borderBottomColor: '#EF444466' }]}>
+                        <Ionicons name={isUrgent ? 'warning' : 'megaphone'} size={12} color={isUrgent ? '#EF4444' : '#D97706'} />
+                        <Text style={[styles.announcementBubbleHeaderText, isUrgent && { color: '#EF4444' }]}>
+                          {isUrgent ? 'URGENT ANNOUNCEMENT' : 'ORGANIZER ANNOUNCEMENT'}
+                        </Text>
                       </View>
                     )}
                     {showEventChip && msgEvent && (
@@ -905,9 +941,15 @@ export default function ChatScreen({ route, navigation }: Props) {
                         )}
                         {!!item.text && (
                           <HighlightedText
-                            text={isAnnouncement ? item.text.replace(/^📢\s*(\[ANNOUNCEMENT\])?\s*/i, '') : item.text}
+                            text={isAnnouncement ? item.text.replace(/^(📢|🚨)\s*(\[(URGENT\s+)?ANNOUNCEMENT\])?\s*/i, '') : item.text}
                             query={isSearchOpen ? searchQuery : ''}
-                            baseColor={isAnnouncement ? (isNightMode ? '#FDE68A' : '#78350F') : (isMe ? '#fff' : themeColors.text)}
+                            baseColor={
+                              isUrgent
+                                ? (isNightMode ? '#FCA5A5' : '#991B1B')
+                                : isAnnouncement
+                                ? (isNightMode ? '#FDE68A' : '#78350F')
+                                : (isMe ? '#fff' : themeColors.text)
+                            }
                             isNight={isNightMode}
                           />
                         )}
@@ -1117,7 +1159,7 @@ export default function ChatScreen({ route, navigation }: Props) {
                     </Text>
                   </View>
                   <Text style={[styles.replyPreviewSnippet, { color: themeColors.textMuted }]} numberOfLines={1}>
-                    {replyingTo.text ? replyingTo.text.replace(/^📢\s*(\[ANNOUNCEMENT\])?\s*/i, '') : (replyingTo.attachment_path ? '📷 Photo' : 'Original message')}
+                    {replyingTo.text ? replyingTo.text.replace(/^(📢|🚨)\s*(\[(URGENT\s+)?ANNOUNCEMENT\])?\s*/i, '') : (replyingTo.attachment_path ? '📷 Photo' : 'Original message')}
                   </Text>
                 </View>
                 <TouchableOpacity
@@ -1130,27 +1172,103 @@ export default function ChatScreen({ route, navigation }: Props) {
               </View>
             )}
 
-            <View style={[styles.inputBar, { backgroundColor: themeColors.cardBg, borderTopColor: themeColors.border }]}>
-            <TouchableOpacity style={styles.attachBtn} onPress={handleAttachPhoto} disabled={uploading}>
+            {/* Active Broadcast Priority Indicator Banner */}
+            {isOrganizer && isGroupChat && broadcastPriority !== 'none' && (
+              <View
+                style={[
+                  styles.priorityBanner,
+                  broadcastPriority === 'HIGH'
+                    ? { backgroundColor: isNightMode ? '#3B1212' : '#FEF2F2', borderColor: '#EF4444' }
+                    : { backgroundColor: isNightMode ? '#2B1E05' : '#FFFBEB', borderColor: '#F59E0B' },
+                ]}
+              >
+                <Ionicons
+                  name={broadcastPriority === 'HIGH' ? 'warning' : 'megaphone'}
+                  size={14}
+                  color={broadcastPriority === 'HIGH' ? '#EF4444' : '#D97706'}
+                />
+                <Text
+                  style={[
+                    styles.priorityBannerText,
+                    { color: broadcastPriority === 'HIGH' ? '#EF4444' : '#D97706' },
+                  ]}
+                >
+                  {broadcastPriority === 'HIGH'
+                    ? '🚨 Urgent Mode • Plays Alarm sound to all participants'
+                    : '📢 Announcement Mode • Plays Alert tone to all participants'}
+                </Text>
+                <TouchableOpacity onPress={() => setBroadcastPriority('none')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Ionicons
+                    name="close-circle"
+                    size={16}
+                    color={broadcastPriority === 'HIGH' ? '#EF4444' : '#D97706'}
+                  />
+                </TouchableOpacity>
+              </View>
+            )}
+
+            <View
+              style={[
+                styles.inputBar,
+                {
+                  backgroundColor: themeColors.cardBg,
+                  borderTopColor: themeColors.border,
+                  paddingBottom: isKeyboardVisible
+                    ? keyboardOffset + 8
+                    : Math.max(insets.bottom, 10),
+                },
+              ]}
+            >
+            <TouchableOpacity style={styles.attachBtn} onPress={handleAttachPhoto} disabled={uploading} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
               {uploading ? <ActivityIndicator size="small" color={themeColors.primary} /> : <Ionicons name="image" size={22} color={themeColors.primary} />}
             </TouchableOpacity>
             {isOrganizer && isGroupChat && (
               <TouchableOpacity
                 style={[
                   styles.announcementToggleBtn,
-                  isAnnouncementMode && { backgroundColor: '#F59E0B' + '22', borderColor: '#F59E0B' },
+                  broadcastPriority === 'ALERT' && { backgroundColor: '#F59E0B22', borderColor: '#F59E0B' },
+                  broadcastPriority === 'HIGH' && { backgroundColor: '#EF444422', borderColor: '#EF4444' },
                 ]}
-                onPress={() => setIsAnnouncementMode(prev => !prev)}
+                onPress={toggleBroadcastPriority}
+                accessibilityLabel="Toggle broadcast priority"
+                hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
               >
-                <Ionicons name="megaphone" size={18} color={isAnnouncementMode ? '#D97706' : themeColors.textMuted} />
+                <Ionicons
+                  name={broadcastPriority === 'HIGH' ? 'warning' : 'megaphone'}
+                  size={18}
+                  color={
+                    broadcastPriority === 'HIGH'
+                      ? '#EF4444'
+                      : broadcastPriority === 'ALERT'
+                      ? '#D97706'
+                      : themeColors.textMuted
+                  }
+                />
               </TouchableOpacity>
             )}
             <TextInput
               style={[
                 styles.textInput,
-                { backgroundColor: themeColors.surface, borderColor: isAnnouncementMode ? '#F59E0B' : themeColors.border, color: themeColors.text },
+                {
+                  backgroundColor: themeColors.surface,
+                  borderColor:
+                    broadcastPriority === 'HIGH'
+                      ? '#EF4444'
+                      : broadcastPriority === 'ALERT'
+                      ? '#F59E0B'
+                      : themeColors.border,
+                  color: themeColors.text,
+                },
               ]}
-              placeholder={isAnnouncementMode ? 'Broadcast pinned announcement...' : isGroupChat ? 'Message group chat...' : 'Type a message...'}
+              placeholder={
+                broadcastPriority === 'HIGH'
+                  ? 'Broadcast urgent alert (Alarm)...'
+                  : broadcastPriority === 'ALERT'
+                  ? 'Broadcast announcement (Alert)...'
+                  : isGroupChat
+                  ? 'Message group chat...'
+                  : 'Type a message...'
+              }
               placeholderTextColor={themeColors.textMuted}
               value={text}
               onChangeText={handleTextChange}
@@ -1158,16 +1276,28 @@ export default function ChatScreen({ route, navigation }: Props) {
               multiline
             />
             <TouchableOpacity
-              style={[styles.sendBtn, { backgroundColor: isAnnouncementMode ? '#D97706' : themeColors.primary }, !text.trim() && styles.sendBtnDisabled]}
+              style={[
+                styles.sendBtn,
+                {
+                  backgroundColor:
+                    broadcastPriority === 'HIGH'
+                      ? '#EF4444'
+                      : broadcastPriority === 'ALERT'
+                      ? '#D97706'
+                      : themeColors.primary,
+                },
+                !text.trim() && styles.sendBtnDisabled,
+              ]}
               disabled={!text.trim()}
               onPress={handleSend}
+              hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
             >
               <Ionicons name="send" size={16} color="#fff" />
             </TouchableOpacity>
           </View>
           </>
         )}
-      </KeyboardAvoidingView>
+      </View>
 
       {/* Long-press message menu: Quick reactions, reply, copy, and delete choices. */}
       <BottomSheet
@@ -1356,7 +1486,7 @@ export default function ChatScreen({ route, navigation }: Props) {
           scrollToMessage(msgId);
         }}
       />
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -1495,10 +1625,16 @@ const styles = StyleSheet.create({
   chatImage: { width: 200, height: 200, borderRadius: 12, marginBottom: 4 },
   chatImageLoading: { alignItems: 'center', justifyContent: 'center' },
   typingLabel: { fontSize: 12, fontStyle: 'italic', paddingHorizontal: 20, paddingBottom: 4 },
-  inputBar: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 10, borderTopWidth: 1 },
-  attachBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  textInput: { flex: 1, borderRadius: 20, borderWidth: 1, paddingHorizontal: 16, paddingVertical: 8, maxHeight: 100, fontSize: 15 },
-  sendBtn: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
+  // Composer proportions follow the Messenger/Instagram convention: a ~56dp bar
+  // (40dp controls + 8dp vertical padding) with 40dp circular actions. 40dp is the
+  // drawn size; `hitSlop` on each control lifts the touch target to Material's 48dp
+  // minimum without inflating the visual weight of the bar.
+  inputBar: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 8, borderTopWidth: 1 },
+  attachBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  // minHeight matches the 40dp action buttons so the row is optically aligned;
+  // maxHeight ~5 lines before the field scrolls internally (Messenger caps similarly).
+  textInput: { flex: 1, borderRadius: 20, borderWidth: 1, paddingHorizontal: 16, paddingVertical: 10, minHeight: 40, maxHeight: 120, fontSize: 15 },
+  sendBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   sendBtnDisabled: { opacity: 0.5 },
   archivedComposer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 16, borderTopWidth: 1 },
   archivedComposerText: { fontSize: 12, fontWeight: '600' },
@@ -1542,8 +1678,22 @@ const styles = StyleSheet.create({
   announcementText: { fontSize: 13, lineHeight: 18 },
   announcementMetaRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 },
   announcementAuthor: { fontSize: 10 },
+  priorityBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+  },
+  priorityBannerText: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: '700',
+  },
   announcementToggleText: { fontSize: 11, fontWeight: '700' },
-  announcementToggleBtn: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'transparent' },
+  announcementToggleBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'transparent' },
   headerMuteBtn: {
     width: 36,
     height: 36,

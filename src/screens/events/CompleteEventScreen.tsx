@@ -84,15 +84,24 @@ export default function CompleteEventScreen({ route, navigation }: Props) {
 function Field({ label, icon, ...rest }: any) {
   const { colors: themeColors } = useTheme();
   const onFocusAware = useKeyboardAwareOnFocus();
+  const [focused, setFocused] = useState(false);
   return (
     <View style={styles.fieldWrap}>
       <Text style={[styles.label, { color: themeColors.text }]}>{label}</Text>
-      <View style={[styles.inputBox, { backgroundColor: themeColors.surface, borderColor: themeColors.border }, rest.multiline && { alignItems: 'flex-start' }]}>
-        {icon && <Ionicons name={icon} size={18} color={themeColors.textMuted} style={{ marginTop: rest.multiline ? 10 : 0 }} />}
+      <View
+        style={[
+          styles.inputBox,
+          { backgroundColor: themeColors.surface, borderColor: themeColors.border },
+          focused && { borderColor: themeColors.primary, borderWidth: 1.5 },
+          rest.multiline && { alignItems: 'flex-start' },
+        ]}
+      >
+        {icon && <Ionicons name={icon} size={18} color={focused ? themeColors.primary : themeColors.textMuted} style={{ marginTop: rest.multiline ? 10 : 0 }} />}
         <TextInput
           style={[styles.input, { color: themeColors.text }, rest.multiline && { minHeight: 80, textAlignVertical: 'top' }]}
           placeholderTextColor={themeColors.textMuted}
           onFocus={(e: any) => {
+            setFocused(true);
             onFocusAware();
             if (Platform.OS === 'web' && e?.target?.scrollIntoView) {
               setTimeout(() => {
@@ -100,6 +109,10 @@ function Field({ label, icon, ...rest }: any) {
               }, 100);
             }
             rest.onFocus?.(e);
+          }}
+          onBlur={(e: any) => {
+            setFocused(false);
+            rest.onBlur?.(e);
           }}
           {...rest}
         />
