@@ -442,6 +442,7 @@ async function plansFromGroupMessage(
 // must stay in step with configurePushNotifications in services/push.ts.
 
 type PushType =
+  | 'general'
   | 'chat_message'
   | 'mention'
   | 'event_reminder'
@@ -462,6 +463,7 @@ interface TypeRule {
 }
 
 const RULES: Record<PushType, TypeRule> = {
+  general:         { channelId: 'general_v6',         categoryId: 'general_actions', sound: 'chime.wav',     respectsMute: true,  highPriority: false },
   chat_message:    { channelId: 'chat_v5',            categoryId: 'message_actions', sound: 'chime.wav',     respectsMute: true,  highPriority: false },
   mention:         { channelId: 'mentions_v3',        categoryId: 'message_actions', sound: 'chime.wav',     respectsMute: false, highPriority: false },
   event_reminder:  { channelId: 'events_v3',          categoryId: 'general_actions', sound: 'chime.wav',     respectsMute: true,  highPriority: false },
@@ -482,7 +484,10 @@ function typeForNotification(kind: string, priority: string | null, isChat: bool
   if (kind === 'EVENT_REMINDER') return 'event_reminder';
   if (kind === 'INVITATION_RECEIVED') return 'invitation';
   if (kind === 'JOIN_APPROVED') return 'join_approved';
-  return 'organizer_alert';
+  // Default: ordinary app notifications chime. This fallback previously returned
+  // 'organizer_alert', which gave every unclassified kind the loud alert.wav on a
+  // MAX-importance organizer channel.
+  return 'general';
 }
 
 /**

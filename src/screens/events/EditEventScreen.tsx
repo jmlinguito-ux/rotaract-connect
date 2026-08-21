@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { View, Text, TextInput, StyleSheet, TouchableOpacity, Alert, Platform, Keyboard, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -9,6 +9,9 @@ import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { RootStackParamList } from '../../navigation/types';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { SegmentedTimeInput } from '../../components/SegmentedTimeInput';
+import { CalendarGridModal } from '../../components/CalendarGridModal';
 import { LocationPicker } from '../../components/LocationPicker';
 import { LocationValue } from '../../components/location/shared';
 import { AreasOfFocusPicker } from '../../components/AreasOfFocusPicker';
@@ -37,11 +40,6 @@ export default function EditEventScreen({ route, navigation }: Props) {
   const [isCoOrgFocused, setIsCoOrgFocused] = useState(false);
   const coOrgInputRef = useRef<TextInput>(null);
 
-  const [selectedPartnerClubs, setSelectedPartnerClubs] = useState<string[]>(
-    event?.participating_club_ids?.filter(id => id !== event.organizing_club_id) ?? []
-  );
-  const [partnerClubQuery, setPartnerClubQuery] = useState('');
-  const [isPartnerClubFocused, setIsPartnerClubFocused] = useState(false);
   const [location, setLocation] = useState<LocationValue>({
     address: event?.address ?? '',
     city: event?.city ?? '',
@@ -60,6 +58,15 @@ export default function EditEventScreen({ route, navigation }: Props) {
   const [contactEmail, setContactEmail] = useState(event?.contact_email ?? '');
   const [confirmSaveVisible, setConfirmSaveVisible] = useState(false);
   const pendingUpdates = useRef<Partial<RotaractEvent> | null>(null);
+
+  // Schedule. Held as a date plus two times, mirroring CreateEventScreen, so the
+  // two screens agree on what a "schedule" is and the same validation applies.
+  const [eventDate, setEventDate] = useState<Date>(() => new Date(event?.start_datetime ?? Date.now()));
+  const [startTime, setStartTime] = useState<Date | null>(() => (event ? new Date(event.start_datetime) : null));
+  const [endTime, setEndTime] = useState<Date | null>(() => (event ? new Date(event.end_datetime) : null));
+  const [endTimeError, setEndTimeError] = useState<string | null>(null);
+  const [calendarModalVisible, setCalendarModalVisible] = useState(false);
+  const [activePickerTarget, setActivePickerTarget] = useState<'startTime' | 'endTime' | null>(null);
 
   useEffect(() => {
     if (event) {
@@ -83,6 +90,9 @@ export default function EditEventScreen({ route, navigation }: Props) {
       setGeofenceRadius(event.geofence_radius_meters ?? 300);
       setContactNumber(event.contact_number ?? '');
       setContactEmail(event.contact_email ?? '');
+      setEventDate(new Date(event.start_datetime));
+      setStartTime(new Date(event.start_datetime));
+      setEndTime(new Date(event.end_datetime));
     }
   }, [event]);
 
@@ -131,6 +141,26 @@ export default function EditEventScreen({ route, navigation }: Props) {
     }
   };
 
+  const combine = (dateObj: Date, timeObj: Date | null) => {
+    if (!timeObj) return null;
+    const c = new Date(dateObj);
+    c.setHours(timeObj.getHours(), timeObj.getMinutes(), 0, 0);
+    return c;
+  };
+
+  const handlePickerChange = (e: DateTimePickerEvent, selected?: Date) => {
+    const target = activePickerTarget;
+    if (Platform.OS === 'android') setActivePickerTarget(null);
+    if (e.type !== 'set' || !selected || !target) return;
+    if (target === 'startTime') {
+      setStartTime(selected);
+      setEndTimeError(endTime && endTime <= selected ? 'End time must be after start time' : null);
+    } else {
+      setEndTime(selected);
+      setEndTimeError(startTime && selected <= startTime ? 'End time must be after start time' : null);
+    }
+  };
+
   /** Build the update payload from current form state, respecting field locks. */
   const buildUpdates = useCallback(() => {
     const requested = parseInt(maxP, 10) || 50;
@@ -139,7 +169,6 @@ export default function EditEventScreen({ route, navigation }: Props) {
       .filter((id): id is string => Boolean(id));
     const involvedClubIds = Array.from(new Set([
       event?.organizing_club_id ?? user?.club_id ?? '',
-      ...selectedPartnerClubs,
       ...coOrgClubIds,
     ])).filter(Boolean);
 
@@ -149,6 +178,14 @@ export default function EditEventScreen({ route, navigation }: Props) {
       event_type: type,
       co_organizer_user_ids: selectedCoOrganizers,
       participating_club_ids: involvedClubIds,
+      // Guarded like location: when the schedule is frozen the stored value is
+      // resent unchanged, so a locked field can never be written from form state.
+      start_datetime: policy.lockedFields.schedule
+        ? event.start_datetime
+        : (combine(eventDate, startTime) ?? new Date(event.start_datetime)).toISOString(),
+      end_datetime: policy.lockedFields.schedule
+        ? event.end_datetime
+        : (combine(eventDate, endTime) ?? new Date(event.end_datetime)).toISOString(),
       latitude: policy.lockedFields.location ? event.latitude : location.latitude,
       longitude: policy.lockedFields.location ? event.longitude : location.longitude,
       address: policy.lockedFields.location ? event.address : location.address,
@@ -165,7 +202,7 @@ export default function EditEventScreen({ route, navigation }: Props) {
       lock_leave_cutoff_hours: lockCutoffHours,
       geofence_radius_meters: geofenceRadius,
     };
-  }, [title, desc, type, selectedCoOrganizers, selectedPartnerClubs, location, maxP, requiresApproval, allowInvites, visibility, coverPhoto, contactNumber, contactEmail, areasOfFocus, lockCutoffHours, geofenceRadius, isServiceProject, policy, event, users, user]);
+  }, [title, desc, type, selectedCoOrganizers, location, maxP, eventDate, startTime, endTime, requiresApproval, allowInvites, visibility, coverPhoto, contactNumber, contactEmail, areasOfFocus, lockCutoffHours, geofenceRadius, isServiceProject, policy, event, users, user]);
 
   /** Commit the given updates (or current form state) and navigate back. */
   const performSave = useCallback((updates: Partial<RotaractEvent>) => {
@@ -201,6 +238,20 @@ export default function EditEventScreen({ route, navigation }: Props) {
     if (isServiceProject && areasOfFocus.length === 0) {
       Alert.alert('Select an area of focus', 'Service projects need at least one area of focus.');
       return;
+    }
+    // Only meaningful while the schedule is editable; a locked schedule resends the
+    // stored value and cannot be invalid.
+    if (!policy.lockedFields.schedule) {
+      const s = combine(eventDate, startTime);
+      const e = combine(eventDate, endTime);
+      if (!s || !e) {
+        Alert.alert('Missing Schedule', 'Please set both a start and an end time for this event.');
+        return;
+      }
+      if (e <= s) {
+        Alert.alert('Invalid Schedule', 'The end time must be after the start time.');
+        return;
+      }
     }
     if (!user) return;
 
@@ -375,77 +426,95 @@ export default function EditEventScreen({ route, navigation }: Props) {
             </View>
           )}
 
-          {/* Partner / Co-Hosting Clubs */}
-          <Text style={[styles.label, { color: themeColors.text }]}>Co-Hosting Partner Clubs (Optional)</Text>
-          <Text style={[styles.subHint, { color: themeColors.textMuted }]}>
-            Select partner clubs co-hosting this project. Their Club Presidents will be notified for joint approval.
-          </Text>
 
-          {selectedPartnerClubs.length > 0 && (
-            <View style={styles.selectedPillsRow}>
-              {selectedPartnerClubs.map(cid => {
-                const clb = clubs.find(c => c.id === cid);
-                if (!clb) return null;
-                return (
-                  <View key={cid} style={[styles.selectedPill, { backgroundColor: themeColors.surface, borderColor: themeColors.border }]}>
-                    <Text style={[styles.selectedPillText, { color: themeColors.text }]}>{clb.club_name.replace('Rotaract Club of ', '')}</Text>
-                    <TouchableOpacity onPress={() => setSelectedPartnerClubs(prev => prev.filter(id => id !== cid))}>
-                      <Ionicons name="close-circle" size={16} color={themeColors.textMuted} />
+          {/* Schedule. Locked and rendered on the same rules as the venue below. */}
+          {policy.lockedFields.schedule ? (
+            <View style={styles.fieldLockCard}>
+              <View style={styles.fieldLockHeader}>
+                <Ionicons name="lock-closed" size={14} color={colors.textMuted} />
+                <Text style={styles.fieldLockTitle}>Schedule locked</Text>
+              </View>
+              <Text style={styles.fieldLockText}>{policy.lockedFields.schedule}</Text>
+              <Text style={styles.fieldLockValue}>
+                {new Date(event.start_datetime).toLocaleString('en-US', {
+                  month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
+                })}
+                {' — '}
+                {new Date(event.end_datetime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+              </Text>
+            </View>
+          ) : (
+            <>
+              <Text style={[styles.label, { color: themeColors.text }]}>Date</Text>
+              <TouchableOpacity
+                style={[
+                  styles.inputBoxWithIcon,
+                  { backgroundColor: themeColors.surface, borderColor: themeColors.border },
+                  calendarModalVisible && { borderColor: themeColors.primary, borderWidth: 1.5 },
+                ]}
+                onPress={() => setCalendarModalVisible(true)}
+              >
+                <Text style={[styles.inputBoxText, { color: themeColors.text }]}>
+                  {eventDate.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })}
+                </Text>
+                <Ionicons name="calendar-outline" size={18} color={calendarModalVisible ? themeColors.primary : themeColors.text} />
+              </TouchableOpacity>
+
+              <View style={styles.timeGridRow}>
+                <SegmentedTimeInput
+                  label="Start time"
+                  value={startTime}
+                  baseDate={eventDate}
+                  onChangeTime={newTime => {
+                    setStartTime(newTime);
+                    setEndTimeError(endTime && endTime <= newTime ? 'End time must be after start time' : null);
+                  }}
+                  onOpenPicker={() => setActivePickerTarget('startTime')}
+                />
+                <SegmentedTimeInput
+                  label="End time"
+                  value={endTime}
+                  baseDate={eventDate}
+                  onChangeTime={newTime => {
+                    setEndTime(newTime);
+                    setEndTimeError(startTime && newTime <= startTime ? 'End time must be after start time' : null);
+                  }}
+                  onOpenPicker={() => setActivePickerTarget('endTime')}
+                  error={endTimeError}
+                />
+              </View>
+
+              <CalendarGridModal
+                visible={calendarModalVisible}
+                selectedDate={eventDate}
+                onSelectDate={d => setEventDate(d)}
+                onClose={() => setCalendarModalVisible(false)}
+              />
+
+              {activePickerTarget && (
+                <View style={styles.pickerContainer}>
+                  <View style={styles.pickerHeader}>
+                    <Text style={styles.pickerHeaderTitle}>
+                      Select {activePickerTarget === 'startTime' ? 'Start Time' : 'End Time'}
+                    </Text>
+                    <TouchableOpacity style={styles.pickerDoneBtn} onPress={() => setActivePickerTarget(null)}>
+                      <Text style={styles.pickerDoneText}>Done</Text>
                     </TouchableOpacity>
                   </View>
-                );
-              })}
-            </View>
+                  <DateTimePicker
+                    value={
+                      (activePickerTarget === 'startTime' ? startTime : endTime)
+                        ?? new Date(activePickerTarget === 'startTime' ? event.start_datetime : event.end_datetime)
+                    }
+                    mode="time"
+                    is24Hour={false}
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onChange={handlePickerChange}
+                  />
+                </View>
+              )}
+            </>
           )}
-
-          <View style={styles.coOrgSearchWrap}>
-            <TextInput
-              style={[
-                styles.input,
-                styles.coOrgSearchInput,
-                { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text },
-                isPartnerClubFocused && { borderColor: themeColors.primary, borderWidth: 1.5 },
-              ]}
-              placeholder="Search clubs to add as co-hosts..."
-              placeholderTextColor={themeColors.textMuted}
-              value={partnerClubQuery}
-              onChangeText={setPartnerClubQuery}
-              onFocus={() => {
-                setIsPartnerClubFocused(true);
-                onFocusAware();
-              }}
-              onBlur={() => setIsPartnerClubFocused(false)}
-            />
-            {isPartnerClubFocused && partnerClubQuery.trim().length > 0 && (
-              <View style={[styles.coOrgDropdown, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border, zIndex: 3 }]}>
-                {clubs
-                  .filter(c => {
-                    if (c.id === event?.organizing_club_id) return false;
-                    if (selectedPartnerClubs.includes(c.id)) return false;
-                    return c.club_name.toLowerCase().includes(partnerClubQuery.toLowerCase());
-                  })
-                  .slice(0, 5)
-                  .map(c => (
-                    <TouchableOpacity
-                      key={c.id}
-                      style={[styles.coOrgDropdownItem, { borderBottomColor: themeColors.border }]}
-                      onPress={() => {
-                        setSelectedPartnerClubs(prev => [...prev, c.id]);
-                        setPartnerClubQuery('');
-                        Keyboard.dismiss();
-                        setIsPartnerClubFocused(false);
-                      }}
-                    >
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.coOrgItemName, { color: themeColors.text }]}>{c.club_name}</Text>
-                        <Text style={[styles.coOrgItemSub, { color: themeColors.textMuted }]}>{c.city}, {c.province}</Text>
-                      </View>
-                      <Ionicons name="add-circle" size={18} color={themeColors.primary} />
-                    </TouchableOpacity>
-                  ))}
-              </View>
-            )}
-          </View>
 
           {policy.lockedFields.location ? (
             <View style={styles.fieldLockCard}>
@@ -647,6 +716,26 @@ function Toggle({ label, value, onChange }: { label: string; value: boolean; onC
 }
 
 const styles = StyleSheet.create({
+  // Ported verbatim from CreateEventScreen so the schedule controls look identical
+  // on both screens.
+  inputBoxWithIcon: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    height: 48,
+    backgroundColor: colors.surface,
+  },
+  inputBoxText: { fontSize: 15, fontWeight: '400', color: colors.text },
+  timeGridRow: { flexDirection: 'row', gap: 12 },
+  pickerContainer: { backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, marginTop: 10, padding: 12, overflow: 'hidden' },
+  pickerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, paddingHorizontal: 4 },
+  pickerHeaderTitle: { fontSize: 13, fontWeight: '700', color: colors.text },
+  pickerDoneBtn: { backgroundColor: colors.primary, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 8 },
+  pickerDoneText: { color: '#fff', fontSize: 12, fontWeight: '700' },
   safe: { flex: 1, backgroundColor: colors.bg },
   container: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 40 },
 
@@ -747,11 +836,6 @@ const styles = StyleSheet.create({
   submitBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: colors.primary, padding: 16, borderRadius: 12, marginTop: 28 },
   submitText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   subHint: { fontSize: 12, marginBottom: 8, marginTop: -2 },
-  selectedPillsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 },
-  selectedPill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1 },
-  selectedPillText: { fontSize: 12, fontWeight: '600' },
-  coOrgSearchWrap: { marginBottom: 12 },
-  coOrgSearchInput: { height: 44, paddingHorizontal: 12 },
 
   // Geofence radius pills
   radiusPillsRow: {

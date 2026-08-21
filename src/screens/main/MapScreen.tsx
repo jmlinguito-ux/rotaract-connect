@@ -656,16 +656,6 @@ export function EventCard({ event, userCoords, onPress }: { event: RotaractEvent
             {distStr ? ` • ${distStr}` : ''}
           </Text>
         </View>
-        <TouchableOpacity
-          style={[styles.cardNavBtn, { backgroundColor: c.primary + '18', borderColor: c.primary + '40' }]}
-          onPress={(e) => {
-            e.stopPropagation?.();
-            openNavigationApp(event.latitude, event.longitude, event.title, event.address);
-          }}
-        >
-          <Ionicons name="navigate" size={11} color={c.primary} />
-          <Text style={[styles.cardNavBtnText, { color: c.primary }]}>Directions</Text>
-        </TouchableOpacity>
       </View>
     </TouchableOpacity>
   );
@@ -798,8 +788,6 @@ const styles = StyleSheet.create({
   locationRow: { flexDirection: 'row', alignItems: 'center', gap: 4, flex: 1 },
   cardLoc: { fontSize: 12, flex: 1 },
   cardFooterRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 8 },
-  cardNavBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, borderWidth: 1 },
-  cardNavBtnText: { fontSize: 10, fontWeight: '700' },
   empty: { textAlign: 'center', marginTop: 30 },
   fsSafe: { flex: 1 },
   fsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1 },

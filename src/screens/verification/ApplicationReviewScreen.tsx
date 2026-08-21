@@ -13,7 +13,7 @@ import FullImageModal from '../../components/FullImageModal';
 import UserAvatar from '../../components/UserAvatar';
 import { getSignedImageUrl, isRemoteUrl } from '../../services/storage';
 
-import { isAppAdmin, isDistrictAdmin, isClubPresident, ROTARACT_POSITIONS, getPositionClubRole } from '../../utils/roles';
+import { isAppAdmin, isDistrictAdmin, canGovernClub, isClubPresident, ROTARACT_POSITIONS, getPositionClubRole } from '../../utils/roles';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ApplicationReview'>;
 
@@ -70,7 +70,9 @@ export default function ApplicationReviewScreen({ route, navigation }: Props) {
 
   const isPresidentApp = app.position.toLowerCase().includes('president');
   const canClubValidate = isClubPresident(user, app.club_id) && !isPresidentApp && app.status === 'AWAITING_CLUB_VALIDATION';
-  const canDistrict = isDistrictAdmin(user) && isPresidentApp && ['AWAITING_DISTRICT_VALIDATION', 'AWAITING_CLUB_VALIDATION'].includes(app.status);
+  // canGovernClub narrows a District Area Admin to applications from clubs in their
+  // own Zone; it is a no-op for full District/App Admins.
+  const canDistrict = canGovernClub(user, app.club_id, clubs) && isPresidentApp && ['AWAITING_DISTRICT_VALIDATION', 'AWAITING_CLUB_VALIDATION'].includes(app.status);
   // The App Administrator can approve or reject at any pending stage (overriding
   // the club/district steps), but not re-decide an already finalized application.
   const canAdmin = isAppAdmin(user) && !['VERIFIED', 'REJECTED'].includes(app.status);

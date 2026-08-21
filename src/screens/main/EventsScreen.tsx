@@ -69,7 +69,7 @@ const ALL_AREAS: AreaOfFocus[] = [
 
 export default function EventsScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { events, participants, invitations, userStats, users } = useData();
+  const { events, participants, invitations, userStats, users, clubs } = useData();
   const { user } = useAuth();
   const { colors: themeColors } = useTheme();
   const refreshControl = useAppRefreshControl();
@@ -141,7 +141,7 @@ export default function EventsScreen() {
       // they are not on the organising team, so isMyClubOrOrganized misses it and
       // the event became unreachable from every tab except All — while still
       // counting toward the pending-approvals badge.
-      const needsMyApproval = canApproveEvent(e, user, users);
+      const needsMyApproval = canApproveEvent(e, user, users, clubs);
 
       if (agendaTab === 'MY') return isMyClubOrOrganized || needsMyApproval;
       if (agendaTab === 'JOINED') return isJoined;
@@ -195,7 +195,7 @@ export default function EventsScreen() {
       let include = false;
       // Must match the list filter above, or a day shows no count while the list
       // for that same day has the event.
-      if (agendaTab === 'MY') include = isMyClubOrOrganized || canApproveEvent(e, user, users);
+      if (agendaTab === 'MY') include = isMyClubOrOrganized || canApproveEvent(e, user, users, clubs);
       else if (agendaTab === 'JOINED') include = isJoined;
       else if (agendaTab === 'INVITED') include = isInvited;
       else include = isMyClubOrOrganized || isJoined || isInvited || isPendingApproval;

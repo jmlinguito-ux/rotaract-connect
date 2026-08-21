@@ -14,6 +14,7 @@ import {
   isAppAdmin,
   isDistrictAdmin,
   isClubPresident,
+  canGovernClub,
   getSystemRole,
   getClubRole,
   positionRoleLabel,
@@ -43,7 +44,7 @@ const FILTERS: { key: Filter; label: string }[] = [
 
 export default function RoleManagementScreen({ navigation }: Props) {
   const { user } = useAuth();
-  const { users } = useData();
+  const { users, clubs } = useData();
   const { colors: themeColors } = useTheme();
 
   const [query, setQuery] = useState('');
@@ -66,6 +67,9 @@ export default function RoleManagementScreen({ navigation }: Props) {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return users
+      // A District Area Admin manages only members of clubs in their own Zone.
+      // No-op for full District/App Admins, whose reach is district-wide.
+      .filter(u => canGovernClub(user, u.club_id, clubs))
       .filter(u => {
         if (filter === 'ALL') return true;
         if (filter === 'APP_ADMIN') return isAppAdmin(u);
@@ -81,7 +85,7 @@ export default function RoleManagementScreen({ navigation }: Props) {
         const score = (u: AppUser) => (isAppAdmin(u) ? 4 : isDistrictAdmin(u) ? 3 : isClubPresident(u) ? 2 : 1);
         return score(b) - score(a) || a.full_name.localeCompare(b.full_name);
       });
-  }, [users, query, filter]);
+  }, [users, query, filter, user, clubs]);
 
   if (!hasAccess) {
     return (

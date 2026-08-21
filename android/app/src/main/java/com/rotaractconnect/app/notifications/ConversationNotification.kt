@@ -122,7 +122,7 @@ object ConversationNotification {
     val name = when (channelId) {
       "mentions_v3", "mentions_v2" -> "Mentions"
       "events_v3", "events_v2" -> "Event Reminders & Invitations"
-      "general_v5", "general_v4" -> "General"
+      "general_v6", "general_v5", "general_v4" -> "General"
       "organizer_high_v2" -> "Urgent Organizer Alerts"
       "organizer_alert_v3", "organizer_alert_v2" -> "Organizer Announcements"
       else -> "Chat Messages"

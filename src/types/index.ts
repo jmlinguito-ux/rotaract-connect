@@ -9,9 +9,9 @@ export type VerificationStatus =
   | 'VERIFIED'
   | 'SUSPENDED';
 
-export type UserRole = 'MEMBER' | 'CLUB_PRESIDENT' | 'DISTRICT_ADMIN' | 'APP_ADMIN';
+export type UserRole = 'MEMBER' | 'CLUB_PRESIDENT' | 'DISTRICT_AREA_ADMIN' | 'DISTRICT_ADMIN' | 'APP_ADMIN';
 
-export type SystemRole = 'APP_ADMIN' | 'DISTRICT_ADMIN' | 'NONE';
+export type SystemRole = 'APP_ADMIN' | 'DISTRICT_ADMIN' | 'DISTRICT_AREA_ADMIN' | 'NONE';
 export type ClubRole = 'CLUB_PRESIDENT' | 'OFFICER' | 'MEMBER';
 
 export type EventType = 'SERVICE_PROJECT' | 'FELLOWSHIP' | 'DISTRICT_EVENT';
@@ -103,6 +103,9 @@ export interface RotaractEvent {
   organizing_club_name: string;
   organizer_user_id: string;
   co_organizer_user_ids?: string[];
+  /** Set when the organizer escalates a stalled approval; unlocks District Admin approval. */
+  district_review_requested_at?: string;
+  district_review_requested_by?: string;
   participating_club_ids: string[];
   max_participants: number;
   requires_approval: boolean;

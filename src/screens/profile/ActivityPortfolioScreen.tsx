@@ -13,6 +13,7 @@ import { formatDistance, punctuality } from '../../utils/checkIn';
 import { formatTime, formatDate } from '../../utils/timeFormat';
 import { EventParticipant } from '../../types';
 import { exportVolunteerCertificatePDF } from '../../utils/pdfCertificate';
+import { isFullDistrictAdmin } from '../../utils/roles';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ActivityPortfolio'>;
 type FilterMode = 'ATTENDED' | 'JOINED' | 'ORGANIZED';
@@ -103,15 +104,21 @@ export default function ActivityPortfolioScreen({ route, navigation }: Props) {
     );
   }, [users, user.club_id]);
 
+  // Whoever signs the District Rotaract Representative line. District AREA Admins
+  // are deliberately excluded: their authority covers one Zone, while this signature
+  // is given on behalf of the whole District. isFullDistrictAdmin encodes that split,
+  // and the position-title fallbacks are filtered through it too — "District Area
+  // Admin" contains "district admin" as a substring and would otherwise match.
   const drrUser = useMemo(() => {
     return (
       users.find(
         u =>
-          u.system_role === 'DISTRICT_ADMIN' ||
-          u.role === 'DISTRICT_ADMIN' ||
-          u.position?.toLowerCase().includes('district admin') ||
-          u.position?.toLowerCase().includes('district rotaract representative') ||
-          u.position?.toLowerCase().includes('drr')
+          isFullDistrictAdmin(u) &&
+          (u.system_role === 'DISTRICT_ADMIN' ||
+            u.role === 'DISTRICT_ADMIN' ||
+            u.position?.toLowerCase().includes('district admin') ||
+            u.position?.toLowerCase().includes('district rotaract representative') ||
+            u.position?.toLowerCase().includes('drr'))
       ) || null
     );
   }, [users]);

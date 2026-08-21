@@ -1026,13 +1026,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
       .map(c => c.club_name)
       .join(', ');
 
+    // Record the escalation on the event itself: this is what unlocks approval for
+    // a District Admin (see canApproveEvent) and what keeps the requested state
+    // visible after a remount, on every device.
+    const stamp = { district_review_requested_at: now(), district_review_requested_by: requester.id };
+    setEvents(prev => prev.map(e => (e.id === eventId ? { ...e, ...stamp } : e)));
+    db.updateEvent(eventId, stamp);
+
     const districtAdmins = users.filter(u => u.role === 'DISTRICT_ADMIN' || u.role === 'APP_ADMIN');
     for (const admin of districtAdmins) {
       pushNotif({
         user_id: admin.id,
         kind: 'EVENT_APPROVAL_REQUEST',
         title: 'Approval Stalled (Review Requested)',
-        message: `${requester.full_name} requested District Admin review for "${ev.title}". Pending approval from: ${pendingClubNames || 'Partner clubs'}.`,
+        message: `${requester.full_name} requested District Admin review for "${ev.title}". Pending approval from: ${pendingClubNames || 'the approving clubs'}.`,
         event_id: ev.id,
         priority: 'HIGH',
       });

@@ -3,6 +3,7 @@ import { UserRole, SystemRole, ClubRole, AppUser } from '../types';
 export const ROLE_LABELS: Record<UserRole, string> = {
   MEMBER: 'Member',
   CLUB_PRESIDENT: 'Club President',
+  DISTRICT_AREA_ADMIN: 'District Area Admin',
   DISTRICT_ADMIN: 'District Admin',
   APP_ADMIN: 'App Admin',
 };
@@ -10,6 +11,7 @@ export const ROLE_LABELS: Record<UserRole, string> = {
 export const SYSTEM_ROLE_LABELS: Record<SystemRole, string> = {
   APP_ADMIN: 'App Admin',
   DISTRICT_ADMIN: 'District Admin',
+  DISTRICT_AREA_ADMIN: 'District Area Admin',
   NONE: 'Standard Member',
 };
 
@@ -22,13 +24,14 @@ export const CLUB_ROLE_LABELS: Record<ClubRole, string> = {
 export const ROLE_DESCRIPTIONS: Record<UserRole, string> = {
   MEMBER: 'Joins events and records personal service hours.',
   CLUB_PRESIDENT: 'Validates club member applications and approves club events.',
+  DISTRICT_AREA_ADMIN: 'Same authority as a District Admin, limited to clubs in their own Zone. Cannot sign certificates.',
   DISTRICT_ADMIN: 'Approves district events and President applications.',
   APP_ADMIN: 'Full access, including assigning roles to any user.',
 };
 
 /** Order shown in role pickers: least to most privileged. */
-export const ASSIGNABLE_ROLES: UserRole[] = ['MEMBER', 'CLUB_PRESIDENT', 'DISTRICT_ADMIN', 'APP_ADMIN'];
-export const ASSIGNABLE_SYSTEM_ROLES: SystemRole[] = ['NONE', 'DISTRICT_ADMIN', 'APP_ADMIN'];
+export const ASSIGNABLE_ROLES: UserRole[] = ['MEMBER', 'CLUB_PRESIDENT', 'DISTRICT_AREA_ADMIN', 'DISTRICT_ADMIN', 'APP_ADMIN'];
+export const ASSIGNABLE_SYSTEM_ROLES: SystemRole[] = ['NONE', 'DISTRICT_AREA_ADMIN', 'DISTRICT_ADMIN', 'APP_ADMIN'];
 export const ASSIGNABLE_CLUB_ROLES: ClubRole[] = ['MEMBER', 'OFFICER', 'CLUB_PRESIDENT'];
 
 /**
@@ -84,9 +87,11 @@ export type RoleBadge = {
  * The badge pinned over a user's avatar. Ranked by authority:
  * App Admin (Key) > District Admin (Rotary Wheel) > Club President (Star)
  */
-export const ROLE_BADGES: Record<'APP_ADMIN' | 'DISTRICT_ADMIN' | 'CLUB_PRESIDENT', RoleBadge> = {
+export const ROLE_BADGES: Record<'APP_ADMIN' | 'DISTRICT_ADMIN' | 'DISTRICT_AREA_ADMIN' | 'CLUB_PRESIDENT', RoleBadge> = {
   APP_ADMIN: { family: 'ionicons', icon: 'key-sharp', color: '#F59E0B', label: 'App Admin' },
   DISTRICT_ADMIN: { family: 'rotary', color: '#3B82F6', label: 'District Admin' },
+  // Same wheel as a District Admin, in a distinct colour: same authority, narrower reach.
+  DISTRICT_AREA_ADMIN: { family: 'rotary', color: '#8B5CF6', label: 'District Area Admin' },
   CLUB_PRESIDENT: { family: 'ionicons', icon: 'star', color: '#D41367', label: 'Club President' },
 };
 
@@ -98,6 +103,16 @@ export function getSystemRole(user: Partial<AppUser> | null | undefined): System
   if (user.system_role) return user.system_role;
   if (user.role === 'APP_ADMIN' || user.position?.toLowerCase().includes('app admin')) {
     return 'APP_ADMIN';
+  }
+  // Checked before DISTRICT_ADMIN: "district area admin" contains "district admin"
+  // as a substring, so the looser test below would otherwise swallow it and silently
+  // promote an area admin to full district authority.
+  if (
+    user.role === 'DISTRICT_AREA_ADMIN' ||
+    user.position?.toLowerCase().includes('district area admin') ||
+    user.position?.toLowerCase().includes('area admin')
+  ) {
+    return 'DISTRICT_AREA_ADMIN';
   }
   if (
     user.role === 'DISTRICT_ADMIN' ||
@@ -137,10 +152,59 @@ export function isAppAdmin(user: Partial<AppUser> | null | undefined): boolean {
   return getSystemRole(user) === 'APP_ADMIN';
 }
 
-/** District Admins have district governance authority (App Admins inherit this) */
+/**
+ * District governance authority. District Area Admins are included: they are granted
+ * every District Admin function, only narrowed to their own Zone.
+ *
+ * Anywhere the answer must be Zone-aware, pair this with `canGovernClub`. Anywhere
+ * that represents the District as a whole (certificate signing), use
+ * `isFullDistrictAdmin` instead.
+ */
 export function isDistrictAdmin(user: Partial<AppUser> | null | undefined): boolean {
   const sys = getSystemRole(user);
+  return sys === 'DISTRICT_ADMIN' || sys === 'DISTRICT_AREA_ADMIN' || sys === 'APP_ADMIN';
+}
+
+/** District-wide authority, excluding Zone-scoped Area Admins. */
+export function isFullDistrictAdmin(user: Partial<AppUser> | null | undefined): boolean {
+  const sys = getSystemRole(user);
   return sys === 'DISTRICT_ADMIN' || sys === 'APP_ADMIN';
+}
+
+/** True only for the Zone-scoped variant. */
+export function isDistrictAreaAdmin(user: Partial<AppUser> | null | undefined): boolean {
+  return getSystemRole(user) === 'DISTRICT_AREA_ADMIN';
+}
+
+/**
+ * The Zone an Area Admin governs, derived from their own club's zone_id.
+ * Returns undefined for everyone else (their authority is not Zone-bound).
+ */
+export function adminZoneId(
+  user: Partial<AppUser> | null | undefined,
+  clubs: { id: string; zone_id?: string }[],
+): string | undefined {
+  if (!isDistrictAreaAdmin(user) || !user?.club_id) return undefined;
+  return clubs.find(c => c.id === user.club_id)?.zone_id;
+}
+
+/**
+ * Whether `user`'s district authority reaches `clubId`.
+ *
+ * True for full District/App Admins over every club. For an Area Admin, true only
+ * when the club sits in the same Zone as their own. Fails CLOSED: an Area Admin
+ * whose Zone cannot be resolved governs nothing, rather than everything.
+ */
+export function canGovernClub(
+  user: Partial<AppUser> | null | undefined,
+  clubId: string | null | undefined,
+  clubs: { id: string; zone_id?: string }[],
+): boolean {
+  if (!isDistrictAdmin(user)) return false;
+  if (!isDistrictAreaAdmin(user)) return true;
+  const myZone = adminZoneId(user, clubs);
+  if (!myZone || !clubId) return false;
+  return clubs.find(c => c.id === clubId)?.zone_id === myZone;
 }
 
 /** Checks if a user is a Club President (optionally matching a specific club) */
@@ -170,7 +234,8 @@ export const isAdminRole = (role: UserRole | SystemRole) => role === 'APP_ADMIN'
 export function getHighestRoleBadge(user: Partial<AppUser> | null | undefined): RoleBadge | undefined {
   if (!user) return undefined;
   if (isAppAdmin(user)) return ROLE_BADGES.APP_ADMIN;
-  if (isDistrictAdmin(user)) return ROLE_BADGES.DISTRICT_ADMIN;
+  if (isFullDistrictAdmin(user)) return ROLE_BADGES.DISTRICT_ADMIN;
+  if (isDistrictAreaAdmin(user)) return ROLE_BADGES.DISTRICT_AREA_ADMIN;
   if (isClubPresident(user)) return ROLE_BADGES.CLUB_PRESIDENT;
   return undefined;
 }
@@ -209,6 +274,14 @@ export function positionRoleLabel(
       return 'District Admin';
     }
     return `${posTitle} (District Admin)`;
+  }
+
+  if (sysRole === 'DISTRICT_AREA_ADMIN') {
+    const generic = ['district area admin', 'area admin', 'member'];
+    if (!posTitle || generic.includes(posTitle.toLowerCase())) {
+      return 'District Area Admin';
+    }
+    return `${posTitle} (District Area Admin)`;
   }
 
   // Club-only roles

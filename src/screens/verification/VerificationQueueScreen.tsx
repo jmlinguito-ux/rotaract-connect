@@ -11,7 +11,7 @@ import UserAvatar from '../../components/UserAvatar';
 import { RootStackParamList } from '../../navigation/types';
 import { VerificationApplication, VerificationStatus } from '../../types';
 
-import { isAppAdmin, isDistrictAdmin, isClubPresident } from '../../utils/roles';
+import { isAppAdmin, isDistrictAdmin, isDistrictAreaAdmin, canGovernClub, isClubPresident } from '../../utils/roles';
 
 type Tab = 'ALL' | VerificationStatus;
 
@@ -30,7 +30,7 @@ const TAB_LABEL: Record<Tab, string> = {
 
 export default function VerificationQueueScreen() {
   const { user } = useAuth();
-  const { applications } = useData();
+  const { applications, clubs } = useData();
   const { colors: themeColors } = useTheme();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [tab, setTab] = useState<Tab>('ALL');
@@ -43,6 +43,15 @@ export default function VerificationQueueScreen() {
   const roleScope = useMemo(() => {
     if (!user) return applications;
     if (callerIsAppAdmin) return applications;
+    // A District Area Admin sees the same district queue, narrowed to their own Zone.
+    if (isDistrictAreaAdmin(user)) {
+      return applications.filter(
+        a =>
+          canGovernClub(user, a.club_id, clubs) &&
+          (a.position.toLowerCase().includes('president') ||
+            (a.club_id === user.club_id && callerIsClubPres)),
+      );
+    }
     if (callerIsDistrictAdmin && callerIsClubPres) {
       return applications.filter(
         a => a.position.toLowerCase().includes('president') ||
@@ -58,7 +67,7 @@ export default function VerificationQueueScreen() {
       );
     }
     return applications;
-  }, [applications, user, callerIsAppAdmin, callerIsDistrictAdmin, callerIsClubPres]);
+  }, [applications, user, clubs, callerIsAppAdmin, callerIsDistrictAdmin, callerIsClubPres]);
 
   const visibleTabs: Tab[] = useMemo(() => {
     if (callerIsAppAdmin) {

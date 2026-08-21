@@ -25,7 +25,6 @@ import { BottomSheet } from '../../components/BottomSheet';
 import RotaryWheel from '../../components/RotaryWheel';
 import { callNumber, sendEmail, openMaps } from '../../utils/contactLinks';
 import { openNavigationApp } from '../../utils/navigationLauncher';
-import { exportEventToCalendar } from '../../utils/calendarExport';
 import { AppUser } from '../../types';
 import { areaOfFocusIcon, areaOfFocusLabel } from '../../data/areasOfFocus';
 import { formatTime, formatDate } from '../../utils/timeFormat';
@@ -73,7 +72,6 @@ export default function EventDetailScreen({ route, navigation }: Props) {
   const [cancelModalVisible, setCancelModalVisible] = useState(false);
   const [rejectModalVisible, setRejectModalVisible] = useState(false);
   const [lateLeaveModalVisible, setLateLeaveModalVisible] = useState(false);
-  const [districtReviewSent, setDistrictReviewSent] = useState(false);
   const [passModalVisible, setPassModalVisible] = useState(false);
   const [passQrSvg, setPassQrSvg] = useState<string | null>(null);
   const [notifModalVisible, setNotifModalVisible] = useState(false);
@@ -160,7 +158,6 @@ export default function EventDetailScreen({ route, navigation }: Props) {
   }
 
   const organizingClub = clubs.find((c: Club) => c.id === event.organizing_club_id);
-  const partnerClubs = clubs.filter((c: Club) => event.participating_club_ids.includes(c.id));
   const start = new Date(event.start_datetime);
   const end = new Date(event.end_datetime);
 
@@ -170,9 +167,13 @@ export default function EventDetailScreen({ route, navigation }: Props) {
   const impact = impactFor(eventId);
 
   const isDistrictAdmin = user?.role === 'DISTRICT_ADMIN' || user?.role === 'APP_ADMIN';
+  // Derived from the event, not local state: the previous useState reset on every
+  // remount, so an organizer could re-request escalation endlessly and no other
+  // device ever saw that it had been requested.
+  const districtReviewSent = !!event.district_review_requested_at;
   const isDistrictEvent = event.event_type === 'DISTRICT_EVENT';
   const isClubPresident = user?.role === 'CLUB_PRESIDENT' && user?.club_id === event.organizing_club_id;
-  const canApprove = canApproveEvent(event, user, users);
+  const canApprove = canApproveEvent(event, user, users, clubs);
   const isOrganizer = isOnOrganizingTeam(event, user) || isClubPresident || isDistrictAdmin;
 
   const approverClubIds = approverClubIdsFor(event, users);
@@ -823,14 +824,40 @@ export default function EventDetailScreen({ route, navigation }: Props) {
                 </Text>
               )}
 
-              {isOrganizer && awaitingClubIds.length > 0 && (
+              {/* Escalation is the organizing team's own lever, so it is shown ONLY to
+                  them. `isOrganizer` also covers Club Presidents and District Admins —
+                  the approvers here — who must not see a prompt to chase themselves.
+                  Deliberately NOT gated on multi-club: a single-club event whose own
+                  President sits on it is exactly when the organizer needs to escalate.
+                  District events are already excluded, since approverClubIdsFor
+                  returns [] for them. */}
+              {isOnOrganizingTeam(event, user) && awaitingClubIds.length > 0 && (
                 <View style={[styles.stalledBox, { backgroundColor: isNightMode ? themeColors.primary + '18' : '#EFF6FF', borderColor: themeColors.primary + '33' }]}>
                   <View style={styles.stalledHeader}>
                     <Ionicons name="time-outline" size={16} color={themeColors.primary} />
                     <Text style={[styles.stalledTitle, { color: themeColors.primary }]}>Approval Stalled?</Text>
                   </View>
+                  {/* Name who is actually blocking. The old copy said only "partner club
+                      Presidents", which read as a dead end on a single-club event where
+                      the one holding it up is the organizer's OWN President. */}
                   <Text style={[styles.stalledText, { color: themeColors.textMuted }]}>
-                    If partner club Presidents are unresponsive, you can escalate this event for District Admin review.
+                    {(() => {
+                      const ownPending = awaitingClubIds.includes(event.organizing_club_id);
+                      const partnersPending = awaitingClubIds.filter(id => id !== event.organizing_club_id);
+                      const own = `your own Club President (${clubNameFor(event.organizing_club_id)})`;
+                      const partners =
+                        partnersPending.length === 1
+                          ? `the President of ${clubNameFor(partnersPending[0])}`
+                          : `${partnersPending.length} partner club Presidents`;
+
+                      const who = ownPending && partnersPending.length > 0
+                        ? `${own} and ${partners} have`
+                        : ownPending
+                        ? `${own} has`
+                        : `${partners} ${partnersPending.length === 1 ? 'has' : 'have'}`;
+
+                      return `Still waiting: ${who} not approved this event yet. If they stay unresponsive, you can escalate it for District Admin review — a District Administrator can then approve it in their place.`;
+                    })()}
                   </Text>
                   <TouchableOpacity
                     style={[styles.stalledBtn, { backgroundColor: districtReviewSent ? themeColors.success : themeColors.primary }]}
@@ -838,7 +865,6 @@ export default function EventDetailScreen({ route, navigation }: Props) {
                     onPress={() => {
                       if (user) {
                         requestDistrictEventReview(event.id, user);
-                        setDistrictReviewSent(true);
                         Alert.alert('District Review Requested', 'A high-priority review notification was broadcast to all District Administrators.');
                       }
                     }}
@@ -982,13 +1008,6 @@ export default function EventDetailScreen({ route, navigation }: Props) {
               icon="time-outline"
               text={`${formatTime(start)} — ${formatTime(end)}`}
             />
-            <TouchableOpacity
-              style={[styles.directionsBtn, { backgroundColor: themeColors.primary + '15', borderColor: themeColors.primary, marginTop: 6 }]}
-              onPress={() => exportEventToCalendar(event)}
-            >
-              <Ionicons name="calendar" size={14} color={themeColors.primary} />
-              <Text style={[styles.directionsBtnText, { color: themeColors.primary }]}>Add to Calendar (.ics)</Text>
-            </TouchableOpacity>
           </Section>
 
           <Section title="Where">
@@ -999,13 +1018,6 @@ export default function EventDetailScreen({ route, navigation }: Props) {
               hideOpenIcon
             />
             <InfoRow icon="business-outline" text={event.city} />
-            <TouchableOpacity
-              style={[styles.directionsBtn, { backgroundColor: themeColors.primary + '15', borderColor: themeColors.primary }]}
-              onPress={() => openNavigationApp(event.latitude, event.longitude, event.title, event.address)}
-            >
-              <Ionicons name="navigate" size={15} color={themeColors.primary} />
-              <Text style={[styles.directionsBtnText, { color: themeColors.primary }]}>Get Directions</Text>
-            </TouchableOpacity>
 
             <View style={[styles.geofenceZoneBadge, { backgroundColor: isNightMode ? themeColors.surface : '#FDF2F8', borderColor: isNightMode ? themeColors.border : '#F9D6E5' }]}>
               <View style={[styles.geofenceIconWrap, { backgroundColor: '#D41367' + '18' }]}>
@@ -1936,8 +1948,6 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 12, fontWeight: '800', color: colors.primary, letterSpacing: 1, marginBottom: 8 },
   infoRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },
   infoText: { fontSize: 14, color: colors.text },
-  directionsBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 10, borderWidth: 1, marginTop: 8, alignSelf: 'flex-start' },
-  directionsBtnText: { fontSize: 12, fontWeight: '700' },
   partRow: { flexDirection: 'row', alignItems: 'center' },
   viewLink: { flexDirection: 'row', alignItems: 'center', gap: 2 },
   viewLinkText: { fontSize: 12, fontWeight: '700', color: colors.primary },

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { View, Text, TextInput, StyleSheet, TouchableOpacity, Alert, Platform, Keyboard, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -44,9 +44,6 @@ export default function CreateEventScreen({ route, navigation }: Props) {
   const [isCoOrgFocused, setIsCoOrgFocused] = useState(false);
   const coOrgInputRef = useRef<TextInput>(null);
 
-  const [selectedPartnerClubs, setSelectedPartnerClubs] = useState<string[]>([]);
-  const [partnerClubQuery, setPartnerClubQuery] = useState('');
-  const [isPartnerClubFocused, setIsPartnerClubFocused] = useState(false);
 
   const [location, setLocation] = useState<LocationValue>(
     template
@@ -107,7 +104,6 @@ export default function CreateEventScreen({ route, navigation }: Props) {
       .filter((id): id is string => Boolean(id));
     const involvedClubIds = new Set([
       user.club_id,
-      ...selectedPartnerClubs,
       ...coOrgClubIds,
     ]);
     return !(user.role === 'CLUB_PRESIDENT' && involvedClubIds.size === 1);
@@ -219,9 +215,11 @@ export default function CreateEventScreen({ route, navigation }: Props) {
     const coOrgClubIds = selectedCoOrganizers
       .map(id => users.find(u => u.id === id)?.club_id)
       .filter((id): id is string => Boolean(id));
+    // participating_club_ids still means "every club involved" — it drives club
+    // event lists, analytics and the inter-club map filter. With the co-host picker
+    // gone it is simply the organizing club plus the co-organizers' clubs.
     const involvedClubIds = Array.from(new Set([
       user.club_id,
-      ...selectedPartnerClubs,
       ...coOrgClubIds,
     ]));
 
@@ -464,74 +462,6 @@ export default function CreateEventScreen({ route, navigation }: Props) {
             </View>
           )}
 
-          {/* Partner / Co-Hosting Clubs */}
-          <Text style={[styles.label, { color: themeColors.text }]}>Co-Hosting Partner Clubs (Optional)</Text>
-          <Text style={[styles.subHint, { color: themeColors.textMuted }]}>
-            Select partner clubs co-hosting this project. Their Club Presidents will be notified for joint approval.
-          </Text>
-
-          {selectedPartnerClubs.length > 0 && (
-            <View style={styles.selectedPillsRow}>
-              {selectedPartnerClubs.map(cid => {
-                const clb = clubs.find(c => c.id === cid);
-                if (!clb) return null;
-                return (
-                  <View key={cid} style={[styles.selectedPill, { backgroundColor: themeColors.surface, borderColor: themeColors.border }]}>
-                    <Text style={[styles.selectedPillText, { color: themeColors.text }]}>{clb.club_name.replace('Rotaract Club of ', '')}</Text>
-                    <TouchableOpacity onPress={() => setSelectedPartnerClubs(prev => prev.filter(id => id !== cid))}>
-                      <Ionicons name="close-circle" size={16} color={themeColors.textMuted} />
-                    </TouchableOpacity>
-                  </View>
-                );
-              })}
-            </View>
-          )}
-
-          <View style={styles.coOrgSearchWrap}>
-            <TextInput
-              style={[
-                styles.input,
-                styles.coOrgSearchInput,
-                { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text },
-                isPartnerClubFocused && { borderColor: themeColors.primary, borderWidth: 1.5 },
-              ]}
-              placeholder="Search clubs to add as co-hosts..."
-              placeholderTextColor={themeColors.textMuted}
-              value={partnerClubQuery}
-              onChangeText={setPartnerClubQuery}
-              onFocus={() => setIsPartnerClubFocused(true)}
-              onBlur={() => setIsPartnerClubFocused(false)}
-            />
-            {isPartnerClubFocused && partnerClubQuery.trim().length > 0 && (
-              <View style={[styles.coOrgDropdown, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border, zIndex: 3 }]}>
-                {clubs
-                  .filter(c => {
-                    if (c.id === user?.club_id) return false;
-                    if (selectedPartnerClubs.includes(c.id)) return false;
-                    return c.club_name.toLowerCase().includes(partnerClubQuery.toLowerCase());
-                  })
-                  .slice(0, 5)
-                  .map(c => (
-                    <TouchableOpacity
-                      key={c.id}
-                      style={[styles.coOrgDropdownItem, { borderBottomColor: themeColors.border }]}
-                      onPress={() => {
-                        setSelectedPartnerClubs(prev => [...prev, c.id]);
-                        setPartnerClubQuery('');
-                        Keyboard.dismiss();
-                        setIsPartnerClubFocused(false);
-                      }}
-                    >
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.coOrgItemName, { color: themeColors.text }]}>{c.club_name}</Text>
-                        <Text style={[styles.coOrgItemSub, { color: themeColors.textMuted }]}>{c.city}, {c.province}</Text>
-                      </View>
-                      <Ionicons name="add-circle" size={18} color={themeColors.primary} />
-                    </TouchableOpacity>
-                  ))}
-              </View>
-            )}
-          </View>
 
           {/* Date Selector Input Box */}
           <Text style={[styles.label, { color: themeColors.text }]}>Date</Text>
@@ -895,11 +825,6 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   subHint: { fontSize: 12, marginBottom: 8, marginTop: -2 },
-  selectedPillsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 },
-  selectedPill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1 },
-  selectedPillText: { fontSize: 12, fontWeight: '600' },
-  coOrgSearchWrap: { marginBottom: 12 },
-  coOrgSearchInput: { height: 44, paddingHorizontal: 12 },
   pickerContainer: { backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, marginTop: 10, padding: 12, overflow: 'hidden' },
   pickerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, paddingHorizontal: 4 },
   pickerHeaderTitle: { fontSize: 13, fontWeight: '700', color: colors.text },

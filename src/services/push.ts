@@ -59,6 +59,7 @@ export async function configurePushNotifications() {
       'chat_v3', 'mentions_v1', 'events_v1', 'general_v3',
       'organizer_high_v1', 'organizer_alert_v1',
       'chat_v4', 'mentions_v2', 'events_v2', 'general_v4', 'organizer_alert_v2',
+      'general_v5',                              // DEFAULT importance; replaced by general_v6 (HIGH)
       'emergency_sos_v1', 'emergency_sos_v2',
     ]) {
       await Notifications.deleteNotificationChannelAsync(retired).catch(() => {});
@@ -142,10 +143,10 @@ export async function configurePushNotifications() {
       lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
     });
 
-    await Notifications.setNotificationChannelAsync('general_v5', {
+    await Notifications.setNotificationChannelAsync('general_v6', {
       name: 'General',
       description: 'Approvals, verification updates, and other app notifications.',
-      importance: Notifications.AndroidImportance.DEFAULT,
+      importance: Notifications.AndroidImportance.HIGH,
       sound: chime,
       vibrationPattern: [0, 250, 250, 250],
       lightColor: '#D41367',

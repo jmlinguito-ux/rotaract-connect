@@ -1,17 +1,25 @@
 import type { AppUser, RotaractEvent, EventParticipant } from '../types';
-import { isClubPresident, isDistrictAdmin } from './roles';
+import { isClubPresident, isDistrictAdmin, isFullDistrictAdmin, canGovernClub } from './roles';
 
 /**
  * Clubs whose Presidents must sign off before a pending event can be published.
  *
  * Every club with skin in the game is included: the organizing club, the club of
- * each co-organizer, and any partner club listed on the event. District events are
+ * each co-organizer / team member. District events are
  * approved by the District Administrator instead, so they have no club approvers.
  */
 export function approverClubIdsFor(event: RotaractEvent, users: AppUser[]): string[] {
   if (event.event_type === 'DISTRICT_EVENT') return [];
 
-  const ids = new Set<string>([event.organizing_club_id, ...event.participating_club_ids]);
+  // Approval follows RESPONSIBILITY: the organizing club, plus every club whose
+  // members are actually running the event (co-organizers / team members). Those
+  // are the clubs committing people and their name to the work.
+  //
+  // NOTE: event.participating_club_ids is deliberately NOT consulted. It records
+  // every club involved (used by club event lists, analytics and the inter-club map
+  // filter) and on legacy rows may still contain co-hosting clubs from the removed
+  // co-host feature — none of which should gate publication.
+  const ids = new Set<string>([event.organizing_club_id]);
   for (const uid of event.co_organizer_user_ids ?? []) {
     const clubId = users.find(u => u.id === uid)?.club_id;
     if (clubId) ids.add(clubId);
@@ -34,9 +42,28 @@ export function isFullyApproved(event: RotaractEvent, users: AppUser[]): boolean
  * Whether this user still owes an approval decision on this event.
  * A President who already approved cannot approve twice.
  */
-export function canApproveEvent(event: RotaractEvent, user: AppUser | null | undefined, users: AppUser[]): boolean {
+export function canApproveEvent(
+  event: RotaractEvent,
+  user: AppUser | null | undefined,
+  users: AppUser[],
+  /** Needed only to resolve a District Area Admin's Zone; omit for the other roles. */
+  clubs: { id: string; zone_id?: string }[] = [],
+): boolean {
   if (!user || event.status !== 'PENDING_APPROVAL') return false;
-  if (event.event_type === 'DISTRICT_EVENT') return isDistrictAdmin(user);
+
+  // A District Event is district-wide, so it needs district-wide authority. An Area
+  // Admin governs one Zone and cannot speak for the District here.
+  if (event.event_type === 'DISTRICT_EVENT') return isFullDistrictAdmin(user);
+
+  // A stalled club event that the organizer escalated may be approved by a District
+  // Admin in the Presidents' place — that is exactly what the escalation promises.
+  // Gated on the request so admins do not silently bypass Presidents otherwise, and
+  // on Zone so an Area Admin only unblocks clubs they actually govern.
+  if (isDistrictAdmin(user)) {
+    if (!event.district_review_requested_at) return false;
+    return canGovernClub(user, event.organizing_club_id, clubs);
+  }
+
   if (!isClubPresident(user)) return false;
   return pendingApproverClubIdsFor(event, users).includes(user.club_id);
 }
@@ -91,7 +118,7 @@ export function visibleEvents(
 
 /**
  * Whether this user is authorized to scan QR event passes and record attendance overrides.
- * Authorized: District Admins, Event Creator, Co-Organizers, and Partner / Co-Hosting Club Presidents.
+ * Authorized: District Admins, Event Creator, Co-Organizers, and their Club Presidents.
  */
 export function canManageAttendance(
   event: RotaractEvent | null | undefined,

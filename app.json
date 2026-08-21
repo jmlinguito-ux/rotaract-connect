@@ -73,7 +73,7 @@
         {
           "icon": "./assets/notification-icon.png",
           "color": "#D41367",
-          "defaultChannel": "general_v5",
+          "defaultChannel": "general_v6",
           "sounds": [
             "./assets/sounds/chime.wav",
             "./assets/sounds/alert.wav",
