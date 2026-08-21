@@ -11,7 +11,6 @@ import { StatusBar } from 'expo-status-bar';
 import { RootStackParamList } from './types';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
-import { useAutoCheckIn } from '../hooks/useAutoCheckIn';
 import { useEmergencyAlerts } from '../hooks/useEmergencyAlerts';
 import EmergencyAlertModal from '../components/EmergencyAlertModal';
 import AuthStack from './AuthStack';
@@ -113,17 +112,11 @@ export default function RootNavigator() {
         <>
           <SyncErrorBanner />
           <SyncStatusBanner />
-          <AutoCheckInWatcher />
           <GlobalEmergencyAlert />
         </>
       )}
     </NavigationContainer>
   );
-}
-
-function AutoCheckInWatcher() {
-  useAutoCheckIn();
-  return null;
 }
 
 function GlobalEmergencyAlert() {

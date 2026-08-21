@@ -334,7 +334,7 @@ export default function EventsScreen() {
           <View style={{ flex: 1 }}>
             <Text style={[styles.locationNoticeTitle, { color: '#B45309' }]}>Location Services Off</Text>
             <Text style={[styles.locationNoticeSub, { color: themeColors.textMuted }]}>
-              Enable GPS to trigger automatic on-arrival check-in today.
+              Enable GPS for 1-tap verified check-in on event day.
             </Text>
           </View>
           <Ionicons name="chevron-forward" size={14} color="#D97706" />

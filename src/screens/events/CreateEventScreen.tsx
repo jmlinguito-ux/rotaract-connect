@@ -360,7 +360,7 @@ export default function CreateEventScreen({ route, navigation }: Props) {
           {isServiceProject && <AreasOfFocusPicker selected={areasOfFocus} onChange={setAreasOfFocus} />}
 
           {/* Involved Co-Organizers & Team Members Picker (Moved Below Description) */}
-          <Text style={styles.label}>Involved Co-Organizers & Team Members</Text>
+          <Text style={[styles.label, { color: themeColors.text }]}>Involved Co-Organizers & Team Members</Text>
 
           {/* Tag Input Container Box with Inline Pills */}
           <TouchableOpacity
@@ -542,7 +542,7 @@ export default function CreateEventScreen({ route, navigation }: Props) {
           {activePickerTarget && (
             <View style={styles.pickerContainer}>
               <View style={styles.pickerHeader}>
-                <Text style={styles.pickerHeaderTitle}>
+                <Text style={[styles.pickerHeaderTitle, { color: themeColors.text }]}>
                   Select {activePickerTarget === 'startTime' ? 'Start Time' : 'End Time'}
                 </Text>
                 <TouchableOpacity style={styles.pickerDoneBtn} onPress={() => setActivePickerTarget(null)}>
@@ -566,9 +566,9 @@ export default function CreateEventScreen({ route, navigation }: Props) {
           <LocationPicker value={location} onChange={setLocation} geofenceRadius={geofenceRadius} />
 
           {/* Check-In Geofence Perimeter Radius */}
-          <Text style={styles.label}>Check-In Geofence Perimeter</Text>
-          <Text style={styles.subHint}>
-            Participants entering this {geofenceRadius}m radius during the event window will check in automatically.
+          <Text style={[styles.label, { color: themeColors.text }]}>Check-In Geofence Perimeter</Text>
+          <Text style={[styles.subHint, { color: themeColors.textMuted }]}>
+            Participants within this {geofenceRadius}m radius can verify attendance with 1-tap GPS check-in.
           </Text>
           <View style={styles.radiusPillsRow}>
             {[
@@ -615,33 +615,49 @@ export default function CreateEventScreen({ route, navigation }: Props) {
               controls are hidden for them. */}
           {type === 'DISTRICT_EVENT' ? (
             <View style={styles.districtInfoRow}>
-              <Ionicons name="globe-outline" size={15} color={colors.textMuted} />
-              <Text style={styles.districtInfoText}>
+              <Ionicons name="globe-outline" size={15} color={themeColors.textMuted} />
+              <Text style={[styles.districtInfoText, { color: themeColors.textMuted }]}>
                 Open to all verified members. Publishing invites everyone in the district.
               </Text>
             </View>
           ) : (
             <>
-              <Text style={styles.label}>Visibility</Text>
+              <Text style={[styles.label, { color: themeColors.text }]}>Visibility</Text>
               <View style={styles.visRow}>
                 {([
                   { key: 'VERIFIED_ROTARACTORS', label: 'Verified' },
                   { key: 'CLUB_ONLY', label: 'Club only' },
                   { key: 'INVITATION_ONLY', label: 'Invite only' },
                 ] as { key: EventVisibility; label: string }[]).map(v => (
-                  <TouchableOpacity key={v.key} onPress={() => setVisibility(v.key)} style={[styles.visChip, visibility === v.key && styles.visChipActive]}>
-                    <Text style={[styles.visChipText, visibility === v.key && styles.visChipTextActive]}>{v.label}</Text>
+                  <TouchableOpacity
+                    key={v.key}
+                    onPress={() => setVisibility(v.key)}
+                    style={[
+                      styles.visChip,
+                      { backgroundColor: themeColors.surface, borderColor: themeColors.border },
+                      visibility === v.key && [styles.visChipActive, { backgroundColor: themeColors.primary, borderColor: themeColors.primary }],
+                    ]}
+                  >
+                    <Text style={[styles.visChipText, { color: themeColors.text }, visibility === v.key && styles.visChipTextActive]}>{v.label}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
             </>
           )}
 
-          <Text style={styles.label}>Lock Leave Cutoff (Hours Before Start)</Text>
+          <Text style={[styles.label, { color: themeColors.text }]}>Lock Leave Cutoff (Hours Before Start)</Text>
           <View style={styles.visRow}>
             {[6, 12, 24].map(hrs => (
-              <TouchableOpacity key={hrs} onPress={() => setLockCutoffHours(hrs)} style={[styles.visChip, lockCutoffHours === hrs && styles.visChipActive]}>
-                <Text style={[styles.visChipText, lockCutoffHours === hrs && styles.visChipTextActive]}>{hrs}h</Text>
+              <TouchableOpacity
+                key={hrs}
+                onPress={() => setLockCutoffHours(hrs)}
+                style={[
+                  styles.visChip,
+                  { backgroundColor: themeColors.surface, borderColor: themeColors.border },
+                  lockCutoffHours === hrs && [styles.visChipActive, { backgroundColor: themeColors.primary, borderColor: themeColors.primary }],
+                ]}
+              >
+                <Text style={[styles.visChipText, { color: themeColors.text }, lockCutoffHours === hrs && styles.visChipTextActive]}>{hrs}h</Text>
               </TouchableOpacity>
             ))}
           </View>

@@ -20,10 +20,10 @@
 -- └──────────────────────────────────────────────────────────────────────────┘
 WITH cfg AS (
   SELECT
-    14.5794::double precision AS lat,        -- <<< YOUR LATITUDE
-    121.0359::double precision AS lon,       -- <<< YOUR LONGITUDE
-    'Test Venue'::text        AS address,
-    'Mandaluyong'::text       AS city,
+    14.5916965::double precision AS lat,        -- <<< YOUR LATITUDE
+    121.1353233::double precision AS lon,      -- <<< YOUR LONGITUDE
+    'Spruce'::text        AS address,
+    'Cainta'::text       AS city,
     300::integer              AS radius_m,   -- geofence perimeter
     interval '10 minutes'     AS starts_in,  -- +10m => window already OPEN, and you are "on time"
     interval '3 hours'        AS runs_for

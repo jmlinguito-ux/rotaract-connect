@@ -17,7 +17,9 @@ import { useData } from '../../context/DataContext';
 import { useTheme } from '../../context/ThemeContext';
 import UserAvatar from '../UserAvatar';
 import { VerifiedName } from '../VerifiedCheck';
+import { playAlertSound } from '../../services/sound';
 import { RotaractEvent, AppUser, EventParticipant } from '../../types';
+import { calculateParticipantHours } from '../../utils/hoursCalculation';
 
 interface EventAttendanceScannerModalProps {
   visible: boolean;
@@ -33,7 +35,7 @@ export const EventAttendanceScannerModal: React.FC<EventAttendanceScannerModalPr
   event,
   onClose,
 }) => {
-  const { users, participantsFor, checkIn, checkOut } = useData();
+  const { users, participants, participantsFor, checkIn, checkOut } = useData();
   const { colors: themeColors, isNightMode } = useTheme();
   const [permission, requestPermission] = useCameraPermissions();
 
@@ -43,10 +45,18 @@ export const EventAttendanceScannerModal: React.FC<EventAttendanceScannerModalPr
 
   // Scan Result Feedback State
   const [scanResult, setScanResult] = useState<{
-    status: 'SUCCESS_CHECK_IN' | 'SUCCESS_CHECK_OUT' | 'ALREADY_CHECKED_OUT' | 'NOT_JOINED' | 'DIFFERENT_EVENT' | 'INVALID';
+    status:
+      | 'SUCCESS_CHECK_IN'
+      | 'SUCCESS_CHECK_OUT'
+      | 'CONFIRM_CHECK_OUT'
+      | 'ALREADY_CHECKED_OUT'
+      | 'NOT_JOINED'
+      | 'DIFFERENT_EVENT'
+      | 'INVALID';
     user?: AppUser;
     participant?: EventParticipant;
     message?: string;
+    hoursLogged?: number;
   } | null>(null);
 
   useEffect(() => {
@@ -58,6 +68,32 @@ export const EventAttendanceScannerModal: React.FC<EventAttendanceScannerModalPr
       setScanResult(null);
     }
   }, [visible, permission]);
+
+  const performCheckOut = (participant: EventParticipant, attendee?: AppUser) => {
+    const nowIso = new Date().toISOString();
+    const updatedParticipant: EventParticipant = {
+      ...participant,
+      checked_out_at: nowIso,
+    };
+    const hours = calculateParticipantHours(updatedParticipant, event);
+
+    checkOut(participant.id, {
+      checkedOutAt: nowIso,
+      recordedBy: 'ORGANIZER_QR',
+    });
+
+    try {
+      playAlertSound('CHIME');
+    } catch {}
+
+    setScanResult({
+      status: 'SUCCESS_CHECK_OUT',
+      user: attendee,
+      participant: updatedParticipant,
+      message: `Event departure verified • ${hours} volunteer hr${hours === 1 ? '' : 's'} recorded!`,
+      hoursLogged: hours,
+    });
+  };
 
   const handleBarcodeScanned = ({ data }: { data: string }) => {
     if (!isScanningActive || scanResult) return;
@@ -105,8 +141,10 @@ export const EventAttendanceScannerModal: React.FC<EventAttendanceScannerModalPr
     }
 
     const attendee = users.find(u => u.id === parsedPayload.userId);
-    const participants = participantsFor(event.id);
-    const participant = participants.find(p => p.id === parsedPayload.participantId || p.user_id === parsedPayload.userId);
+    const eventParticipants = participantsFor(event.id);
+    const participant =
+      eventParticipants.find(p => p.id === parsedPayload.participantId || p.user_id === parsedPayload.userId) ||
+      participants.find(p => p.id === parsedPayload.participantId || (p.event_id === event.id && p.user_id === parsedPayload.userId));
 
     if (!participant || participant.status !== 'JOINED') {
       setScanResult({
@@ -120,33 +158,40 @@ export const EventAttendanceScannerModal: React.FC<EventAttendanceScannerModalPr
     // Process Attendance
     if (!participant.checked_in_at && participant.attendance_status !== 'ATTENDED') {
       // Step 1: Check In
+      const nowIso = new Date().toISOString();
       checkIn(participant.id, {
-        checkedInAt: new Date().toISOString(),
+        checkedInAt: nowIso,
         latitude: event.latitude,
         longitude: event.longitude,
         distanceMeters: 0,
         recordedBy: 'ORGANIZER_QR',
       });
 
+      try {
+        playAlertSound('CHIME');
+      } catch {}
       setScanResult({
         status: 'SUCCESS_CHECK_IN',
         user: attendee,
-        participant: { ...participant, checked_in_at: new Date().toISOString(), attendance_status: 'ATTENDED' },
+        participant: { ...participant, checked_in_at: nowIso, attendance_status: 'ATTENDED' },
         message: 'Verified On-Site Check-In recorded successfully!',
       });
     } else if (!participant.checked_out_at) {
-      // Step 2: Check Out
-      checkOut(participant.id, {
-        checkedOutAt: new Date().toISOString(),
-        recordedBy: 'ORGANIZER_QR',
-      });
+      // Step 2: Check Out (Safety Cooldown check: 5 minutes)
+      const inMs = participant.checked_in_at ? new Date(participant.checked_in_at).getTime() : Date.now();
+      const elapsedMinutes = (Date.now() - inMs) / 60000;
 
-      setScanResult({
-        status: 'SUCCESS_CHECK_OUT',
-        user: attendee,
-        participant: { ...participant, checked_out_at: new Date().toISOString() },
-        message: 'Event departure and volunteer hours finalized!',
-      });
+      if (elapsedMinutes < 5) {
+        setScanResult({
+          status: 'CONFIRM_CHECK_OUT',
+          user: attendee,
+          participant,
+          message: `Checked in ${Math.max(1, Math.round(elapsedMinutes))} min ago. Confirm early Check-Out for this member?`,
+        });
+        return;
+      }
+
+      performCheckOut(participant, attendee);
     } else {
       // Step 3: Already completed both
       setScanResult({
@@ -246,8 +291,12 @@ export const EventAttendanceScannerModal: React.FC<EventAttendanceScannerModalPr
                   {
                     backgroundColor: isNightMode ? themeColors.cardBg : '#fff',
                     borderColor:
-                      scanResult.status.startsWith('SUCCESS')
+                      scanResult.status === 'SUCCESS_CHECK_IN'
                         ? themeColors.success
+                        : scanResult.status === 'SUCCESS_CHECK_OUT'
+                        ? '#0284C7'
+                        : scanResult.status === 'CONFIRM_CHECK_OUT' || scanResult.status === 'ALREADY_CHECKED_OUT'
+                        ? themeColors.warning
                         : themeColors.danger,
                   },
                 ]}
@@ -258,22 +307,37 @@ export const EventAttendanceScannerModal: React.FC<EventAttendanceScannerModalPr
                     style={[
                       styles.resultIconWrap,
                       {
-                        backgroundColor: scanResult.status.startsWith('SUCCESS')
-                          ? '#DCFCE7'
-                          : '#FEE2E2',
+                        backgroundColor:
+                          scanResult.status === 'SUCCESS_CHECK_IN'
+                            ? (isNightMode ? 'rgba(16, 185, 129, 0.2)' : '#DCFCE7')
+                            : scanResult.status === 'SUCCESS_CHECK_OUT'
+                            ? (isNightMode ? 'rgba(2, 132, 199, 0.2)' : '#E0F2FE')
+                            : scanResult.status === 'CONFIRM_CHECK_OUT' || scanResult.status === 'ALREADY_CHECKED_OUT'
+                            ? (isNightMode ? 'rgba(245, 158, 11, 0.2)' : '#FEF3C7')
+                            : (isNightMode ? 'rgba(239, 68, 68, 0.2)' : '#FEE2E2'),
                       },
                     ]}
                   >
                     <Ionicons
                       name={
-                        scanResult.status.startsWith('SUCCESS')
+                        scanResult.status === 'SUCCESS_CHECK_IN'
                           ? 'checkmark-circle'
+                          : scanResult.status === 'SUCCESS_CHECK_OUT'
+                          ? 'checkmark-done-circle'
+                          : scanResult.status === 'CONFIRM_CHECK_OUT'
+                          ? 'help-circle'
+                          : scanResult.status === 'ALREADY_CHECKED_OUT'
+                          ? 'ribbon-outline'
                           : 'alert-circle'
                       }
                       size={28}
                       color={
-                        scanResult.status.startsWith('SUCCESS')
+                        scanResult.status === 'SUCCESS_CHECK_IN'
                           ? '#16A34A'
+                          : scanResult.status === 'SUCCESS_CHECK_OUT'
+                          ? '#0284C7'
+                          : scanResult.status === 'CONFIRM_CHECK_OUT' || scanResult.status === 'ALREADY_CHECKED_OUT'
+                          ? '#D97706'
                           : '#DC2626'
                       }
                     />
@@ -283,15 +347,21 @@ export const EventAttendanceScannerModal: React.FC<EventAttendanceScannerModalPr
                       style={[
                         styles.resultStatusTitle,
                         {
-                          color: scanResult.status.startsWith('SUCCESS')
-                            ? '#16A34A'
-                            : '#DC2626',
+                          color:
+                            scanResult.status === 'SUCCESS_CHECK_IN'
+                              ? '#16A34A'
+                              : scanResult.status === 'SUCCESS_CHECK_OUT'
+                              ? '#0284C7'
+                              : scanResult.status === 'CONFIRM_CHECK_OUT' || scanResult.status === 'ALREADY_CHECKED_OUT'
+                              ? '#D97706'
+                              : '#DC2626',
                         },
                       ]}
                     >
                       {scanResult.status === 'SUCCESS_CHECK_IN' && 'CHECKED IN!'}
                       {scanResult.status === 'SUCCESS_CHECK_OUT' && 'CHECKED OUT!'}
-                      {scanResult.status === 'ALREADY_CHECKED_OUT' && 'COMPLETED'}
+                      {scanResult.status === 'CONFIRM_CHECK_OUT' && 'EARLY CHECK-OUT?'}
+                      {scanResult.status === 'ALREADY_CHECKED_OUT' && 'ALREADY COMPLETED'}
                       {scanResult.status === 'NOT_JOINED' && 'NOT REGISTERED'}
                       {scanResult.status === 'DIFFERENT_EVENT' && 'WRONG EVENT'}
                       {scanResult.status === 'INVALID' && 'INVALID PASS'}
@@ -321,13 +391,33 @@ export const EventAttendanceScannerModal: React.FC<EventAttendanceScannerModalPr
 
                 {/* Actions */}
                 <View style={styles.resultActions}>
-                  <TouchableOpacity style={styles.nextScanBtn} onPress={resumeScanning}>
-                    <Ionicons name="scan" size={16} color="#fff" />
-                    <Text style={styles.nextScanBtnText}>Scan Next Pass</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.doneBtn} onPress={onClose}>
-                    <Text style={[styles.doneBtnText, { color: themeColors.textMuted }]}>Done</Text>
-                  </TouchableOpacity>
+                  {scanResult.status === 'CONFIRM_CHECK_OUT' && scanResult.participant ? (
+                    <>
+                      <TouchableOpacity
+                        style={[styles.nextScanBtn, { backgroundColor: '#0284C7' }]}
+                        onPress={() => performCheckOut(scanResult.participant!, scanResult.user)}
+                      >
+                        <Ionicons name="log-out" size={16} color="#fff" />
+                        <Text style={styles.nextScanBtnText}>Confirm Check-Out</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.doneBtn, { backgroundColor: themeColors.surface, borderColor: themeColors.border, borderWidth: 1 }]}
+                        onPress={resumeScanning}
+                      >
+                        <Text style={[styles.doneBtnText, { color: themeColors.text }]}>Keep Checked In</Text>
+                      </TouchableOpacity>
+                    </>
+                  ) : (
+                    <>
+                      <TouchableOpacity style={styles.nextScanBtn} onPress={resumeScanning}>
+                        <Ionicons name="scan" size={16} color="#fff" />
+                        <Text style={styles.nextScanBtnText}>Scan Next Pass</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.doneBtn} onPress={onClose}>
+                        <Text style={[styles.doneBtnText, { color: themeColors.textMuted }]}>Done</Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
                 </View>
               </View>
             </View>

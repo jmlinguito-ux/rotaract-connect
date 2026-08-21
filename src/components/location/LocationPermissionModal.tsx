@@ -16,6 +16,7 @@ interface LocationPermissionModalProps {
   visible: boolean;
   onClose: () => void;
   onPermissionGranted?: () => void;
+  initialStep?: string;
 }
 
 export const LocationPermissionModal: React.FC<LocationPermissionModalProps> = ({
@@ -25,7 +26,7 @@ export const LocationPermissionModal: React.FC<LocationPermissionModalProps> = (
 }) => {
   const { colors: themeColors, isNightMode } = useTheme();
 
-  const handleEnableLocation = async () => {
+  const handleEnableForeground = async () => {
     try {
       const isServiceEnabled = await Location.hasServicesEnabledAsync();
       if (!isServiceEnabled) {
@@ -40,9 +41,9 @@ export const LocationPermissionModal: React.FC<LocationPermissionModalProps> = (
       if (status === 'granted') {
         onPermissionGranted?.();
         onClose();
-      } else {
-        Linking.openSettings();
+        return;
       }
+      Linking.openSettings();
     } catch {
       Linking.openSettings();
     }
@@ -52,24 +53,22 @@ export const LocationPermissionModal: React.FC<LocationPermissionModalProps> = (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose}>
         <TouchableOpacity style={[styles.card, { backgroundColor: themeColors.surface, borderColor: themeColors.border }]} activeOpacity={1}>
-          {/* Header Icon */}
           <View style={styles.iconWrap}>
             <Ionicons name="navigate-circle" size={48} color="#D41367" />
           </View>
 
-          <Text style={[styles.title, { color: themeColors.text }]}>Enable Location for Auto Check-In</Text>
+          <Text style={[styles.title, { color: themeColors.text }]}>Enable Location for On-Site Check-In</Text>
           <Text style={[styles.description, { color: themeColors.textMuted }]}>
-            Rotaract Connect measures your proximity to the event venue to automatically verify your on-site attendance and issue service hours.
+            Rotaract Connect verifies your distance to the event venue when you tap Check In to credit your volunteer service hours.
           </Text>
 
-          {/* How It Works List */}
           <View style={[styles.infoBox, { backgroundColor: isNightMode ? themeColors.cardBg : '#FDF2F8', borderColor: isNightMode ? themeColors.border : '#F9D6E5' }]}>
             <View style={styles.infoRow}>
               <Ionicons name="shield-checkmark" size={18} color="#D41367" />
               <View style={{ flex: 1 }}>
-                <Text style={[styles.infoTitle, { color: themeColors.text }]}>Verified On-Premise Arrival</Text>
+                <Text style={[styles.infoTitle, { color: themeColors.text }]}>Verified On-Premise Check-In</Text>
                 <Text style={[styles.infoSub, { color: themeColors.textMuted }]}>
-                  Triggers automatically when you enter the venue perimeter during event hours.
+                  Confirms physical attendance at the event venue.
                 </Text>
               </View>
             </View>
@@ -77,28 +76,17 @@ export const LocationPermissionModal: React.FC<LocationPermissionModalProps> = (
             <View style={styles.infoRow}>
               <Ionicons name="flash-outline" size={18} color="#D41367" />
               <View style={{ flex: 1 }}>
-                <Text style={[styles.infoTitle, { color: themeColors.text }]}>Adaptive & Battery Friendly</Text>
+                <Text style={[styles.infoTitle, { color: themeColors.text }]}>Zero Background Battery Drain</Text>
                 <Text style={[styles.infoSub, { color: themeColors.textMuted }]}>
-                  Uses low-power GPS sampling, stepping up to high precision only when near the venue.
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.infoRow}>
-              <Ionicons name="heart-circle-outline" size={18} color="#D41367" />
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.infoTitle, { color: themeColors.text }]}>Background Arrival Detection</Text>
-                <Text style={[styles.infoSub, { color: themeColors.textMuted }]}>
-                  Turn on "Safety Network" in Settings to check in seamlessly even with your screen locked.
+                  Location is checked only when you tap Check In or send an Emergency SOS.
                 </Text>
               </View>
             </View>
           </View>
 
-          {/* Buttons */}
-          <TouchableOpacity style={styles.enableBtn} onPress={handleEnableLocation}>
+          <TouchableOpacity style={styles.enableBtn} onPress={handleEnableForeground}>
             <Ionicons name="location" size={18} color="#fff" />
-            <Text style={styles.enableBtnText}>Enable Location Services</Text>
+            <Text style={styles.enableBtnText}>Enable Location</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>
@@ -194,3 +182,4 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
+

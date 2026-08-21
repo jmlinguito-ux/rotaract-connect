@@ -24,7 +24,7 @@ platform :ios, podfile_properties['ios.deploymentTarget'] || '16.4'
 
 prepare_react_native_project!
 
-target 'rotaractconnect' do
+target 'RotaractConnect' do
   use_expo_modules!
 
   if ENV['EXPO_USE_COMMUNITY_AUTOLINKING'] == '1'
@@ -63,34 +63,5 @@ target 'rotaractconnect' do
       :mac_catalyst_enabled => false,
       :ccache_enabled => ccache_enabled?(podfile_properties),
     )
-
-    # Xcode 26's Swift compiler bakes a direct autolink to SwiftUICore into every Swift
-    # object. SwiftUICore.tbd restricts linking to allowable-clients (SwiftUI, AppKit,
-    # ...), so the app dylib link fails: "cannot link directly with 'SwiftUICore'
-    # because product being built is not an allowed client of it". Suppress the direct
-    # SwiftUICore autolink on every Swift target; its symbols still resolve through
-    # SwiftUI (an allowed client that re-exports SwiftUICore), which stays autolinked.
-    disable_swiftuicore = ['-Xfrontend', '-disable-autolink-framework', '-Xfrontend', 'SwiftUICore']
-    apply_swift_fix = lambda do |target|
-      target.build_configurations.each do |config|
-        config.build_settings['SWIFT_ENABLE_EXPLICIT_MODULES'] = 'NO'
-        flags = config.build_settings['OTHER_SWIFT_FLAGS']
-        flags = flags.is_a?(Array) ? flags.dup : (flags ? [flags] : ['$(inherited)'])
-        flags += disable_swiftuicore unless flags.join(' ').include?('disable-autolink-framework')
-        config.build_settings['OTHER_SWIFT_FLAGS'] = flags
-        # Remove the earlier -client_name workaround, which ld rejects for dylib links.
-        ldflags = config.build_settings['OTHER_LDFLAGS']
-        if ldflags.is_a?(Array)
-          config.build_settings['OTHER_LDFLAGS'] = ldflags.reject { |f| f.to_s.include?('-client_name') }
-        end
-      end
-    end
-    installer.pods_project.targets.each { |target| apply_swift_fix.call(target) }
-    installer.aggregate_targets.each do |aggregate_target|
-      user_project = aggregate_target.user_project
-      next unless user_project
-      user_project.native_targets.each { |target| apply_swift_fix.call(target) }
-      user_project.save
-    end
   end
 end

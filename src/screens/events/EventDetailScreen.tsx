@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert, Image, Modal, TextInput, KeyboardAvoidingView, Platform, Keyboard, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert, Image, Modal, TextInput, KeyboardAvoidingView, Platform, Keyboard, ActivityIndicator, Vibration } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useIsFocused } from '@react-navigation/native';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { RootStackParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
@@ -28,14 +29,17 @@ import { openNavigationApp } from '../../utils/navigationLauncher';
 import { AppUser } from '../../types';
 import { areaOfFocusIcon, areaOfFocusLabel } from '../../data/areasOfFocus';
 import { formatTime, formatDate } from '../../utils/timeFormat';
+import { playAlertSound } from '../../services/sound';
 
 import * as Location from 'expo-location';
+import * as Brightness from 'expo-brightness';
 import QRCode from 'qrcode';
 import { SvgXml } from 'react-native-svg';
 import { usePreferences } from '../../context/PreferencesContext';
 import { checkInWindow, distanceMeters, formatDistance, getEventGeofenceRadius, CHECK_IN_RADIUS_M } from '../../utils/checkIn';
 import { eventEditPolicy, editLockRulesForApproval } from '../../utils/eventEditPolicy';
 import { exportEventAttendanceCSV } from '../../utils/csvExport';
+import { calculateParticipantHours } from '../../utils/hoursCalculation';
 import {
   approverClubIdsFor,
   pendingApproverClubIdsFor,
@@ -74,6 +78,12 @@ export default function EventDetailScreen({ route, navigation }: Props) {
   const [lateLeaveModalVisible, setLateLeaveModalVisible] = useState(false);
   const [passModalVisible, setPassModalVisible] = useState(false);
   const [passQrSvg, setPassQrSvg] = useState<string | null>(null);
+  const [scanCelebration, setScanCelebration] = useState<{
+    type: 'CHECK_IN' | 'CHECK_OUT';
+    title: string;
+    message: string;
+    hours?: number;
+  } | null>(null);
   const [notifModalVisible, setNotifModalVisible] = useState(false);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const [locationModalVisible, setLocationModalVisible] = useState(false);
@@ -107,6 +117,7 @@ export default function EventDetailScreen({ route, navigation }: Props) {
   }, []);
 
   const { highAccuracyGps } = usePreferences();
+  const isFocused = useIsFocused();
 
   // Recover from a deep link / notification tap that arrives before the event has
   // synced. Event creation writes the event and its participating clubs in separate
@@ -206,6 +217,91 @@ export default function EventDetailScreen({ route, navigation }: Props) {
         });
     }
   }, [passModalVisible, user, userParticipation, event]);
+
+  const prevCheckedInAtRef = useRef<string | undefined>(undefined);
+  const prevCheckedOutAtRef = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (passModalVisible && userParticipation) {
+      const wasCheckedIn = !!prevCheckedInAtRef.current;
+      const isCheckedInNow = !!userParticipation.checked_in_at || userParticipation.attendance_status === 'ATTENDED';
+      const wasCheckedOut = !!prevCheckedOutAtRef.current;
+      const isCheckedOutNow = !!userParticipation.checked_out_at;
+
+      // Realtime Transition to Checked-In while pass is open
+      if (!wasCheckedIn && isCheckedInNow && prevCheckedInAtRef.current !== undefined) {
+        try {
+          playAlertSound('CHIME');
+          Vibration.vibrate([0, 80, 50, 80]);
+        } catch {}
+        setScanCelebration({
+          type: 'CHECK_IN',
+          title: 'Checked-In Confirmed!',
+          message: 'Your on-site attendance has been verified. Welcome to the event!',
+        });
+        const timer = setTimeout(() => {
+          setPassModalVisible(false);
+          setScanCelebration(null);
+        }, 2500);
+        return () => clearTimeout(timer);
+      }
+
+      // Realtime Transition to Checked-Out while pass is open
+      if (!wasCheckedOut && isCheckedOutNow && prevCheckedOutAtRef.current !== undefined) {
+        const hours = calculateParticipantHours(userParticipation, event);
+        try {
+          playAlertSound('CHIME');
+          Vibration.vibrate([0, 80, 50, 80]);
+        } catch {}
+        setScanCelebration({
+          type: 'CHECK_OUT',
+          title: 'Check-Out Confirmed!',
+          message: `Departure finalized • ${hours} volunteer hr${hours === 1 ? '' : 's'} credited for the scoreboard!`,
+          hours,
+        });
+        const timer = setTimeout(() => {
+          setPassModalVisible(false);
+          setScanCelebration(null);
+        }, 2500);
+        return () => clearTimeout(timer);
+      }
+
+      prevCheckedInAtRef.current = userParticipation.checked_in_at;
+      prevCheckedOutAtRef.current = userParticipation.checked_out_at;
+    } else {
+      prevCheckedInAtRef.current = userParticipation?.checked_in_at;
+      prevCheckedOutAtRef.current = userParticipation?.checked_out_at;
+      setScanCelebration(null);
+    }
+  }, [passModalVisible, userParticipation?.checked_in_at, userParticipation?.checked_out_at, userParticipation?.attendance_status, event]);
+
+  useEffect(() => {
+    let originalBrightness: number | null = null;
+    let isCancelled = false;
+
+    if (passModalVisible) {
+      (async () => {
+        try {
+          // On Android and iOS, setBrightnessAsync adjusts the app's current window brightness
+          // without needing WRITE_SETTINGS. We deliberately do NOT call requestPermissionsAsync()
+          // to avoid launching Android's system settings screen.
+          originalBrightness = await Brightness.getBrightnessAsync();
+          if (!isCancelled && originalBrightness !== null) {
+            await Brightness.setBrightnessAsync(1.0);
+          }
+        } catch {
+          // Brightness adjustment may fail gracefully on unsupported environments
+        }
+      })();
+    }
+
+    return () => {
+      isCancelled = true;
+      if (originalBrightness !== null) {
+        Brightness.setBrightnessAsync(originalBrightness).catch(() => {});
+      }
+    };
+  }, [passModalVisible]);
 
   /**
    * The team grouped by club: each involved club, its role on the event, and the
@@ -534,10 +630,23 @@ export default function EventDetailScreen({ route, navigation }: Props) {
     }
   };
 
+
+
   const handleLeaveOrJoinEvent = () => {
     if (!user) return;
     // Joining/leaving a finished event is not allowed.
     if (event.status === 'COMPLETED' || event.status === 'CANCELLED') return;
+
+    // Once a member has checked in at the venue, they cannot "Leave Event" (which deletes their record).
+    // They must Check Out instead.
+    if (hasCheckedIn) {
+      if (!hasCheckedOut) {
+        handleCheckOut();
+      } else {
+        Alert.alert('Already Checked Out', 'You have already completed attendance and checked out of this event.');
+      }
+      return;
+    }
 
     if (isLeaveLocked) {
       setLateLeaveModalVisible(true);
@@ -708,12 +817,20 @@ export default function EventDetailScreen({ route, navigation }: Props) {
 
         <View style={styles.body}>
           {event.status === 'CANCELLED' && (
-            <View style={styles.cancelledBanner}>
+            <View
+              style={[
+                styles.cancelledBanner,
+                {
+                  backgroundColor: isNightMode ? 'rgba(239, 68, 68, 0.15)' : '#FEE2E2',
+                  borderColor: isNightMode ? 'rgba(239, 68, 68, 0.4)' : '#EF4444',
+                },
+              ]}
+            >
               <View style={styles.cancelledHeader}>
-                <Ionicons name="close-circle" size={20} color={colors.danger} />
-                <Text style={styles.cancelledTitle}>Event Cancelled</Text>
+                <Ionicons name="close-circle" size={20} color={isNightMode ? '#F87171' : colors.danger} />
+                <Text style={[styles.cancelledTitle, { color: isNightMode ? '#F87171' : colors.danger }]}>Event Cancelled</Text>
               </View>
-              <Text style={styles.cancelledSub}>
+              <Text style={[styles.cancelledSub, { color: isNightMode ? themeColors.textMuted : '#991B1B' }]}>
                 {(() => {
                   if (event.cancellation_reason?.trim()) {
                     return `Reason: ${event.cancellation_reason.trim()}`;
@@ -740,12 +857,20 @@ export default function EventDetailScreen({ route, navigation }: Props) {
           )}
 
           {event.status === 'COMPLETED' && (
-            <View style={styles.completedPointsBanner}>
+            <View
+              style={[
+                styles.completedPointsBanner,
+                {
+                  backgroundColor: isNightMode ? 'rgba(245, 158, 11, 0.12)' : '#FEF3C7',
+                  borderColor: isNightMode ? 'rgba(245, 158, 11, 0.35)' : '#F59E0B',
+                },
+              ]}
+            >
               <View style={styles.completedPointsHeader}>
-                <Ionicons name="trophy" size={20} color="#B45309" />
-                <Text style={styles.completedPointsTitle}>Event Completed & Scoreboard Points Released!</Text>
+                <Ionicons name="trophy" size={20} color={isNightMode ? themeColors.warning : '#B45309'} />
+                <Text style={[styles.completedPointsTitle, { color: isNightMode ? themeColors.warning : '#78350F' }]}>Event Completed & Scoreboard Points Released!</Text>
               </View>
-              <Text style={styles.completedPointsSub}>
+              <Text style={[styles.completedPointsSub, { color: isNightMode ? themeColors.textMuted : '#92400E' }]}>
                 {event.event_type === 'DISTRICT_EVENT'
                   ? '🏆 District Event: +500 PTS awarded to organizers, +200 PTS to attendees (+20 PTS/hr). Event details are locked.'
                   : '🎉 Standard Event: +100 PTS awarded to organizers, +50 PTS to attendees (+10 PTS/hr). Event details are locked.'}
@@ -754,12 +879,20 @@ export default function EventDetailScreen({ route, navigation }: Props) {
           )}
 
           {pendingInvitation && (
-            <View style={styles.inviteBanner}>
+            <View
+              style={[
+                styles.inviteBanner,
+                {
+                  backgroundColor: isNightMode ? themeColors.primary + '18' : colors.primary + '0D',
+                  borderColor: isNightMode ? themeColors.primary + '40' : colors.primary + '40',
+                },
+              ]}
+            >
               <View style={styles.approvalBannerHeader}>
-                <Ionicons name="mail-open" size={22} color={colors.primary} />
-                <Text style={styles.inviteTitle}>You're Invited</Text>
+                <Ionicons name="mail-open" size={22} color={themeColors.primary} />
+                <Text style={[styles.inviteTitle, { color: themeColors.primary }]}>You're Invited</Text>
               </View>
-              <Text style={styles.approvalSub}>
+              <Text style={[styles.approvalSub, { color: themeColors.textMuted }]}>
                 {inviter ? `${inviter.full_name} invited you to this event.` : 'You were invited to this event.'} Respond below to confirm your slot.
               </Text>
               <View style={styles.approvalActions}>
@@ -767,7 +900,16 @@ export default function EventDetailScreen({ route, navigation }: Props) {
                   <Ionicons name="checkmark-circle" size={16} color="#fff" />
                   <Text style={styles.approveBtnText}>Accept Invitation</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.declineBtn} onPress={() => setInviteDeclineVisible(true)}>
+                <TouchableOpacity
+                  style={[
+                    styles.declineBtn,
+                    {
+                      backgroundColor: isNightMode ? 'rgba(239, 68, 68, 0.15)' : 'transparent',
+                      borderColor: colors.danger,
+                    },
+                  ]}
+                  onPress={() => setInviteDeclineVisible(true)}
+                >
                   <Ionicons name="close-circle" size={16} color={colors.danger} />
                   <Text style={styles.declineBtnText}>Decline</Text>
                 </TouchableOpacity>
@@ -776,16 +918,24 @@ export default function EventDetailScreen({ route, navigation }: Props) {
           )}
 
           {event.status === 'PENDING_APPROVAL' && (
-            <View style={styles.approvalBanner}>
+            <View
+              style={[
+                styles.approvalBanner,
+                {
+                  backgroundColor: isNightMode ? 'rgba(245, 158, 11, 0.12)' : '#FFFDF0',
+                  borderColor: isNightMode ? 'rgba(245, 158, 11, 0.35)' : '#FFE866',
+                },
+              ]}
+            >
               <View style={styles.approvalBannerHeader}>
-                <Ionicons name="time" size={22} color={colors.warning} />
-                <Text style={styles.approvalTitle}>
+                <Ionicons name="time" size={22} color={themeColors.warning} />
+                <Text style={[styles.approvalTitle, { color: isNightMode ? themeColors.warning : '#78350F' }]}>
                   {isDistrictEvent
                     ? (canApprove ? 'District Admin Approval Needed' : 'Awaiting District Admin Approval')
                     : (canApprove ? 'Club President Approval Needed' : 'Awaiting Club President Approval')}
                 </Text>
               </View>
-              <Text style={styles.approvalSub}>
+              <Text style={[styles.approvalSub, { color: themeColors.textMuted }]}>
                 {isDistrictEvent
                   ? (canApprove
                       ? 'A Rotaractor submitted this District Event. Review and approve to publish across District 3800.'
@@ -883,7 +1033,16 @@ export default function EventDetailScreen({ route, navigation }: Props) {
                     <Ionicons name="checkmark-circle" size={16} color="#fff" />
                     <Text style={styles.approveBtnText}>Approve Event</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.declineBtn} onPress={handleReject}>
+                  <TouchableOpacity
+                    style={[
+                      styles.declineBtn,
+                      {
+                        backgroundColor: isNightMode ? 'rgba(239, 68, 68, 0.15)' : 'transparent',
+                        borderColor: colors.danger,
+                      },
+                    ]}
+                    onPress={handleReject}
+                  >
                     <Ionicons name="close-circle" size={16} color={colors.danger} />
                     <Text style={styles.declineBtnText}>Decline</Text>
                   </TouchableOpacity>
@@ -1019,20 +1178,6 @@ export default function EventDetailScreen({ route, navigation }: Props) {
             />
             <InfoRow icon="business-outline" text={event.city} />
 
-            <View style={[styles.geofenceZoneBadge, { backgroundColor: isNightMode ? themeColors.surface : '#FDF2F8', borderColor: isNightMode ? themeColors.border : '#F9D6E5' }]}>
-              <View style={[styles.geofenceIconWrap, { backgroundColor: '#D41367' + '18' }]}>
-                <Ionicons name="shield-checkmark" size={16} color="#D41367" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.geofenceZoneTitle, { color: themeColors.text }]}>
-                  Check-In Zone: {getEventGeofenceRadius(event)}m Perimeter
-                </Text>
-                <Text style={[styles.geofenceZoneSub, { color: themeColors.textMuted }]}>
-                  Arrival within this perimeter during event hours triggers auto check-in.
-                </Text>
-              </View>
-            </View>
-
             {!isGpsEnabled && isJoined && (
               <TouchableOpacity
                 style={[styles.gpsWarningPill, { backgroundColor: isNightMode ? themeColors.cardBg : '#FFFBEB', borderColor: isNightMode ? themeColors.border : '#FCD34D' }]}
@@ -1044,7 +1189,7 @@ export default function EventDetailScreen({ route, navigation }: Props) {
                     Location Services Disabled
                   </Text>
                   <Text style={[styles.gpsWarningSub, { color: themeColors.textMuted }]}>
-                    Tap to enable GPS for automatic on-premise check-in.
+                    Enable GPS for 1-tap on-site verified check-in.
                   </Text>
                 </View>
                 <Ionicons name="chevron-forward" size={14} color="#D97706" />
@@ -1459,24 +1604,63 @@ export default function EventDetailScreen({ route, navigation }: Props) {
                 </View>
               </TouchableOpacity>
 
-              {/* Action 2: Join / Leave / Cancel Request */}
+              {/* Action 2: Join / Leave / Cancel Request / Check Out */}
               <TouchableOpacity
                 style={[styles.sheetActionItem, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}
                 onPress={() => {
                   setActionModalVisible(false);
-                  setTimeout(() => handleLeaveOrJoinEvent(), 300);
+                  if (hasCheckedIn) {
+                    if (!hasCheckedOut) {
+                      setTimeout(() => handleCheckOut(), 300);
+                    }
+                  } else {
+                    setTimeout(() => handleLeaveOrJoinEvent(), 300);
+                  }
                 }}
               >
-                <View style={[styles.sheetIconWrap, { backgroundColor: isJoined ? (isLeaveLocked ? (isNightMode ? '#334155' : '#475569') : colors.danger + '1A') : themeColors.primary + '1A' }]}>
+                <View style={[
+                  styles.sheetIconWrap,
+                  {
+                    backgroundColor: hasCheckedOut
+                      ? colors.success + '1A'
+                      : hasCheckedIn
+                      ? '#0284C71A'
+                      : isJoined
+                      ? (isLeaveLocked ? (isNightMode ? '#334155' : '#475569') : colors.danger + '1A')
+                      : themeColors.primary + '1A'
+                  }
+                ]}>
                   <Ionicons
-                    name={isJoined ? (isLeaveLocked ? 'lock-closed' : 'log-out-outline') : isPending ? 'time-outline' : 'add-circle'}
+                    name={
+                      hasCheckedOut
+                        ? 'checkmark-done-circle'
+                        : hasCheckedIn
+                        ? 'log-out-outline'
+                        : isJoined
+                        ? (isLeaveLocked ? 'lock-closed' : 'log-out-outline')
+                        : isPending
+                        ? 'time-outline'
+                        : 'add-circle'
+                    }
                     size={20}
-                    color={isJoined ? (isLeaveLocked ? '#fff' : colors.danger) : themeColors.primary}
+                    color={
+                      hasCheckedOut
+                        ? colors.success
+                        : hasCheckedIn
+                        ? '#0284C7'
+                        : isJoined
+                        ? (isLeaveLocked ? '#fff' : colors.danger)
+                        : themeColors.primary
+                    }
                   />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.sheetItemTitle, { color: themeColors.text }]}>
-                    {isJoined
+                    {hasCheckedOut
+                      ? 'Checked Out'
+                      : hasCheckedIn
+                      ? 'Check Out of Event'
+                      : isJoined
                       ? isLeaveLocked
                         ? `Leave Event (Locked)`
                         : 'Leave Event'
@@ -1487,7 +1671,11 @@ export default function EventDetailScreen({ route, navigation }: Props) {
                       : 'Join Event'}
                   </Text>
                   <Text style={[styles.sheetItemSub, { color: themeColors.textMuted }]}>
-                    {isJoined
+                    {hasCheckedOut
+                      ? 'Your attendance and volunteer hours have been recorded.'
+                      : hasCheckedIn
+                      ? 'Conclude your on-site attendance and finalize service hours.'
+                      : isJoined
                       ? isLeaveLocked
                         ? `Locked within ${cutoffHours}h of event start time.`
                         : 'Remove yourself from the event roster.'
@@ -1763,22 +1951,28 @@ export default function EventDetailScreen({ route, navigation }: Props) {
                   styles.passStatusBadge,
                   {
                     backgroundColor:
-                      userParticipation.attendance_status === 'ATTENDED' || userParticipation.checked_in_at
-                        ? themeColors.success + '20'
+                      userParticipation.checked_out_at
+                        ? colors.success + '20'
+                        : userParticipation.attendance_status === 'ATTENDED' || userParticipation.checked_in_at
+                        ? '#0284C720'
                         : themeColors.primary + '20',
                   },
                 ]}
               >
                 <Ionicons
                   name={
-                    userParticipation.attendance_status === 'ATTENDED' || userParticipation.checked_in_at
+                    userParticipation.checked_out_at
+                      ? 'checkmark-done-circle'
+                      : userParticipation.attendance_status === 'ATTENDED' || userParticipation.checked_in_at
                       ? 'checkmark-circle'
                       : 'ticket'
                   }
                   size={14}
                   color={
-                    userParticipation.attendance_status === 'ATTENDED' || userParticipation.checked_in_at
-                      ? themeColors.success
+                    userParticipation.checked_out_at
+                      ? colors.success
+                      : userParticipation.attendance_status === 'ATTENDED' || userParticipation.checked_in_at
+                      ? '#0284C7'
                       : themeColors.primary
                   }
                 />
@@ -1787,32 +1981,155 @@ export default function EventDetailScreen({ route, navigation }: Props) {
                     styles.passStatusBadgeText,
                     {
                       color:
-                        userParticipation.attendance_status === 'ATTENDED' || userParticipation.checked_in_at
-                          ? themeColors.success
+                        userParticipation.checked_out_at
+                          ? colors.success
+                          : userParticipation.attendance_status === 'ATTENDED' || userParticipation.checked_in_at
+                          ? '#0284C7'
                           : themeColors.primary,
                     },
                   ]}
                 >
-                  {userParticipation.attendance_status === 'ATTENDED' || userParticipation.checked_in_at
-                    ? 'VERIFIED'
+                  {userParticipation.checked_out_at
+                    ? 'CHECKED OUT'
+                    : userParticipation.attendance_status === 'ATTENDED' || userParticipation.checked_in_at
+                    ? 'CHECKED IN'
                     : 'REGISTERED'}
                 </Text>
               </View>
             </View>
 
-            {/* Dynamic Event Pass QR Code */}
-            <View style={styles.passQrWrapper}>
-              <View style={[styles.passQrBox, { backgroundColor: '#fff', borderColor: themeColors.border }]}>
-                {passQrSvg ? (
-                  <SvgXml xml={passQrSvg} width={150} height={150} />
-                ) : (
-                  <ActivityIndicator size="small" color={themeColors.primary} />
-                )}
+            {/* Live Attendance & Duration Activity Box */}
+            {userParticipation.checked_in_at && (
+              <View style={[styles.passAttendanceBox, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}>
+                <View style={styles.passAttendanceRow}>
+                  <View style={styles.passAttendanceCol}>
+                    <Text style={[styles.passInfoLabel, { color: themeColors.textMuted }]}>CHECK-IN TIME</Text>
+                    <Text style={[styles.passInfoVal, { color: themeColors.text }]}>
+                      {formatTime(new Date(userParticipation.checked_in_at))}
+                    </Text>
+                  </View>
+                  <View style={styles.passAttendanceCol}>
+                    <Text style={[styles.passInfoLabel, { color: themeColors.textMuted }]}>
+                      {userParticipation.checked_out_at ? 'CHECK-OUT TIME' : 'LIVE STATUS'}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.passInfoVal,
+                        { color: userParticipation.checked_out_at ? themeColors.text : '#0284C7' },
+                      ]}
+                    >
+                      {userParticipation.checked_out_at
+                        ? formatTime(new Date(userParticipation.checked_out_at))
+                        : '● Live On-Site'}
+                    </Text>
+                  </View>
+                </View>
+                <View style={[styles.passDurationPill, { backgroundColor: userParticipation.checked_out_at ? colors.success + '18' : '#0284C718' }]}>
+                  <Ionicons
+                    name={userParticipation.checked_out_at ? 'trophy-outline' : 'time-outline'}
+                    size={13}
+                    color={userParticipation.checked_out_at ? colors.success : '#0284C7'}
+                  />
+                  <Text
+                    style={[
+                      styles.passDurationText,
+                      { color: userParticipation.checked_out_at ? colors.success : '#0284C7' },
+                    ]}
+                  >
+                    {userParticipation.checked_out_at
+                      ? `${calculateParticipantHours(userParticipation, event)} volunteer hours finalized`
+                      : (() => {
+                          const inMs = new Date(userParticipation.checked_in_at).getTime();
+                          const elapsedMs = Math.max(0, Date.now() - inMs);
+                          const elapsedH = Math.floor(elapsedMs / 3600000);
+                          const elapsedM = Math.floor((elapsedMs % 3600000) / 60000);
+                          return `${elapsedH > 0 ? `${elapsedH}h ${elapsedM}m` : `${elapsedM}m`} in progress`;
+                        })()}
+                  </Text>
+                </View>
               </View>
-              <Text style={[styles.passQrInstruction, { color: themeColors.textMuted }]}>
-                Present this QR code to event organizers for instant Check-In & Check-Out
-              </Text>
-            </View>
+            )}
+
+            {/* Live Scan Celebration Overlay or Dynamic Event Pass QR Code */}
+            {scanCelebration ? (
+              <View
+                style={[
+                  styles.passCelebrationBox,
+                  {
+                    backgroundColor:
+                      scanCelebration.type === 'CHECK_IN'
+                        ? isNightMode
+                          ? 'rgba(16, 185, 129, 0.15)'
+                          : '#ECFDF5'
+                        : isNightMode
+                        ? 'rgba(2, 132, 199, 0.15)'
+                        : '#F0F9FF',
+                    borderColor: scanCelebration.type === 'CHECK_IN' ? colors.success : '#0284C7',
+                  },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.passCelebrationIconWrap,
+                    {
+                      backgroundColor:
+                        scanCelebration.type === 'CHECK_IN'
+                          ? colors.success + '22'
+                          : '#0284C722',
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name={
+                      scanCelebration.type === 'CHECK_IN'
+                        ? 'checkmark-circle'
+                        : 'checkmark-done-circle'
+                    }
+                    size={36}
+                    color={scanCelebration.type === 'CHECK_IN' ? colors.success : '#0284C7'}
+                  />
+                </View>
+                <Text
+                  style={[
+                    styles.passCelebrationTitle,
+                    { color: scanCelebration.type === 'CHECK_IN' ? colors.success : '#0284C7' },
+                  ]}
+                >
+                  {scanCelebration.title}
+                </Text>
+                <Text style={[styles.passCelebrationSub, { color: themeColors.textMuted }]}>
+                  {scanCelebration.message}
+                </Text>
+                <TouchableOpacity
+                  style={[
+                    styles.passCelebrationBtn,
+                    {
+                      backgroundColor:
+                        scanCelebration.type === 'CHECK_IN' ? colors.success : '#0284C7',
+                    },
+                  ]}
+                  onPress={() => {
+                    setPassModalVisible(false);
+                    setScanCelebration(null);
+                  }}
+                >
+                  <Text style={styles.passCelebrationBtnText}>Done</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={styles.passQrWrapper}>
+                <View style={[styles.passQrBox, { backgroundColor: '#fff', borderColor: themeColors.border }]}>
+                  {passQrSvg ? (
+                    <SvgXml xml={passQrSvg} width={150} height={150} />
+                  ) : (
+                    <ActivityIndicator size="small" color={themeColors.primary} />
+                  )}
+                </View>
+                <Text style={[styles.passQrInstruction, { color: themeColors.textMuted }]}>
+                  Present this QR code to event organizers for instant Check-In & Check-Out
+                </Text>
+              </View>
+            )}
           </View>
         )}
       </BottomSheet>
@@ -2056,6 +2373,11 @@ const styles = StyleSheet.create({
   passTokenVal: { fontSize: 14, fontWeight: '900', letterSpacing: 1 },
   passStatusBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 8 },
   passStatusBadgeText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
+  passAttendanceBox: { marginTop: 10, padding: 12, borderRadius: 12, borderWidth: 1, gap: 8 },
+  passAttendanceRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
+  passAttendanceCol: { flex: 1 },
+  passDurationPill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, alignSelf: 'flex-start' },
+  passDurationText: { fontSize: 11, fontWeight: '700' },
   passQrWrapper: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -2079,6 +2401,45 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     maxWidth: 240,
     lineHeight: 15,
+  },
+  passCelebrationBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    marginTop: 16,
+    gap: 8,
+  },
+  passCelebrationIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  passCelebrationTitle: {
+    fontSize: 17,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  passCelebrationSub: {
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
+    maxWidth: 260,
+  },
+  passCelebrationBtn: {
+    marginTop: 10,
+    paddingHorizontal: 28,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+  passCelebrationBtnText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '800',
   },
 
   // Geofence Zone Badge

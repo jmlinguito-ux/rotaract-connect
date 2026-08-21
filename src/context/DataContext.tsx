@@ -26,7 +26,6 @@ import {
   notifyAttendance,
   updateBadgeCount,
 } from '../services/notifications';
-import { syncEventGeofences } from '../services/backgroundGeofencing';
 import { stopAlertSound } from '../services/sound';
 
 export type CheckInRecord = {
@@ -358,18 +357,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
     updateBadgeCount(unread);
   }, [notifications, isAuthenticated, authUser]);
 
-  // Sync OS-level native geofences for upcoming joined events (powers closed-app check-in)
-  useEffect(() => {
-    if (!isAuthenticated || !authUser) return;
-    const myJoinedEventIds = new Set(
-      participants
-        .filter(p => p.user_id === authUser.id && (p.status === 'JOINED' || p.attendance_status === 'ATTENDED'))
-        .map(p => p.event_id)
-    );
-    const myJoinedEvents = events.filter(e => myJoinedEventIds.has(e.id));
-    syncEventGeofences(myJoinedEvents);
-  }, [participants, events, isAuthenticated, authUser]);
-
+  // Sync OS-level native geofences for upcoming joined events (powers closed-app check-in).
+  //
+  // `participants`/`events` get new array references on EVERY realtime reload —
   // Drain offline check-in queue on mount, auth ready, and app resume
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -1104,6 +1094,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
    * the participant was, so an organizer can audit it later.
    */
   const checkIn = useCallback((participantId: string, at: CheckInRecord) => {
+    // Idempotency guard: callers (esp. auto check-in, which re-evaluates on every
+    // realtime data refresh) must be able to call this speculatively without a
+    // second call re-writing the row or firing a second "Checked In" notification.
+    const already = participants.find(p => p.id === participantId);
+    if (already?.checked_in_at || already?.attendance_status === 'ATTENDED') return;
+
     const updates: Partial<EventParticipant> = {
       attendance_status: 'ATTENDED',
       checked_in_at: at.checkedInAt,
@@ -1147,6 +1143,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, [participants, events, users]);
 
   const checkOut = useCallback((participantId: string, at: CheckOutRecord) => {
+    // Same idempotency guard as checkIn — see its comment.
+    const already = participants.find(p => p.id === participantId);
+    if (already?.checked_out_at) return;
+
     const updates: Partial<EventParticipant> = {
       checked_out_at: at.checkedOutAt,
       check_out_latitude: at.latitude,

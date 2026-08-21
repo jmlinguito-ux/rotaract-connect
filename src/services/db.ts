@@ -415,9 +415,44 @@ export const db = {
     reportError('insertParticipant', (await supabase.from('event_participants').upsert(p, { onConflict: 'event_id,user_id' })).error);
   },
   updateParticipant: async (id: string, updates: Partial<EventParticipant>): Promise<boolean> => {
-    const { error } = await supabase.from('event_participants').update(updates).eq('id', id);
+    // Try direct table update first
+    const { error, data } = await supabase.from('event_participants').update(updates).eq('id', id).select('id');
+    if (!error && data && data.length > 0) {
+      return true;
+    }
+
+    // If direct update had RLS restrictions, try secure RPC function
+    try {
+      const { data: rpcRes, error: rpcErr } = await supabase.rpc('record_event_attendance', {
+        p_participant_id: id,
+        p_attendance_status: updates.attendance_status ?? null,
+        p_checked_in_at: updates.checked_in_at ?? null,
+        p_check_in_lat: updates.check_in_latitude ?? null,
+        p_check_in_lng: updates.check_in_longitude ?? null,
+        p_check_in_dist: updates.check_in_distance_m ?? null,
+        p_check_in_method: updates.check_in_method ?? null,
+        p_checked_out_at: updates.checked_out_at ?? null,
+        p_check_out_lat: updates.check_out_latitude ?? null,
+        p_check_out_lng: updates.check_out_longitude ?? null,
+        p_check_out_dist: updates.check_out_distance_m ?? null,
+        p_check_out_method: updates.check_out_method ?? null,
+      });
+      if (!rpcErr && (rpcRes as any)?.success) {
+        return true;
+      }
+    } catch {}
+
+    // Fallback: If enum 'ORGANIZER_QR' failed on legacy DB schema, retry with 'ORGANIZER'
+    if (updates.check_in_method === 'ORGANIZER_QR') {
+      const fallbackUpdates = { ...updates, check_in_method: 'ORGANIZER' as const };
+      const { error: fbErr, data: fbData } = await supabase.from('event_participants').update(fallbackUpdates).eq('id', id).select('id');
+      if (!fbErr && fbData && fbData.length > 0) {
+        return true;
+      }
+    }
+
     reportError('updateParticipant', error);
-    return !error;
+    return false;
   },
   deleteParticipant: async (eventId: string, userId: string) => {
     reportError('deleteParticipant', (await supabase.from('event_participants').delete().eq('event_id', eventId).eq('user_id', userId)).error);

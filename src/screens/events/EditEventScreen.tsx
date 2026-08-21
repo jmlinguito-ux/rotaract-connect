@@ -532,7 +532,7 @@ export default function EditEventScreen({ route, navigation }: Props) {
               {/* Check-In Geofence Perimeter Radius */}
               <Text style={styles.label}>Check-In Geofence Perimeter</Text>
               <Text style={styles.subHint}>
-                Participants entering this {geofenceRadius}m radius during the event window will check in automatically.
+                Participants within this {geofenceRadius}m radius can verify attendance with 1-tap GPS check-in.
               </Text>
               <View style={styles.radiusPillsRow}>
                 {[

@@ -20,6 +20,8 @@ import { useData } from '../../context/DataContext';
 import { useToast } from '../../context/ToastContext';
 import { exportUserDataArchive } from '../../utils/csvExport';
 import { isSafetyNetworkEnabled, setSafetyNetworkEnabled } from '../../services/backgroundLocation';
+import * as Location from 'expo-location';
+import { LocationPermissionModal } from '../../components/location/LocationPermissionModal';
 import { registerForPushNotificationsAsync } from '../../services/notifications';
 import AppModalKeyboardWrapper from '../../components/keyboard/AppModalKeyboardWrapper';
 import { Club } from '../../types';
@@ -38,6 +40,8 @@ export default function SettingsScreen({ navigation }: Props) {
   React.useEffect(() => {
     isSafetyNetworkEnabled().then(setSafetyNetworkActive);
   }, []);
+
+  const [locationModalVisible, setLocationModalVisible] = useState(false);
 
   const handleToggleSafetyNetwork = async (val: boolean) => {
     setSafetyNetworkActive(val);
@@ -657,24 +661,6 @@ export default function SettingsScreen({ navigation }: Props) {
             <View style={dividerStyle} />
 
             <View style={styles.row}>
-              <View style={[styles.rowIconWrap, { backgroundColor: themeColors.primary + '1A' }]}>
-                <Ionicons name="location-outline" size={18} color={themeColors.primary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={titleStyle}>Auto Check-In</Text>
-                <Text style={subStyle}>Check in automatically when you reach the venue during the check-in window</Text>
-              </View>
-              <Switch
-                value={autoCheckIn}
-                onValueChange={setAutoCheckIn}
-                trackColor={{ false: themeColors.border, true: themeColors.primary }}
-                thumbColor="#fff"
-              />
-            </View>
-
-            <View style={dividerStyle} />
-
-            <View style={styles.row}>
               <View style={[styles.rowIconWrap, { backgroundColor: '#EF4444' + '1A' }]}>
                 <Ionicons name="shield-half-outline" size={18} color="#EF4444" />
               </View>
@@ -1205,6 +1191,12 @@ export default function SettingsScreen({ navigation }: Props) {
         currentSignature={user.signature_url}
         onClose={() => setSignatureModalVisible(false)}
         onSave={handleSaveSignature}
+      />
+
+      {/* 📍 Location permission modal */}
+      <LocationPermissionModal
+        visible={locationModalVisible}
+        onClose={() => setLocationModalVisible(false)}
       />
     </SafeAreaView>
   );
