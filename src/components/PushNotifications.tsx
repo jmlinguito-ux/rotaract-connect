@@ -63,10 +63,17 @@ export function PushNotifications() {
   // Sign-OUT removal is handled in AuthContext.signOut, which deletes the token
   // BEFORE clearing the session (the delete is RLS-scoped to auth.uid()); doing it
   // reactively here would run after the session is gone and silently delete nothing.
+  const isRegistering = useRef(false);
   useEffect(() => {
     if (!loaded || !user) return;
     if (pushEnabled) {
-      registerForPushNotificationsAsync(user.id);
+      // Guard against concurrent calls — React Strict Mode / fast re-renders can
+      // cause this effect to fire twice before the first async call completes.
+      if (isRegistering.current) return;
+      isRegistering.current = true;
+      registerForPushNotificationsAsync(user.id).finally(() => {
+        isRegistering.current = false;
+      });
     } else {
       // Push turned off while still signed in — remove the token (still authenticated).
       unregisterPushTokenAsync();

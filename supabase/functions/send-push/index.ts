@@ -115,30 +115,20 @@ Deno.serve(async (req) => {
   // can send — a cold start can exceed that, and when pg_net cancels the request the
   // send dies with it. waitUntil keeps the work alive past the response, so delivery
   // no longer races the webhook timeout.
-  const work = (async () => {
-    for (const plan of plans) {
-      if (plan.recipients.length === 0) continue;
-      // Claimed before sending, so a webhook retry stops here instead of buzzing
-      // everyone a second time.
-      if (!(await claimDelivery(supabase, plan.content.dedupeKey))) continue;
-      try {
-        const result = await deliver(supabase, plan.recipients, plan.content);
-        console.log(`[send-push] ${plan.content.type} → sent ${result.sent}, pruned ${result.pruned}`);
-      } catch (e) {
-        console.error('[send-push] delivery threw', e);
-      }
+  for (const plan of plans) {
+    if (plan.recipients.length === 0) continue;
+    // Claimed before sending, so a webhook retry stops here instead of buzzing
+    // everyone a second time.
+    if (!(await claimDelivery(supabase, plan.content.dedupeKey))) continue;
+    try {
+      const result = await deliver(supabase, plan.recipients, plan.content);
+      console.log(`[send-push] ${plan.content.type} → sent ${result.sent}, pruned ${result.pruned}`);
+    } catch (e) {
+      console.error('[send-push] delivery threw', e);
     }
-  })();
-
-  // @ts-ignore — EdgeRuntime is provided by the Supabase Edge Functions runtime.
-  if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime?.waitUntil) {
-    // @ts-ignore
-    EdgeRuntime.waitUntil(work);
-  } else {
-    await work;   // local / non-Supabase runtime
   }
 
-  return json({ accepted: plans.length }, 202);
+  return json({ accepted: plans.length, success: true }, 200);
 });
 
 interface Plan {
@@ -634,7 +624,27 @@ async function sendViaFcm(tokens: string[], c: PushContent): Promise<string[]> {
               method: 'POST',
               headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                message: { token: deviceToken, data, android: { priority: 'HIGH' } },
+                message: {
+                  token: deviceToken,
+                  notification: {
+                    title: c.title,
+                    body: c.body,
+                  },
+                  data,
+                  android: {
+                    priority: 'HIGH',
+                    notification: {
+                      channel_id: c.channelId,
+                      sound: c.sound,
+                      color: '#D41367',
+                      default_sound: true,
+                      default_vibrate_timings: true,
+                      notification_priority: 'PRIORITY_MAX',
+                      visibility: 'PUBLIC',
+                      ...(c.collapseKey ? { tag: c.collapseKey } : {}),
+                    },
+                  },
+                },
               }),
             },
           );
@@ -755,34 +765,23 @@ async function deliver(
   }
 
   for (const [, userTokens] of userTokensMap) {
-    const androidFcm = userTokens.find((t) => t.platform === 'android' && t.device_token);
-    if (androidFcm?.device_token) {
-      fcmTokenSet.add(androidFcm.device_token);
-    } else {
-      // Pick the latest token for this user
-      const latestToken = userTokens[userTokens.length - 1];
-      if (latestToken?.token && !seenExpoTokens.has(latestToken.token)) {
-        seenExpoTokens.add(latestToken.token);
-        expoTargets.push({ token: latestToken.token, platform: latestToken.platform });
+    for (const t of userTokens) {
+      if (t.token && !seenExpoTokens.has(t.token)) {
+        seenExpoTokens.add(t.token);
+        expoTargets.push({ token: t.token, platform: t.platform });
       }
     }
   }
 
-  const fcmTokens = Array.from(fcmTokenSet);
-  const staleDeviceTokens = fcmTokens.length ? await sendViaFcm(fcmTokens, c) : [];
   const staleExpoTokens = expoTargets.length ? await sendViaExpo(expoTargets, c) : [];
 
-  // Prune what the providers say is dead so we stop paying to send to it.
-  if (staleDeviceTokens.length) {
-    await supabase.from('push_tokens').delete().in('device_token', staleDeviceTokens);
-  }
+  // Prune dead tokens so we stop sending to them.
   if (staleExpoTokens.length) {
     await supabase.from('push_tokens').delete().in('token', staleExpoTokens);
   }
 
-  const attempted = fcmTokens.length + expoTargets.length;
-  const pruned = staleDeviceTokens.length + staleExpoTokens.length;
-  return { sent: attempted - pruned, pruned };
+  const pruned = staleExpoTokens.length;
+  return { sent: expoTargets.length - pruned, pruned };
 }
 
 /** Expo push service delivery. Returns the Expo tokens Expo says are dead. */
@@ -799,6 +798,11 @@ async function sendViaExpo(
     // there too would add a second, duplicate set of buttons. iOS still needs it.
     ...(platform === 'ios' ? { categoryId: c.categoryId } : {}),
     priority: 'high',
+    // _contentAvailable wakes a killed/backgrounded app on both FCM and APNs so the
+    // OS delivers the notification even when the app is fully closed.
+    _contentAvailable: true,
+    // Show the banner even if the app is in the foreground when the push arrives.
+    _displayInForeground: true,
 
     // --- Android (only reached by devices without a registered device token) ---
     channelId: c.channelId,

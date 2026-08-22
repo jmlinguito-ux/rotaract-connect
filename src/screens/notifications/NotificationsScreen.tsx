@@ -15,6 +15,7 @@ import { SwipeableRow } from '../../components/SwipeableRow';
 import { BottomSheet } from '../../components/BottomSheet';
 import UserAvatar from '../../components/UserAvatar';
 import { dispatchLocalAlert } from '../../services/emergencyBroadcast';
+import { stopAlertSound } from '../../services/sound';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Notifications'>;
 
@@ -83,6 +84,7 @@ export default function NotificationsScreen({ navigation }: Props) {
   const [confirmDeleteAllVisible, setConfirmDeleteAllVisible] = useState(false);
 
   React.useEffect(() => {
+    stopAlertSound();
     if (user) {
       markNotificationsRead(user.id);
     }

@@ -27,7 +27,7 @@ import { useToast } from '../../context/ToastContext';
 import RotaractNotifications from '../../../modules/rotaract-notifications';
 import { formatTime } from '../../utils/timeFormat';
 import { DirectMessage } from '../../types';
-import { stopAlertSound } from '../../services/sound';
+import { stopAlertSound, setActiveChatConversation } from '../../services/sound';
 import { useKeyboardOffset } from '../../components/keyboard/useKeyboardOffset';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Chat'>;
@@ -177,10 +177,13 @@ export default function ChatScreen({ route, navigation }: Props) {
   const isArchived = !!event && (event.status === 'COMPLETED' || event.status === 'CANCELLED');
   const isOrganizer = !!user && !!event && (
     user.id === event.organizer_user_id ||
-    (user.role === 'CLUB_PRESIDENT' && user.club_id === event.organizing_club_id) ||
+    event.co_organizer_user_ids?.includes(user.id) ||
+    (user.role === 'CLUB_PRESIDENT' && (user.club_id === event.organizing_club_id || event.participating_club_ids?.includes(user.club_id))) ||
     user.role === 'APP_ADMIN' ||
     user.position === 'App Admin' ||
-    user.role === 'DISTRICT_ADMIN'
+    user.role === 'DISTRICT_ADMIN' ||
+    user.system_role === 'DISTRICT_ADMIN' ||
+    user.system_role === 'APP_ADMIN'
   );
 
   const latestAnnouncement = useMemo(() => {
@@ -219,19 +222,29 @@ export default function ChatScreen({ route, navigation }: Props) {
   // cleanup at all and a stuck flag suppresses this conversation's notifications
   // entirely. Native also expires it, so the two guard each other.
   useEffect(() => {
-    if (!isFocused) return;
+    if (!isFocused) {
+      setActiveChatConversation(null);
+      return;
+    }
     stopAlertSound();
+    setActiveChatConversation(conversationId);
     const assert = () => RotaractNotifications?.setActiveConversation(conversationId);
     assert();
     const heartbeat = setInterval(assert, 60_000);
     const sub = AppState.addEventListener('change', state => {
-      if (state === 'active') assert();
-      else RotaractNotifications?.setActiveConversation(null);
+      if (state === 'active') {
+        assert();
+        setActiveChatConversation(conversationId);
+      } else {
+        RotaractNotifications?.setActiveConversation(null);
+        setActiveChatConversation(null);
+      }
     });
     return () => {
       clearInterval(heartbeat);
       sub.remove();
       RotaractNotifications?.setActiveConversation(null);
+      setActiveChatConversation(null);
     };
   }, [isFocused, conversationId]);
   const typingThrottle = useRef<number>(0);

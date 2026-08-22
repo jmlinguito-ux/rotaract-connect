@@ -25,22 +25,9 @@ function resolveProjectId(): string | undefined {
   );
 }
 
-// The OS notification is the only banner the app has — there is no React-rendered
-// one any more — so it must show in the foreground too.
-//
-// Chat notifications suppress themselves for the conversation currently on screen,
-// but that decision is made NATIVELY (ChatScreen reports the active conversation to
-// RotaractNotifications) so it holds in the states where this JS handler never runs.
-if (Platform.OS !== 'web') {
-  Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowBanner: true,
-      shouldShowList: true,
-      shouldPlaySound: true,
-      shouldSetBadge: true,
-    }),
-  });
-}
+// Foreground notification display is configured in notifications.ts.
+// setNotificationHandler must only be called once — a second call here would
+// override shouldPlaySound:false there and cause duplicate sounds.
 
 /**
  * Sets Android notification channels. Call once at startup.
@@ -226,70 +213,95 @@ export async function configurePushNotifications() {
  * for the signed-in user. No-op on web and on simulators without push support.
  * Returns the token, or null if push can't be enabled on this device.
  */
-export async function registerForPushNotificationsAsync(userId: string): Promise<string | null> {
+export async function registerForPushNotificationsAsync(userId: string, retries = 3): Promise<string | null> {
   if (Platform.OS === 'web') return null;
-  if (!Device.isDevice) return null; // push tokens require a physical device
+  if (!Device.isDevice) {
+    console.warn('[push] Not a physical device — skipping token registration');
+    return null;
+  }
+
+  console.log('[push] Starting token registration for user:', userId);
 
   const existing = await Notifications.getPermissionsAsync();
   let status = existing.status;
+  console.log('[push] Current permission status:', status);
   if (status !== 'granted') {
     status = (await Notifications.requestPermissionsAsync()).status;
+    console.log('[push] After request, permission status:', status);
   }
-  if (status !== 'granted') return null; // respect the device-level permission
+  if (status !== 'granted') {
+    console.warn('[push] Permission denied — cannot register push token');
+    return null;
+  }
 
   const projectId = resolveProjectId();
+  console.log('[push] Resolved projectId:', projectId);
   if (!projectId) {
     console.warn('[push] no EAS projectId — cannot fetch an Expo push token');
     return null;
   }
 
-  try {
-    const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId });
-    currentToken = token;
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    console.log(`[push] getExpoPushTokenAsync attempt ${attempt}/${retries}`);
+    try {
+      const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId });
+      currentToken = token;
+      console.log('[push] ✅ Got Expo push token:', token.substring(0, 30) + '...');
 
-    // Android additionally registers its RAW FCM token. The server sends Android a
-    // data-only FCM message so the native conversation builder actually runs —
-    // Firebase hands a message to the app only when it carries no `notification`
-    // block, and the Expo push service always includes one. iOS keeps using the
-    // Expo token (APNs), so this is null there.
-    let deviceToken: string | null = null;
-    if (Platform.OS === 'android') {
+      // Android additionally registers its RAW FCM token if available
+      let deviceToken: string | null = null;
+      if (Platform.OS === 'android') {
+        try {
+          deviceToken = String((await Notifications.getDevicePushTokenAsync()).data);
+          console.log('[push] ✅ Got FCM device token:', deviceToken.substring(0, 20) + '...');
+        } catch (e) {
+          console.warn('[push] getDevicePushTokenAsync failed (non-critical):', e);
+        }
+      }
+
+      console.log('[push] Upserting token to push_tokens table...');
+      const { error } = await supabase.from('push_tokens').upsert(
+        {
+          token,
+          device_token: deviceToken,
+          user_id: userId,
+          platform: Platform.OS,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'token' },
+      );
+      if (error) {
+        console.error('[push] ❌ Token upsert FAILED:', error.message, error.code, error.details);
+      } else {
+        console.log('[push] ✅ Token saved to Supabase successfully!');
+      }
+
+      // Clean up stale tokens for this user
       try {
-        deviceToken = String((await Notifications.getDevicePushTokenAsync()).data);
-      } catch (e) {
-        console.warn('[push] getDevicePushTokenAsync failed — Android will fall back to Expo delivery', e);
+        const { error: delErr } = await supabase
+          .from('push_tokens')
+          .delete()
+          .eq('user_id', userId)
+          .eq('platform', Platform.OS)
+          .neq('token', token);
+        if (delErr) console.warn('[push] Stale token cleanup failed:', delErr.message);
+      } catch {
+        // ignore
+      }
+
+      return token;
+    } catch (e) {
+      console.warn(`[push] getExpoPushTokenAsync attempt ${attempt}/${retries} failed:`, e);
+      if (attempt < retries) {
+        const delay = 2500 * attempt;
+        console.log(`[push] Retrying in ${delay}ms...`);
+        await new Promise(r => setTimeout(r, delay));
       }
     }
-
-    const { error } = await supabase.from('push_tokens').upsert(
-      {
-        token,
-        device_token: deviceToken,
-        user_id: userId,
-        platform: Platform.OS,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'token' },
-    );
-    if (error) console.warn('[push] token upsert failed', error.message);
-
-    // Clean up any stale tokens for this user on the same platform to prevent duplicate delivery
-    try {
-      await supabase
-        .from('push_tokens')
-        .delete()
-        .eq('user_id', userId)
-        .eq('platform', Platform.OS)
-        .neq('token', token);
-    } catch {
-      // ignore
-    }
-
-    return token;
-  } catch (e) {
-    console.warn('[push] getExpoPushTokenAsync failed', e);
-    return null;
   }
+
+  console.error('[push] ❌ All token registration attempts failed. Push notifications will NOT work until the app is reopened.');
+  return null;
 }
 
 /**

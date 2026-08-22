@@ -4,7 +4,8 @@ import {
   AppUser, AppNotification, DirectMessage, ReadCursor, ConversationState, MessageReaction,
 } from '../types';
 import { supabase } from '../services/supabase';
-import { playAlertSound } from '../services/sound';
+import { playAlertSound, getActiveChatConversation } from '../services/sound';
+import { notifyChatMessage, notifyAppNotification } from '../services/notifications';
 
 export interface RealtimeSyncArgs {
   isAuthenticated: boolean;
@@ -101,12 +102,25 @@ export function useRealtimeSync({
         setMessages(prev => {
           if (prev.some(m => m.id === msg.id)) return prev;
           if (authUser?.id && msg.sender_id !== authUser.id) {
-            if (msg.text?.startsWith('🚨')) {
-              playAlertSound('HIGH');
-            } else if (msg.is_broadcast || msg.text?.startsWith('📢')) {
-              playAlertSound('ALERT');
-            } else {
-              playAlertSound('CHIME');
+            const isTargetRecipient = !msg.receiver_id || msg.receiver_id === authUser.id;
+            if (isTargetRecipient) {
+              const isCurrentlyInChat = getActiveChatConversation() === msg.conversation_id;
+              if (!isCurrentlyInChat) {
+                if (msg.text?.startsWith('🚨')) {
+                  playAlertSound('HIGH');
+                } else if (msg.is_broadcast || msg.text?.startsWith('📢')) {
+                  playAlertSound('ALERT');
+                } else {
+                  playAlertSound('CHIME');
+                }
+                // Only post an OS banner when the app is not actively in the foreground.
+                // When active, the realtime list update is immediately visible and
+                // expo-audio already played the sound — a banner here is redundant and
+                // causes a second sound via the OS notification channel.
+                if (AppState.currentState !== 'active') {
+                  notifyChatMessage(msg);
+                }
+              }
             }
           }
           return [...prev, msg];
@@ -144,6 +158,10 @@ export function useRealtimeSync({
             playAlertSound('HIGH');
           } else {
             playAlertSound('CHIME');
+          }
+          // Same rule as for chat: only post an OS banner when backgrounded.
+          if (AppState.currentState !== 'active') {
+            notifyAppNotification(notif);
           }
           return [notif, ...prev];
         });

@@ -1,12 +1,14 @@
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
-import { RotaractEvent, EmergencyAlert } from '../types';
+import { RotaractEvent, EmergencyAlert, DirectMessage, AppNotification } from '../types';
 
-// Configure foreground notification behavior
+// Configure foreground notification behavior.
+// shouldPlaySound is intentionally false: expo-audio in useRealtimeSync owns
+// in-app sound. If the OS channel also plays, the user hears the chime twice.
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldPlaySound: true,
+    shouldPlaySound: false,
     shouldSetBadge: true,
     shouldShowBanner: true,
     shouldShowList: true,
@@ -232,5 +234,102 @@ export async function updateBadgeCount(count: number): Promise<void> {
     await Notifications.setBadgeCountAsync(Math.max(0, count));
   } catch {
     // Best-effort
+  }
+}
+
+/**
+ * Trigger an immediate notification banner for an incoming chat message when outside that conversation.
+ */
+export async function notifyChatMessage(msg: DirectMessage): Promise<void> {
+  try {
+    const isBroadcast = !!msg.is_broadcast || msg.text?.startsWith('📢') || msg.text?.startsWith('🚨');
+    const isUrgent = msg.text?.startsWith('🚨');
+
+    const channelId = isUrgent
+      ? 'organizer_high_v2'
+      : isBroadcast
+      ? 'organizer_alert_v3'
+      : 'chat_v5';
+
+    const title = isUrgent
+      ? `🚨 Urgent from ${msg.sender_name}`
+      : isBroadcast
+      ? `📢 Announcement from ${msg.sender_name}`
+      : msg.sender_name;
+
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title,
+        body: msg.text,
+        sound: isBroadcast ? 'alert.wav' : 'chime.wav',
+        priority: isUrgent
+          ? Notifications.AndroidNotificationPriority.MAX
+          : Notifications.AndroidNotificationPriority.HIGH,
+        data: {
+          type: 'chat_message',
+          conversation_id: msg.conversation_id,
+          conversationId: msg.conversation_id,
+          message_id: msg.id,
+          sender_id: msg.sender_id,
+          senderId: msg.sender_id,
+          sender_name: msg.sender_name,
+          senderName: msg.sender_name,
+          message_preview: msg.text,
+          is_group: String(!msg.receiver_id),
+          sent_at: msg.created_at,
+          channelId,
+          event_id: msg.event_id,
+          eventId: msg.event_id,
+        },
+        categoryIdentifier: 'message_actions',
+      },
+      trigger: { channelId } as any,
+    });
+  } catch (err) {
+    console.warn('Failed to schedule chat notification banner:', err);
+  }
+}
+
+/**
+ * Trigger an immediate OS notification banner for an incoming in-app notification.
+ */
+export async function notifyAppNotification(notif: AppNotification): Promise<void> {
+  try {
+    if (notif.kind === 'EMERGENCY_BROADCAST' || notif.kind === 'INQUIRY_RECEIVED') return; // Handled separately by notifyEmergencyBroadcast and notifyChatMessage
+
+    const isUrgent = notif.priority === 'HIGH';
+    const isAlert = notif.priority === 'ALERT';
+
+    const channelId = isUrgent
+      ? 'organizer_high_v2'
+      : isAlert
+      ? 'organizer_alert_v3'
+      : notif.kind.startsWith('EVENT') || notif.kind.startsWith('INVITATION')
+      ? 'events_v3'
+      : 'general_v6';
+
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: notif.title,
+        body: notif.message,
+        sound: isAlert || isUrgent ? 'alert.wav' : 'chime.wav',
+        priority: isUrgent
+          ? Notifications.AndroidNotificationPriority.MAX
+          : Notifications.AndroidNotificationPriority.HIGH,
+        data: {
+          notificationId: notif.id,
+          kind: notif.kind,
+          event_id: notif.event_id,
+          eventId: notif.event_id,
+          application_id: notif.application_id,
+          conversation_id: notif.conversation_id,
+          conversationId: notif.conversation_id,
+        },
+        categoryIdentifier: 'general_actions',
+      },
+      trigger: { channelId } as any,
+    });
+  } catch (err) {
+    console.warn('Failed to schedule app notification banner:', err);
   }
 }

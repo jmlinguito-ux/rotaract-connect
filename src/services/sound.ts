@@ -66,6 +66,18 @@ export function playChimeSound() {
   playAlertSound('CHIME');
 }
 
+let activeChatConversationId: string | null = null;
+
+/** Sets the currently open and active chat conversation ID so incoming audio can be suppressed while on screen. */
+export function setActiveChatConversation(id: string | null) {
+  activeChatConversationId = id;
+}
+
+/** Returns the currently open active chat conversation ID, if any. */
+export function getActiveChatConversation(): string | null {
+  return activeChatConversationId;
+}
+
 /** Stops and releases the current alert sound, if any. */
 export function stopAlertSound() {
   try {

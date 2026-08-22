@@ -1117,11 +1117,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     const part = participants.find(x => x.id === participantId);
     const ev = events.find(e => e.id === part?.event_id);
-    if (ev) {
+    const isSelf = !!(part && authUser && part.user_id === authUser.id);
+
+    if (ev && isSelf) {
       notifyAttendance('CHECK_IN', ev.title, at.distanceMeters);
+    } else if (ev && part && !isSelf) {
+      pushNotif({
+        user_id: part.user_id,
+        kind: 'EVENT_REMINDER',
+        title: '✅ Checked In Successfully',
+        message: `You are now checked in to "${ev.title}". Have a great service!`,
+        event_id: ev.id,
+        priority: 'HIGH',
+      });
     }
 
-    if (at.recordedBy === 'ORGANIZER') {
+    if (at.recordedBy === 'ORGANIZER' || at.recordedBy === 'ORGANIZER_QR') {
       const targetUser = users.find(u => u.id === part?.user_id);
       const log: AuditLog = {
         id: nextId('audit'),
@@ -1130,17 +1141,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
         target_name: targetUser?.full_name ?? 'Participant',
         action: 'ATTENDANCE_OVERRIDE',
         category: 'ATTENDANCE',
-        performed_by_name: 'Organizer',
-        performed_by_role: 'CLUB_PRESIDENT',
+        performed_by_name: authUser?.full_name ?? 'Organizer',
+        performed_by_role: (authUser?.role as any) ?? 'CLUB_PRESIDENT',
         previous_status: 'JOINED',
         new_status: 'ATTENDED',
-        notes: `Manual on-site attendance verification for "${ev?.title ?? 'Event'}"`,
+        notes: `On-site attendance verification for "${ev?.title ?? 'Event'}"`,
         created_at: now(),
       };
       setAuditLogs(prev => [log, ...prev]);
       db.insertAuditLog(log);
     }
-  }, [participants, events, users]);
+  }, [participants, events, users, authUser, pushNotif]);
 
   const checkOut = useCallback((participantId: string, at: CheckOutRecord) => {
     // Same idempotency guard as checkIn — see its comment.
@@ -1163,10 +1174,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     const part = participants.find(x => x.id === participantId);
     const ev = events.find(e => e.id === part?.event_id);
-    if (ev) {
+    const isSelf = !!(part && authUser && part.user_id === authUser.id);
+
+    if (ev && isSelf) {
       notifyAttendance('CHECK_OUT', ev.title, at.distanceMeters);
+    } else if (ev && part && !isSelf) {
+      pushNotif({
+        user_id: part.user_id,
+        kind: 'EVENT_REMINDER',
+        title: '👋 Checked Out',
+        message: `Departure recorded for "${ev.title}". Your service hours have been logged!`,
+        event_id: ev.id,
+        priority: 'NORMAL',
+      });
     }
-  }, [participants, events]);
+  }, [participants, events, authUser, pushNotif]);
 
   const invite = useCallback((eventId: string, invitedUserId: string, byUser: AppUser) => {
     const dup = invitations.find(i => i.event_id === eventId && i.invited_user_id === invitedUserId && i.status === 'PENDING');
