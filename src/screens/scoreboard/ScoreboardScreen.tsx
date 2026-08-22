@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { View, Text, FlatList, StyleSheet, TouchableOpacity, TextInput, Image, Modal } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { RootStackParamList } from '../../navigation/types';
@@ -14,11 +14,14 @@ import UserAvatar from '../../components/UserAvatar';
 import RotaryWheel from '../../components/RotaryWheel';
 import ClubLogo from '../../components/ClubLogo';
 import VerifiedCheck from '../../components/VerifiedCheck';
+import { calculateParticipantHours, getRotaryYear, isDateInRotaryYear } from '../../utils/hoursCalculation';
+import { zones } from '../../data/mockData';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Scoreboard'>;
 type ViewMode = 'INDIVIDUAL' | 'CLUB';
-type FilterTab = 'DISTRICT' | 'MY_CLUB';
+type FilterTab = 'DISTRICT' | 'ZONE' | 'MY_CLUB';
 type SortMetric = 'POINTS' | 'HOURS' | 'ATTENDED';
+type PeriodFilter = 'RY_2026_2027' | 'RY_2025_2026' | 'ALL_TIME';
 
 export default function ScoreboardScreen({ navigation }: Props) {
   const { user } = useAuth();
@@ -27,18 +30,46 @@ export default function ScoreboardScreen({ navigation }: Props) {
 
   const [viewMode, setViewMode] = useState<ViewMode>('INDIVIDUAL');
   const [tab, setTab] = useState<FilterTab>('DISTRICT');
+  const [period, setPeriod] = useState<PeriodFilter>('RY_2026_2027');
+  const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
   const [metric, setMetric] = useState<SortMetric>('POINTS');
   const [search, setSearch] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [selectedUser, setSelectedUser] = useState<AppUser | null>(null);
   const [showFormulaInfo, setShowFormulaInfo] = useState(false);
+  const insets = useSafeAreaInsets();
 
-  // Calculate scores and stats for individual members. Points are released only
-  // once the organizer marks the event complete by recording its impact — not
-  // merely because the end time passed (which auto-resolves the display status).
+  const currentRY = useMemo(() => getRotaryYear(), []);
+
+  // Available zones extracted from clubs and sorted by zone name
+  const availableZones = useMemo(() => {
+    const set = new Set<string>();
+    clubs.forEach(c => { if (c.zone_id) set.add(c.zone_id); });
+    return Array.from(set).sort((a, b) => {
+      const nameA = zones.find(z => z.id === a)?.zone_name || a;
+      const nameB = zones.find(z => z.id === b)?.zone_name || b;
+      return nameA.localeCompare(nameB, undefined, { numeric: true });
+    });
+  }, [clubs]);
+
+  const userClub = useMemo(() => clubs.find(c => c.id === user?.club_id), [clubs, user]);
+  const activeZoneId = selectedZoneId || userClub?.zone_id || availableZones[0] || 'Zone 1';
+
+  // Calculate scores and stats for individual members
   const memberScores = useMemo(() => {
-    const completedEvents = events.filter(
+    let completedEvents = events.filter(
       e => e.status === 'COMPLETED' && impacts.some(i => i.event_id === e.id),
     );
+
+    if (period === 'RY_2026_2027') {
+      completedEvents = completedEvents.filter(e =>
+        isDateInRotaryYear(e.start_datetime, new Date(2026, 6, 1), new Date(2027, 5, 30, 23, 59, 59))
+      );
+    } else if (period === 'RY_2025_2026') {
+      completedEvents = completedEvents.filter(e =>
+        isDateInRotaryYear(e.start_datetime, new Date(2025, 6, 1), new Date(2026, 5, 30, 23, 59, 59))
+      );
+    }
 
     return users.map(u => {
       let totalPoints = 0;
@@ -73,8 +104,9 @@ export default function ScoreboardScreen({ navigation }: Props) {
         const hasAttended = p && (p.attendance_status === 'ATTENDED' || !!p.checked_in_at);
 
         if (hasAttended) {
+          const participantHours = calculateParticipantHours(p, e);
           totalAttendedCount += 1;
-          totalHours += eventHours;
+          totalHours += participantHours;
           let attendPts = 50;
           let hourRate = 10;
 
@@ -89,18 +121,26 @@ export default function ScoreboardScreen({ navigation }: Props) {
             hourRate = 5;
           }
 
-          totalPoints += attendPts + (eventHours * hourRate);
+          totalPoints += attendPts + (participantHours * hourRate);
         }
       });
 
+      const memberClub = clubs.find(c => c.id === u.club_id);
+
       return {
         user: u,
-        stats: { hours: totalHours, organized: totalOrganizedCount },
-        attendedCount: totalAttendedCount,
+        club: memberClub,
         points: totalPoints,
+        attendedCount: totalAttendedCount,
+        organizedCount: totalOrganizedCount,
+        stats: {
+          joined: totalAttendedCount,
+          organized: totalOrganizedCount,
+          hours: totalHours,
+        },
       };
     });
-  }, [users, events, participants, impacts]);
+  }, [users, events, participants, impacts, clubs, period, currentRY]);
 
   // Filter and sort members
   const sortedMembers = useMemo(() => {
@@ -108,6 +148,8 @@ export default function ScoreboardScreen({ navigation }: Props) {
 
     if (tab === 'MY_CLUB' && user) {
       list = list.filter(item => item.user.club_id === user.club_id);
+    } else if (tab === 'ZONE') {
+      list = list.filter(item => item.club?.zone_id === activeZoneId);
     }
 
     if (search.trim()) {
@@ -126,7 +168,7 @@ export default function ScoreboardScreen({ navigation }: Props) {
       if (metric === 'ATTENDED') return b.attendedCount - a.attendedCount;
       return b.points - a.points;
     });
-  }, [memberScores, tab, metric, search, user]);
+  }, [memberScores, tab, activeZoneId, metric, search, user]);
 
   // Calculate aggregated club scores
   const clubScores = useMemo(() => {
@@ -150,6 +192,10 @@ export default function ScoreboardScreen({ navigation }: Props) {
   const sortedClubs = useMemo(() => {
     let list = clubScores;
 
+    if (tab === 'ZONE') {
+      list = list.filter(item => item.club.zone_id === activeZoneId);
+    }
+
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(
@@ -163,7 +209,7 @@ export default function ScoreboardScreen({ navigation }: Props) {
       if (metric === 'ATTENDED') return b.totalAttended - a.totalAttended;
       return b.totalPoints - a.totalPoints;
     });
-  }, [clubScores, metric, search]);
+  }, [clubScores, tab, activeZoneId, metric, search]);
 
   const currentUserRank = useMemo(() => {
     if (!user) return null;
@@ -226,36 +272,112 @@ export default function ScoreboardScreen({ navigation }: Props) {
           </TouchableOpacity>
         </View>
 
-        {/* Scope Tabs */}
-        <View style={[styles.tabsRow, { backgroundColor: themeColors.surface, marginTop: 8 }]}>
-          <TouchableOpacity
-            style={[styles.tabBtn, tab === 'DISTRICT' && { backgroundColor: themeColors.primary }]}
-            onPress={() => setTab('DISTRICT')}
-          >
-            <Ionicons name="globe-outline" size={14} color={tab === 'DISTRICT' ? '#fff' : themeColors.textMuted} />
-            <Text style={[styles.tabText, { color: tab === 'DISTRICT' ? '#fff' : themeColors.textMuted }]}>District 3800</Text>
-          </TouchableOpacity>
+        {/* Period & Scope Tabs */}
+        <View style={styles.filterSection}>
+          {/* Rotary Year Period Selector */}
+          <View style={[styles.periodToggleRow, { backgroundColor: themeColors.surface }]}>
+            <TouchableOpacity
+              style={[styles.periodBtn, period === 'RY_2026_2027' && { backgroundColor: themeColors.primary }]}
+              onPress={() => setPeriod('RY_2026_2027')}
+            >
+              <Ionicons name="calendar-outline" size={13} color={period === 'RY_2026_2027' ? '#fff' : themeColors.textMuted} />
+              <Text style={[styles.periodText, { color: period === 'RY_2026_2027' ? '#fff' : themeColors.textMuted }]}>
+                RY 2026-2027
+              </Text>
+            </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.tabBtn, tab === 'MY_CLUB' && { backgroundColor: themeColors.primary }]}
-            onPress={() => setTab('MY_CLUB')}
-          >
-            <Ionicons name="home-outline" size={14} color={tab === 'MY_CLUB' ? '#fff' : themeColors.textMuted} />
-            <Text style={[styles.tabText, { color: tab === 'MY_CLUB' ? '#fff' : themeColors.textMuted }]}>My Club</Text>
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.periodBtn, period === 'RY_2025_2026' && { backgroundColor: themeColors.primary }]}
+              onPress={() => setPeriod('RY_2025_2026')}
+            >
+              <Ionicons name="time-outline" size={13} color={period === 'RY_2025_2026' ? '#fff' : themeColors.textMuted} />
+              <Text style={[styles.periodText, { color: period === 'RY_2025_2026' ? '#fff' : themeColors.textMuted }]}>
+                RY 2025-2026
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.periodBtn, period === 'ALL_TIME' && { backgroundColor: themeColors.primary }]}
+              onPress={() => setPeriod('ALL_TIME')}
+            >
+              <Ionicons name="infinite-outline" size={13} color={period === 'ALL_TIME' ? '#fff' : themeColors.textMuted} />
+              <Text style={[styles.periodText, { color: period === 'ALL_TIME' ? '#fff' : themeColors.textMuted }]}>
+                All-Time
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Scope Tabs: District | Zone | My Club */}
+          <View style={[styles.tabsRow, { backgroundColor: themeColors.surface, marginTop: 6 }]}>
+            <TouchableOpacity
+              style={[styles.tabBtn, tab === 'DISTRICT' && { backgroundColor: themeColors.primary }]}
+              onPress={() => setTab('DISTRICT')}
+            >
+              <Ionicons name="globe-outline" size={13} color={tab === 'DISTRICT' ? '#fff' : themeColors.textMuted} />
+              <Text style={[styles.tabText, { color: tab === 'DISTRICT' ? '#fff' : themeColors.textMuted }]}>District</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.tabBtn, tab === 'ZONE' && { backgroundColor: themeColors.primary }]}
+              onPress={() => setTab('ZONE')}
+            >
+              <Ionicons name="map-outline" size={13} color={tab === 'ZONE' ? '#fff' : themeColors.textMuted} />
+              <Text style={[styles.tabText, { color: tab === 'ZONE' ? '#fff' : themeColors.textMuted }]}>Zone</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.tabBtn, tab === 'MY_CLUB' && { backgroundColor: themeColors.primary }]}
+              onPress={() => setTab('MY_CLUB')}
+            >
+              <Ionicons name="home-outline" size={13} color={tab === 'MY_CLUB' ? '#fff' : themeColors.textMuted} />
+              <Text style={[styles.tabText, { color: tab === 'MY_CLUB' ? '#fff' : themeColors.textMuted }]}>My Club</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Zone Picker Strip (visible when Zone tab active) */}
+          {tab === 'ZONE' && availableZones.length > 0 && (
+            <FlatList
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              data={availableZones}
+              keyExtractor={item => item}
+              style={styles.zoneScroll}
+              contentContainerStyle={styles.zoneScrollContent}
+              renderItem={({ item }) => {
+                const isActive = item === activeZoneId;
+                const zoneObj = zones.find(z => z.id === item);
+                const label = zoneObj ? zoneObj.zone_name : item;
+                return (
+                  <TouchableOpacity
+                    style={[
+                      styles.zonePill,
+                      { borderColor: isActive ? themeColors.primary : themeColors.border, backgroundColor: isActive ? themeColors.primary + '18' : themeColors.surface },
+                    ]}
+                    onPress={() => setSelectedZoneId(item)}
+                  >
+                    <Text style={[styles.zonePillText, { color: isActive ? themeColors.primary : themeColors.textMuted, fontWeight: isActive ? '700' : '500' }]}>
+                      {label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              }}
+            />
+          )}
         </View>
       </View>
 
       {/* Search & Sort Controls */}
       <View style={styles.controlsRow}>
-        <View style={[styles.searchBox, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}>
-          <Ionicons name="search" size={16} color={themeColors.textMuted} />
+        <View style={[styles.searchBox, { backgroundColor: themeColors.cardBg, borderColor: isSearchFocused ? themeColors.primary : themeColors.border }, isSearchFocused && { borderWidth: 1.5 }]}>
+          <Ionicons name="search" size={16} color={isSearchFocused ? themeColors.primary : themeColors.textMuted} />
           <TextInput
             style={[styles.searchInput, { color: themeColors.text }]}
             placeholder={viewMode === 'INDIVIDUAL' ? 'Search member or club...' : 'Search club name or city...'}
             placeholderTextColor={themeColors.textMuted}
             value={search}
             onChangeText={setSearch}
+            onFocus={() => setIsSearchFocused(true)}
+            onBlur={() => setIsSearchFocused(false)}
           />
           {search ? (
             <TouchableOpacity onPress={() => setSearch('')}>
@@ -519,7 +641,7 @@ export default function ScoreboardScreen({ navigation }: Props) {
 
       {/* Floating Bottom Bar for Current User Rank */}
       {currentUserRank && viewMode === 'INDIVIDUAL' && (
-        <View style={[styles.userRankBar, { backgroundColor: themeColors.cardBg, borderTopColor: themeColors.border }]}>
+        <View style={[styles.userRankBar, { backgroundColor: themeColors.cardBg, borderTopColor: themeColors.border, paddingBottom: 12 + insets.bottom }]}>
           <Ionicons name="trophy" size={18} color={themeColors.primary} />
           <Text style={[styles.userRankText, { color: themeColors.text }]}>
             Your Rank: <Text style={{ fontWeight: '800', color: themeColors.primary }}>#{currentUserRank.rank}</Text> with{' '}
@@ -682,6 +804,14 @@ const styles = StyleSheet.create({
   viewToggleRow: { flexDirection: 'row', gap: 6, padding: 4, borderRadius: 12 },
   viewToggleBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8, borderRadius: 8 },
   viewToggleText: { fontSize: 12, fontWeight: '700' },
+  filterSection: { marginTop: 8, gap: 6 },
+  periodToggleRow: { flexDirection: 'row', gap: 6, padding: 4, borderRadius: 10 },
+  periodBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 6, borderRadius: 8 },
+  periodText: { fontSize: 11, fontWeight: '700' },
+  zoneScroll: { marginTop: 4 },
+  zoneScrollContent: { gap: 6, paddingVertical: 2 },
+  zonePill: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 12, borderWidth: 1 },
+  zonePillText: { fontSize: 11 },
   tabsRow: { flexDirection: 'row', gap: 8, padding: 4, borderRadius: 12 },
   tabBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8, borderRadius: 8 },
   tabText: { fontSize: 12, fontWeight: '700' },

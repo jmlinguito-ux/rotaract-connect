@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, TextInput, StyleSheet, ScrollView, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, Keyboard, Pressable } from 'react-native';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { View, Text, TextInput, StyleSheet, TouchableOpacity, Alert, Platform, Keyboard, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
@@ -7,13 +7,18 @@ import { colors } from '../../theme/colors';
 import { AreaOfFocus, EventType, EventVisibility } from '../../types';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
 import { RootStackParamList } from '../../navigation/types';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { SegmentedTimeInput } from '../../components/SegmentedTimeInput';
+import { CalendarGridModal } from '../../components/CalendarGridModal';
 import { LocationPicker } from '../../components/LocationPicker';
 import { LocationValue } from '../../components/location/shared';
 import { AreasOfFocusPicker } from '../../components/AreasOfFocusPicker';
 import { CoverPhotoPicker } from '../../components/CoverPhotoPicker';
 import { eventEditPolicy, isMaterialChange } from '../../utils/eventEditPolicy';
 import { ConfirmRulesModal } from '../../components/ConfirmRulesModal';
+import { KeyboardAwareScrollView, useKeyboardAwareOnFocus } from '../../components/KeyboardAwareScrollView';
 import type { RotaractEvent } from '../../types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'EditEvent'>;
@@ -21,7 +26,9 @@ type Props = NativeStackScreenProps<RootStackParamList, 'EditEvent'>;
 export default function EditEventScreen({ route, navigation }: Props) {
   const { eventId } = route.params;
   const { user } = useAuth();
-  const { events, updateEvent, users, participantsFor, resetEventApprovals } = useData();
+  const { colors: themeColors, isNightMode } = useTheme();
+  const onFocusAware = useKeyboardAwareOnFocus();
+  const { events, updateEvent, users, clubs, participantsFor, resetEventApprovals } = useData();
 
   const event = events.find(e => e.id === eventId);
 
@@ -32,6 +39,7 @@ export default function EditEventScreen({ route, navigation }: Props) {
   const [coOrgQuery, setCoOrgQuery] = useState('');
   const [isCoOrgFocused, setIsCoOrgFocused] = useState(false);
   const coOrgInputRef = useRef<TextInput>(null);
+
   const [location, setLocation] = useState<LocationValue>({
     address: event?.address ?? '',
     city: event?.city ?? '',
@@ -45,10 +53,20 @@ export default function EditEventScreen({ route, navigation }: Props) {
   const [requiresApproval, setRequiresApproval] = useState(event?.requires_approval ?? false);
   const [allowInvites, setAllowInvites] = useState(event?.allow_participant_invites ?? true);
   const [lockCutoffHours, setLockCutoffHours] = useState<number>(event?.lock_leave_cutoff_hours ?? 24);
+  const [geofenceRadius, setGeofenceRadius] = useState<number>(event?.geofence_radius_meters ?? 300);
   const [contactNumber, setContactNumber] = useState(event?.contact_number ?? '');
   const [contactEmail, setContactEmail] = useState(event?.contact_email ?? '');
   const [confirmSaveVisible, setConfirmSaveVisible] = useState(false);
   const pendingUpdates = useRef<Partial<RotaractEvent> | null>(null);
+
+  // Schedule. Held as a date plus two times, mirroring CreateEventScreen, so the
+  // two screens agree on what a "schedule" is and the same validation applies.
+  const [eventDate, setEventDate] = useState<Date>(() => new Date(event?.start_datetime ?? Date.now()));
+  const [startTime, setStartTime] = useState<Date | null>(() => (event ? new Date(event.start_datetime) : null));
+  const [endTime, setEndTime] = useState<Date | null>(() => (event ? new Date(event.end_datetime) : null));
+  const [endTimeError, setEndTimeError] = useState<string | null>(null);
+  const [calendarModalVisible, setCalendarModalVisible] = useState(false);
+  const [activePickerTarget, setActivePickerTarget] = useState<'startTime' | 'endTime' | null>(null);
 
   useEffect(() => {
     if (event) {
@@ -69,8 +87,12 @@ export default function EditEventScreen({ route, navigation }: Props) {
       setRequiresApproval(event.requires_approval);
       setAllowInvites(event.allow_participant_invites);
       setLockCutoffHours(event.lock_leave_cutoff_hours ?? 24);
+      setGeofenceRadius(event.geofence_radius_meters ?? 300);
       setContactNumber(event.contact_number ?? '');
       setContactEmail(event.contact_email ?? '');
+      setEventDate(new Date(event.start_datetime));
+      setStartTime(new Date(event.start_datetime));
+      setEndTime(new Date(event.end_datetime));
     }
   }, [event]);
 
@@ -119,29 +141,68 @@ export default function EditEventScreen({ route, navigation }: Props) {
     }
   };
 
+  const combine = (dateObj: Date, timeObj: Date | null) => {
+    if (!timeObj) return null;
+    const c = new Date(dateObj);
+    c.setHours(timeObj.getHours(), timeObj.getMinutes(), 0, 0);
+    return c;
+  };
+
+  const handlePickerChange = (e: DateTimePickerEvent, selected?: Date) => {
+    const target = activePickerTarget;
+    if (Platform.OS === 'android') setActivePickerTarget(null);
+    if (e.type !== 'set' || !selected || !target) return;
+    if (target === 'startTime') {
+      setStartTime(selected);
+      setEndTimeError(endTime && endTime <= selected ? 'End time must be after start time' : null);
+    } else {
+      setEndTime(selected);
+      setEndTimeError(startTime && selected <= startTime ? 'End time must be after start time' : null);
+    }
+  };
+
   /** Build the update payload from current form state, respecting field locks. */
   const buildUpdates = useCallback(() => {
     const requested = parseInt(maxP, 10) || 50;
+    const coOrgClubIds = selectedCoOrganizers
+      .map(id => users.find(u => u.id === id)?.club_id)
+      .filter((id): id is string => Boolean(id));
+    const involvedClubIds = Array.from(new Set([
+      event?.organizing_club_id ?? user?.club_id ?? '',
+      ...coOrgClubIds,
+    ])).filter(Boolean);
+
     return {
       title,
       description: desc,
       event_type: type,
       co_organizer_user_ids: selectedCoOrganizers,
+      participating_club_ids: involvedClubIds,
+      // Guarded like location: when the schedule is frozen the stored value is
+      // resent unchanged, so a locked field can never be written from form state.
+      start_datetime: policy.lockedFields.schedule
+        ? event.start_datetime
+        : (combine(eventDate, startTime) ?? new Date(event.start_datetime)).toISOString(),
+      end_datetime: policy.lockedFields.schedule
+        ? event.end_datetime
+        : (combine(eventDate, endTime) ?? new Date(event.end_datetime)).toISOString(),
       latitude: policy.lockedFields.location ? event.latitude : location.latitude,
       longitude: policy.lockedFields.location ? event.longitude : location.longitude,
       address: policy.lockedFields.location ? event.address : location.address,
       city: policy.lockedFields.location ? event.city : location.city,
       max_participants: requested,
-      requires_approval: policy.lockedFields.requiresApproval ? event.requires_approval : requiresApproval,
-      allow_participant_invites: allowInvites,
-      visibility,
+      // District events: forced open-to-all, no join approval, no participant invites.
+      requires_approval: type === 'DISTRICT_EVENT' ? false : (policy.lockedFields.requiresApproval ? event.requires_approval : requiresApproval),
+      allow_participant_invites: type === 'DISTRICT_EVENT' ? false : allowInvites,
+      visibility: type === 'DISTRICT_EVENT' ? 'VERIFIED_ROTARACTORS' : visibility,
       cover_photo: coverPhoto,
       contact_number: contactNumber.trim() || undefined,
       contact_email: contactEmail.trim() || undefined,
       areas_of_focus: isServiceProject ? areasOfFocus : undefined,
       lock_leave_cutoff_hours: lockCutoffHours,
+      geofence_radius_meters: geofenceRadius,
     };
-  }, [title, desc, type, selectedCoOrganizers, location, maxP, requiresApproval, allowInvites, visibility, coverPhoto, contactNumber, contactEmail, areasOfFocus, lockCutoffHours, isServiceProject, policy, event]);
+  }, [title, desc, type, selectedCoOrganizers, location, maxP, eventDate, startTime, endTime, requiresApproval, allowInvites, visibility, coverPhoto, contactNumber, contactEmail, areasOfFocus, lockCutoffHours, geofenceRadius, isServiceProject, policy, event, users, user]);
 
   /** Commit the given updates (or current form state) and navigate back. */
   const performSave = useCallback((updates: Partial<RotaractEvent>) => {
@@ -178,6 +239,20 @@ export default function EditEventScreen({ route, navigation }: Props) {
       Alert.alert('Select an area of focus', 'Service projects need at least one area of focus.');
       return;
     }
+    // Only meaningful while the schedule is editable; a locked schedule resends the
+    // stored value and cannot be invalid.
+    if (!policy.lockedFields.schedule) {
+      const s = combine(eventDate, startTime);
+      const e = combine(eventDate, endTime);
+      if (!s || !e) {
+        Alert.alert('Missing Schedule', 'Please set both a start and an end time for this event.');
+        return;
+      }
+      if (e <= s) {
+        Alert.alert('Invalid Schedule', 'The end time must be after the start time.');
+        return;
+      }
+    }
     if (!user) return;
 
     const requested = parseInt(maxP, 10) || 50;
@@ -204,31 +279,25 @@ export default function EditEventScreen({ route, navigation }: Props) {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+    <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.bg }]} edges={['bottom']}>
+      <KeyboardAwareScrollView
+        contentContainerStyle={styles.container}
+        keyboardShouldPersistTaps="handled"
+        keyboardTopMargin={32}
+        onScrollBeginDrag={() => {
+          Keyboard.dismiss();
+          setIsCoOrgFocused(false);
+          setCoOrgQuery('');
+        }}
       >
-        <ScrollView
-          contentContainerStyle={styles.container}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-          automaticallyAdjustKeyboardInsets={true}
-          onScrollBeginDrag={() => {
+        <Pressable
+          style={{ flex: 1 }}
+          onPress={() => {
             Keyboard.dismiss();
             setIsCoOrgFocused(false);
             setCoOrgQuery('');
           }}
         >
-          <Pressable
-            style={{ flex: 1 }}
-            onPress={() => {
-              Keyboard.dismiss();
-              setIsCoOrgFocused(false);
-              setCoOrgQuery('');
-            }}
-          >
           {(lockNotes.length > 0 || policy.approvalsAtRisk > 0) && (
             <View style={styles.policyBanner}>
               <View style={styles.policyHeader}>
@@ -260,7 +329,11 @@ export default function EditEventScreen({ route, navigation }: Props) {
           {/* Tag Input Container Box with Inline Pills */}
           <TouchableOpacity
             activeOpacity={1}
-            style={[styles.pillBoxContainer, isCoOrgFocused && styles.pillBoxFocused]}
+            style={[
+              styles.pillBoxContainer,
+              { backgroundColor: themeColors.surface, borderColor: themeColors.border },
+              isCoOrgFocused && { borderColor: themeColors.primary, borderWidth: 1.5 },
+            ]}
             onPress={() => coOrgInputRef.current?.focus()}
           >
             {selectedCoOrganizers.map(id => {
@@ -290,6 +363,7 @@ export default function EditEventScreen({ route, navigation }: Props) {
               onChangeText={setCoOrgQuery}
               onFocus={(e: any) => {
                 setIsCoOrgFocused(true);
+                onFocusAware();
                 if (Platform.OS === 'web' && e?.target?.scrollIntoView) {
                   setTimeout(() => {
                     e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -312,7 +386,7 @@ export default function EditEventScreen({ route, navigation }: Props) {
                   setIsCoOrgFocused(false);
                 }}
               />
-              <View style={[styles.coOrgDropdown, { zIndex: 2 }]}>
+              <View style={[styles.coOrgDropdown, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border, zIndex: 2 }]}>
                 {users
                   .filter(u => {
                     if (u.id === user?.id) return false;
@@ -326,7 +400,7 @@ export default function EditEventScreen({ route, navigation }: Props) {
                     return (
                       <TouchableOpacity
                         key={u.id}
-                        style={styles.coOrgDropdownItem}
+                        style={[styles.coOrgDropdownItem, { borderBottomColor: themeColors.border }]}
                         onPress={() => {
                           setSelectedCoOrganizers(prev => [...prev, u.id]);
                           setCoOrgQuery('');
@@ -334,22 +408,112 @@ export default function EditEventScreen({ route, navigation }: Props) {
                           setIsCoOrgFocused(false);
                         }}
                       >
-                        <View style={styles.coOrgItemAvatar}>
+                        <View style={[styles.coOrgItemAvatar, { backgroundColor: themeColors.primary }]}>
                           <Text style={styles.coOrgItemAvatarText}>{u.full_name[0]}</Text>
                         </View>
                         <View style={{ flex: 1 }}>
-                          <Text style={styles.coOrgItemName}>{u.full_name}</Text>
-                          <Text style={styles.coOrgItemSub}>{u.position || 'Member'} • {shortClub}</Text>
+                          <Text style={[styles.coOrgItemName, { color: themeColors.text }]}>{u.full_name}</Text>
+                          <Text style={[styles.coOrgItemSub, { color: themeColors.textMuted }]}>{u.position || 'Member'} • {shortClub}</Text>
                         </View>
-                        <Ionicons name="add-circle" size={18} color={colors.primary} />
+                        <Ionicons name="add-circle" size={18} color={themeColors.primary} />
                       </TouchableOpacity>
                     );
                   })}
                 {users.filter(u => u.id !== user?.id && !selectedCoOrganizers.includes(u.id) && (u.full_name.toLowerCase().includes(coOrgQuery.toLowerCase()) || u.club_name.toLowerCase().includes(coOrgQuery.toLowerCase()))).length === 0 && (
-                  <Text style={styles.noMatchText}>No members found matching "{coOrgQuery}"</Text>
+                  <Text style={[styles.noMatchText, { color: themeColors.textMuted }]}>No members found matching "{coOrgQuery}"</Text>
                 )}
               </View>
             </View>
+          )}
+
+
+          {/* Schedule. Locked and rendered on the same rules as the venue below. */}
+          {policy.lockedFields.schedule ? (
+            <View style={styles.fieldLockCard}>
+              <View style={styles.fieldLockHeader}>
+                <Ionicons name="lock-closed" size={14} color={colors.textMuted} />
+                <Text style={styles.fieldLockTitle}>Schedule locked</Text>
+              </View>
+              <Text style={styles.fieldLockText}>{policy.lockedFields.schedule}</Text>
+              <Text style={styles.fieldLockValue}>
+                {new Date(event.start_datetime).toLocaleString('en-US', {
+                  month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
+                })}
+                {' — '}
+                {new Date(event.end_datetime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+              </Text>
+            </View>
+          ) : (
+            <>
+              <Text style={[styles.label, { color: themeColors.text }]}>Date</Text>
+              <TouchableOpacity
+                style={[
+                  styles.inputBoxWithIcon,
+                  { backgroundColor: themeColors.surface, borderColor: themeColors.border },
+                  calendarModalVisible && { borderColor: themeColors.primary, borderWidth: 1.5 },
+                ]}
+                onPress={() => setCalendarModalVisible(true)}
+              >
+                <Text style={[styles.inputBoxText, { color: themeColors.text }]}>
+                  {eventDate.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })}
+                </Text>
+                <Ionicons name="calendar-outline" size={18} color={calendarModalVisible ? themeColors.primary : themeColors.text} />
+              </TouchableOpacity>
+
+              <View style={styles.timeGridRow}>
+                <SegmentedTimeInput
+                  label="Start time"
+                  value={startTime}
+                  baseDate={eventDate}
+                  onChangeTime={newTime => {
+                    setStartTime(newTime);
+                    setEndTimeError(endTime && endTime <= newTime ? 'End time must be after start time' : null);
+                  }}
+                  onOpenPicker={() => setActivePickerTarget('startTime')}
+                />
+                <SegmentedTimeInput
+                  label="End time"
+                  value={endTime}
+                  baseDate={eventDate}
+                  onChangeTime={newTime => {
+                    setEndTime(newTime);
+                    setEndTimeError(startTime && newTime <= startTime ? 'End time must be after start time' : null);
+                  }}
+                  onOpenPicker={() => setActivePickerTarget('endTime')}
+                  error={endTimeError}
+                />
+              </View>
+
+              <CalendarGridModal
+                visible={calendarModalVisible}
+                selectedDate={eventDate}
+                onSelectDate={d => setEventDate(d)}
+                onClose={() => setCalendarModalVisible(false)}
+              />
+
+              {activePickerTarget && (
+                <View style={styles.pickerContainer}>
+                  <View style={styles.pickerHeader}>
+                    <Text style={styles.pickerHeaderTitle}>
+                      Select {activePickerTarget === 'startTime' ? 'Start Time' : 'End Time'}
+                    </Text>
+                    <TouchableOpacity style={styles.pickerDoneBtn} onPress={() => setActivePickerTarget(null)}>
+                      <Text style={styles.pickerDoneText}>Done</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <DateTimePicker
+                    value={
+                      (activePickerTarget === 'startTime' ? startTime : endTime)
+                        ?? new Date(activePickerTarget === 'startTime' ? event.start_datetime : event.end_datetime)
+                    }
+                    mode="time"
+                    is24Hour={false}
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onChange={handlePickerChange}
+                  />
+                </View>
+              )}
+            </>
           )}
 
           {policy.lockedFields.location ? (
@@ -362,7 +526,50 @@ export default function EditEventScreen({ route, navigation }: Props) {
               <Text style={styles.fieldLockValue}>{event.address}, {event.city}</Text>
             </View>
           ) : (
-            <LocationPicker value={location} onChange={setLocation} />
+            <>
+              <LocationPicker value={location} onChange={setLocation} geofenceRadius={geofenceRadius} />
+
+              {/* Check-In Geofence Perimeter Radius */}
+              <Text style={styles.label}>Check-In Geofence Perimeter</Text>
+              <Text style={styles.subHint}>
+                Participants within this {geofenceRadius}m radius can verify attendance with 1-tap GPS check-in.
+              </Text>
+              <View style={styles.radiusPillsRow}>
+                {[
+                  { label: '100m (Indoor)', value: 100 },
+                  { label: '300m (Standard)', value: 300 },
+                  { label: '500m (Campus)', value: 500 },
+                  { label: '1km (District)', value: 1000 },
+                ].map(r => {
+                  const isSelected = geofenceRadius === r.value;
+                  return (
+                    <TouchableOpacity
+                      key={r.value}
+                      activeOpacity={0.7}
+                      style={[
+                        styles.radiusPill,
+                        isSelected && styles.radiusPillActive,
+                      ]}
+                      onPress={() => setGeofenceRadius(r.value)}
+                    >
+                      <Ionicons
+                        name={isSelected ? 'shield-checkmark' : 'ellipse-outline'}
+                        size={13}
+                        color={isSelected ? '#fff' : colors.textMuted}
+                      />
+                      <Text
+                        style={[
+                          styles.radiusPillText,
+                          isSelected && styles.radiusPillTextActive,
+                        ]}
+                      >
+                        {r.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </>
           )}
 
           <Field label="Max Participants" value={maxP} onChangeText={setMaxP} keyboardType="number-pad" placeholder="50" />
@@ -372,18 +579,32 @@ export default function EditEventScreen({ route, navigation }: Props) {
           <Field label="Contact Number" value={contactNumber} onChangeText={handleContactNumberChange} keyboardType="phone-pad" placeholder="0917 123 4567" maxLength={13} />
           <Field label="Contact Email" value={contactEmail} onChangeText={setContactEmail} keyboardType="email-address" autoCapitalize="none" placeholder="event@rotaract.org" />
 
-          <Text style={styles.label}>Visibility</Text>
-          <View style={styles.visRow}>
-            {([
-              { key: 'VERIFIED_ROTARACTORS', label: 'Verified' },
-              { key: 'CLUB_ONLY', label: 'Club only' },
-              { key: 'INVITATION_ONLY', label: 'Invite only' },
-            ] as { key: EventVisibility; label: string }[]).map(v => (
-              <TouchableOpacity key={v.key} onPress={() => setVisibility(v.key)} style={[styles.visChip, visibility === v.key && styles.visChipActive]}>
-                <Text style={[styles.visChipText, visibility === v.key && styles.visChipTextActive]}>{v.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          {/* District events are always open to every verified member and invite
+              the whole district — visibility/approval/invite controls are hidden,
+              consistent with the create form. */}
+          {type === 'DISTRICT_EVENT' ? (
+            <View style={styles.districtInfoRow}>
+              <Ionicons name="globe-outline" size={15} color={colors.textMuted} />
+              <Text style={styles.districtInfoText}>
+                Open to all verified members. This district event invites everyone in the district.
+              </Text>
+            </View>
+          ) : (
+            <>
+              <Text style={styles.label}>Visibility</Text>
+              <View style={styles.visRow}>
+                {([
+                  { key: 'VERIFIED_ROTARACTORS', label: 'Verified' },
+                  { key: 'CLUB_ONLY', label: 'Club only' },
+                  { key: 'INVITATION_ONLY', label: 'Invite only' },
+                ] as { key: EventVisibility; label: string }[]).map(v => (
+                  <TouchableOpacity key={v.key} onPress={() => setVisibility(v.key)} style={[styles.visChip, visibility === v.key && styles.visChipActive]}>
+                    <Text style={[styles.visChipText, visibility === v.key && styles.visChipTextActive]}>{v.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </>
+          )}
 
           <Text style={styles.label}>Lock Leave Cutoff (Hours Before Start)</Text>
           <View style={styles.visRow}>
@@ -394,27 +615,30 @@ export default function EditEventScreen({ route, navigation }: Props) {
             ))}
           </View>
 
-          {policy.lockedFields.requiresApproval ? (
-            <View style={styles.fieldLockCard}>
-              <View style={styles.fieldLockHeader}>
-                <Ionicons name="lock-closed" size={14} color={colors.textMuted} />
-                <Text style={styles.fieldLockTitle}>
-                  Join approval: {event.requires_approval ? 'required' : 'not required'}
-                </Text>
-              </View>
-              <Text style={styles.fieldLockText}>{policy.lockedFields.requiresApproval}</Text>
-            </View>
-          ) : (
-            <Toggle label="Requires organizer approval to join" value={requiresApproval} onChange={setRequiresApproval} />
+          {type !== 'DISTRICT_EVENT' && (
+            <>
+              {policy.lockedFields.requiresApproval ? (
+                <View style={styles.fieldLockCard}>
+                  <View style={styles.fieldLockHeader}>
+                    <Ionicons name="lock-closed" size={14} color={colors.textMuted} />
+                    <Text style={styles.fieldLockTitle}>
+                      Join approval: {event.requires_approval ? 'required' : 'not required'}
+                    </Text>
+                  </View>
+                  <Text style={styles.fieldLockText}>{policy.lockedFields.requiresApproval}</Text>
+                </View>
+              ) : (
+                <Toggle label="Requires organizer approval to join" value={requiresApproval} onChange={setRequiresApproval} />
+              )}
+              <Toggle label="Participants can invite others" value={allowInvites} onChange={setAllowInvites} />
+            </>
           )}
-          <Toggle label="Participants can invite others" value={allowInvites} onChange={setAllowInvites} />
           <TouchableOpacity style={styles.submitBtn} onPress={handleSave}>
             <Ionicons name="save" size={20} color="#fff" />
             <Text style={styles.submitText}>Save Changes</Text>
           </TouchableOpacity>
-          </Pressable>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </Pressable>
+      </KeyboardAwareScrollView>
 
       <ConfirmRulesModal
         visible={confirmSaveVisible}
@@ -445,18 +669,22 @@ export default function EditEventScreen({ route, navigation }: Props) {
 }
 
 function Field({ label, ...rest }: any) {
+  const { colors: themeColors } = useTheme();
   const [focused, setFocused] = useState(false);
+  const onFocusAware = useKeyboardAwareOnFocus();
   return (
     <>
-      <Text style={styles.label}>{label}</Text>
+      <Text style={[styles.label, { color: themeColors.text }]}>{label}</Text>
       <TextInput
         style={[
           styles.input,
-          focused && styles.inputFocused,
+          { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text },
+          focused && [styles.inputFocused, { borderColor: themeColors.primary }],
           rest.multiline && { minHeight: 90, textAlignVertical: 'top' },
         ]}
         onFocus={(e: any) => {
           setFocused(true);
+          onFocusAware();
           if (Platform.OS === 'web' && e?.target?.scrollIntoView) {
             setTimeout(() => {
               e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -468,7 +696,7 @@ function Field({ label, ...rest }: any) {
           setFocused(false);
           rest.onBlur?.(e);
         }}
-        placeholderTextColor={colors.textMuted}
+        placeholderTextColor={themeColors.textMuted}
         {...rest}
       />
     </>
@@ -476,10 +704,11 @@ function Field({ label, ...rest }: any) {
 }
 
 function Toggle({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
+  const { colors: themeColors } = useTheme();
   return (
-    <TouchableOpacity style={styles.toggleRow} onPress={() => onChange(!value)}>
-      <Text style={styles.toggleLabel}>{label}</Text>
-      <View style={[styles.toggle, value && styles.toggleOn]}>
+    <TouchableOpacity style={[styles.toggleRow, { borderBottomColor: themeColors.border }]} onPress={() => onChange(!value)}>
+      <Text style={[styles.toggleLabel, { color: themeColors.text }]}>{label}</Text>
+      <View style={[styles.toggle, { backgroundColor: themeColors.border }, value && [styles.toggleOn, { backgroundColor: themeColors.primary }]]}>
         <View style={[styles.toggleKnob, value && styles.toggleKnobOn]} />
       </View>
     </TouchableOpacity>
@@ -487,6 +716,26 @@ function Toggle({ label, value, onChange }: { label: string; value: boolean; onC
 }
 
 const styles = StyleSheet.create({
+  // Ported verbatim from CreateEventScreen so the schedule controls look identical
+  // on both screens.
+  inputBoxWithIcon: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    height: 48,
+    backgroundColor: colors.surface,
+  },
+  inputBoxText: { fontSize: 15, fontWeight: '400', color: colors.text },
+  timeGridRow: { flexDirection: 'row', gap: 12 },
+  pickerContainer: { backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, marginTop: 10, padding: 12, overflow: 'hidden' },
+  pickerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, paddingHorizontal: 4 },
+  pickerHeaderTitle: { fontSize: 13, fontWeight: '700', color: colors.text },
+  pickerDoneBtn: { backgroundColor: colors.primary, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 8 },
+  pickerDoneText: { color: '#fff', fontSize: 12, fontWeight: '700' },
   safe: { flex: 1, backgroundColor: colors.bg },
   container: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 40 },
 
@@ -572,6 +821,8 @@ const styles = StyleSheet.create({
   typeText: { fontSize: 13, fontWeight: '700', color: colors.text },
   typeTextActive: { color: '#fff' },
   visRow: { flexDirection: 'row', gap: 8 },
+  districtInfoRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4, marginBottom: 4 },
+  districtInfoText: { fontSize: 12, color: colors.textMuted, flex: 1, lineHeight: 16 },
   visChip: { flex: 1, padding: 10, borderRadius: 10, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, alignItems: 'center' },
   visChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   visChipText: { fontSize: 12, fontWeight: '700', color: colors.text },
@@ -584,4 +835,38 @@ const styles = StyleSheet.create({
   toggleKnobOn: { transform: [{ translateX: 18 }] },
   submitBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: colors.primary, padding: 16, borderRadius: 12, marginTop: 28 },
   submitText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  subHint: { fontSize: 12, marginBottom: 8, marginTop: -2 },
+
+  // Geofence radius pills
+  radiusPillsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+    marginTop: 4,
+  },
+  radiusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  radiusPillActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  radiusPillText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  radiusPillTextActive: {
+    color: '#fff',
+    fontWeight: '700',
+  },
 });

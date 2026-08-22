@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../../theme/colors';
-import { PlaceSuggestion, searchPlaces } from '../../services/placeSearch';
+import { useTheme } from '../../context/ThemeContext';
+import { PlaceSuggestion, searchPlaces, DISTRICT_3800_PRESET_VENUES } from '../../services/placeSearch';
 import { LocationValue, styles } from './shared';
 
-const DEBOUNCE_MS = 400;
+const DEBOUNCE_MS = 300;
 
 export function PlaceSearchField({
   address,
@@ -15,11 +16,14 @@ export function PlaceSearchField({
   address: string;
   onSelect: (value: Omit<LocationValue, never>) => void;
 }) {
+  const { colors: themeColors } = useTheme();
   const [query, setQuery] = useState(address);
+  const [focused, setFocused] = useState(false);
   const [results, setResults] = useState<PlaceSuggestion[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState(false);
+  const [selectedCityFilter, setSelectedCityFilter] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
 
@@ -38,7 +42,7 @@ export function PlaceSearchField({
 
   useEffect(() => {
     const q = query.trim();
-    if (dismissed || q.length < 3) {
+    if (dismissed || q.length < 2) {
       setResults([]);
       setLoading(false);
       return;
@@ -56,10 +60,9 @@ export function PlaceSearchField({
         const found = await searchPlaces(q, controller.signal);
         if (!controller.signal.aborted) {
           setResults(found);
-          if (found.length === 0) setError(`No match for "${q}".`);
+          if (found.length === 0) setError(`No venue found for "${q}".`);
         }
       } catch (e) {
-        // An aborted request was superseded by a newer keystroke — not an error.
         if (!controller.signal.aborted) {
           setError('Search unavailable. Check your connection, or set the location manually.');
           setResults([]);
@@ -87,29 +90,48 @@ export function PlaceSearchField({
     setResults([]);
   };
 
+  const cities = ['All D3800', 'Valenzuela', 'Caloocan', 'Mandaluyong', 'Marikina', 'Pasig', 'San Juan', 'Malabon', 'Navotas', 'Rizal'];
+
+  const filteredPresets = selectedCityFilter && selectedCityFilter !== 'All D3800'
+    ? DISTRICT_3800_PRESET_VENUES.filter(p => {
+        if (selectedCityFilter === 'Rizal') {
+          return ['Antipolo', 'San Mateo', 'Cainta', 'Taytay', 'Angono', 'Binangonan', 'Rodriguez', 'Morong', 'Tanay'].includes(p.city);
+        }
+        return p.city.toLowerCase() === selectedCityFilter.toLowerCase();
+      })
+    : DISTRICT_3800_PRESET_VENUES.slice(0, 10);
+
   return (
     <>
       <Text style={styles.label}>Venue</Text>
+
       <View style={styles.searchRow}>
         <TextInput
-          style={[styles.input, styles.searchInput]}
+          style={[
+            styles.input,
+            styles.searchInput,
+            { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text },
+            focused && { borderColor: themeColors.primary, borderWidth: 1.5 },
+          ]}
           value={query}
           onChangeText={text => {
             setQuery(text);
             setDismissed(false);
           }}
           onFocus={(e: any) => {
+            setFocused(true);
             if (Platform.OS === 'web' && e?.target?.scrollIntoView) {
               setTimeout(() => {
                 e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
               }, 100);
             }
           }}
-          placeholder="Type to search location"
-          placeholderTextColor={colors.textMuted}
+          onBlur={() => setFocused(false)}
+          placeholder="Search venue"
+          placeholderTextColor={themeColors.textMuted}
           autoCorrect={false}
         />
-        {loading && <ActivityIndicator style={styles.searchSpinner} color={colors.primary} />}
+        {loading && <ActivityIndicator style={styles.searchSpinner} color={themeColors.primary} />}
       </View>
 
       {results.length > 0 && (
@@ -124,9 +146,16 @@ export function PlaceSearchField({
             >
               <Ionicons name="location-outline" size={16} color={colors.primary} />
               <View style={{ flex: 1 }}>
-                <Text style={styles.suggestionTitle} numberOfLines={1}>
-                  {place.address}
-                </Text>
+                <View style={localStyles.suggestionHeaderRow}>
+                  <Text style={styles.suggestionTitle} numberOfLines={1}>
+                    {place.address}
+                  </Text>
+                  {place.city ? (
+                    <View style={localStyles.cityBadge}>
+                      <Text style={localStyles.cityBadgeText}>{place.city}</Text>
+                    </View>
+                  ) : null}
+                </View>
                 <Text style={styles.suggestionSub} numberOfLines={1}>
                   {place.label}
                 </Text>
@@ -140,3 +169,24 @@ export function PlaceSearchField({
     </>
   );
 }
+
+const localStyles = StyleSheet.create({
+  suggestionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
+  },
+  cityBadge: {
+    backgroundColor: colors.primary + '14',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  cityBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+});
+

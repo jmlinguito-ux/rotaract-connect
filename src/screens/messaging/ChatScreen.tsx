@@ -1,234 +1,1937 @@
-import React, { useState } from 'react';
-import { View, Text, FlatList, StyleSheet, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, Modal, Image } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { AppState, View, Text, FlatList, ScrollView, StyleSheet, TextInput, TouchableOpacity, Platform, Image, Alert, ActivityIndicator, Keyboard, Clipboard } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useIsFocused } from '@react-navigation/native';
+import { useHeaderHeight } from '@react-navigation/elements';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { RootStackParamList } from '../../navigation/types';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import UserAvatar from '../../components/UserAvatar';
-import VerifiedCheck, { VerifiedName } from '../../components/VerifiedCheck';
+import VerifiedCheck from '../../components/VerifiedCheck';
+import FullImageModal from '../../components/FullImageModal';
+import ChatMediaGalleryModal from '../../components/ChatMediaGalleryModal';
+import ChatDetailsModal from '../../components/ChatDetailsModal';
+import { SwipeableRow } from '../../components/SwipeableRow';
+import { BottomSheet } from '../../components/BottomSheet';
 import { UserProfileModal } from '../../components/UserProfileModal';
+import { useChatPresence } from '../../hooks/useChatPresence';
+import { useSignedUrl } from '../../hooks/useSignedUrl';
+import { uploadImageAsset } from '../../services/storage';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
+import { canMessageUser, inquiryBlockedMessage } from '../../utils/messaging';
+import { useToast } from '../../context/ToastContext';
+import RotaractNotifications from '../../../modules/rotaract-notifications';
+import { formatTime } from '../../utils/timeFormat';
+import { DirectMessage } from '../../types';
+import { stopAlertSound, setActiveChatConversation } from '../../services/sound';
+import { useKeyboardOffset } from '../../components/keyboard/useKeyboardOffset';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Chat'>;
+
+// Colour for the "read" double-check — a light blue that stays legible on the
+// primary-coloured outgoing bubble.
+const READ_TICK_COLOR = '#8ED2FF';
 
 export default function ChatScreen({ route, navigation }: Props) {
   const { conversationId, eventId, recipientId, recipientName, eventTitle } = route.params;
   const { user } = useAuth();
-  const { messagesForConversation, sendDirectMessage, events, users, participantsFor, getOrCreateConversation } = useData();
-  const { colors: themeColors } = useTheme();
+  const {
+    messagesForConversation, sendDirectMessage, retryMessage, deleteMessageForMe, unsendMessage, events, users, participantsFor,
+    getOrCreateConversation, markConversationRead, readCursorsFor, conversationStateFor, setConversationMuted, conversations,
+    reactionsFor, toggleMessageReaction,
+  } = useData();
+  const { colors: themeColors, isNightMode } = useTheme();
+  const { showToast } = useToast();
+  const insets = useSafeAreaInsets();
+  const headerHeight = useHeaderHeight();
+  const isFocused = useIsFocused();
+  const listRef = useRef<FlatList>(null);
+  // In an inverted list, y=0 is the newest message at the bottom.
+  const atBottom = useRef(true);
+  const [showNewMsgPill, setShowNewMsgPill] = useState(false);
+
+  const handleScroll = useCallback((e: any) => {
+    const { contentOffset } = e.nativeEvent;
+    const isAtBottom = contentOffset.y < 50;
+    atBottom.current = isAtBottom;
+    if (isAtBottom) {
+      setShowNewMsgPill(false);
+    }
+  }, []);
+
+  // Distance from the screen bottom to the keyboard top — the exact amount the
+  // composer must be lifted. See useKeyboardOffset for why `height` is wrong here.
+  const keyboardOffset = useKeyboardOffset();
+  const isKeyboardVisible = keyboardOffset > 0;
+
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const showSub = Keyboard.addListener(showEvt, () => {
+      if (atBottom.current) {
+        listRef.current?.scrollToOffset({ offset: 0, animated: true });
+      }
+    });
+    return () => {
+      showSub.remove();
+    };
+  }, []);
+
   const [text, setText] = useState('');
   const [selectedUserModal, setSelectedUserModal] = useState<any>(null);
+  const [fullImageUri, setFullImageUri] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  // Message being replied to / quoted in the composer.
+  const [replyingTo, setReplyingTo] = useState<DirectMessage | null>(null);
+  // Message whose "Seen by …" detail is expanded (tap to toggle, group chats).
+  const [expandedSeenId, setExpandedSeenId] = useState<string | null>(null);
+  // Message long-pressed to open the action menu (reactions, reply, delete for me / unsend).
+  const [actionMsg, setActionMsg] = useState<DirectMessage | null>(null);
+  // Mentions confirmed by tapping a member. Kept as ids so a rename never breaks
+  // targeting, and re-checked against the text on send so deleting the name drops it.
+  const [mentions, setMentions] = useState<{ id: string; full_name: string }[]>([]);
+  // Refusal notice, shown instead of letting the write fail into the sync banner.
+  const [blockedName, setBlockedName] = useState<string | null>(null);
+  // Explains the read-only composer when the notice is tapped.
+  const [reasonVisible, setReasonVisible] = useState(false);
 
-  const messages = messagesForConversation(conversationId);
-  const event = eventId ? events.find(e => e.id === eventId) : undefined;
-  const isGroupChat = recipientId === 'ALL_PARTICIPANTS' || conversationId.includes('conv_group');
+  // In-Chat Search State
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchFilter, setSearchFilter] = useState<'all' | 'announcements' | 'photos'>('all');
+  const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
+
+  // Chat Details & Media Gallery modals
+  const [chatDetailsVisible, setChatDetailsVisible] = useState(false);
+  const [mediaGalleryVisible, setMediaGalleryVisible] = useState(false);
+
+  // Memoised: messagesForConversation returns a NEW array each call, so calling it
+  // inline gave FlatList a fresh `data` identity on every render — including ones
+  // caused by typing indicators and presence, which re-rendered the whole list.
+  const messages = useMemo(
+    () => messagesForConversation(conversationId, user?.id),
+    [messagesForConversation, conversationId, user?.id],
+  );
+  // Inverted list requires newest items first at index 0.
+  const reversedMessages = useMemo(() => [...messages].reverse(), [messages]);
+  const currentConv = conversations.find(c => c.id === conversationId);
+  const isGroupChat = recipientId === 'ALL_PARTICIPANTS' || !!currentConv?.is_group || conversationId.includes('conv_group');
+  const effectiveEventId = eventId || currentConv?.event_id;
+  const event = effectiveEventId ? events.find(e => e.id === effectiveEventId) : undefined;
   const recipientUser = !isGroupChat ? users.find(u => u.id === recipientId || u.full_name === recipientName) : undefined;
+
+  // Matching messages based on query and filter
+  const matchingMessageIds = useMemo(() => {
+    if (!isSearchOpen) return [];
+    const q = searchQuery.toLowerCase().trim();
+    if (!q && searchFilter === 'all') return [];
+
+    return reversedMessages
+      .filter(m => {
+        if (m.deleted_at) return false;
+        if (searchFilter === 'announcements' && !m.is_broadcast && !m.text?.startsWith('📢') && !m.text?.startsWith('🚨')) return false;
+        if (searchFilter === 'photos' && (!m.attachment_path || m.attachment_type !== 'image')) return false;
+        if (!q) return true;
+        const matchesText = !!m.text && m.text.toLowerCase().includes(q);
+        const matchesSender = !!m.sender_name && m.sender_name.toLowerCase().includes(q);
+        return matchesText || matchesSender;
+      })
+      .map(m => m.id);
+  }, [reversedMessages, searchQuery, searchFilter, isSearchOpen]);
+
+  const participantUsers = useMemo(() => {
+    if (!isGroupChat) return [];
+    if (eventId) {
+      const joinedIds = new Set(participantsFor(eventId).filter(p => p.status === 'JOINED').map(p => p.user_id));
+      return users.filter(u => joinedIds.has(u.id));
+    }
+    return users.filter(u => (user?.club_id ? u.club_id === user.club_id : true));
+  }, [isGroupChat, eventId, participantsFor, users, user?.club_id]);
+  /**
+   * Why this thread is read-only, if it is.
+   *
+   * Checked HERE and not only where a chat is opened: an existing thread can be
+   * reopened straight from the Inbox, bypassing every entry-point check — which is
+   * how the row-level rejection was still being hit.
+   *
+   * A deleted account and a closed inbox both make the composer useless, but for
+   * different reasons, so they are distinguished rather than sharing one message.
+   * Profiles are hard-deleted (see DataContext.removeUser), so a missing recipient
+   * IS the deleted case.
+   */
+  const recipientMissing = !isGroupChat && !recipientUser;
+  const inquiriesClosed = !isGroupChat && !!recipientUser && !canMessageUser(recipientUser, user);
+  const cannotMessage = recipientMissing || inquiriesClosed;
+  const blockReason = recipientMissing
+    ? `${recipientName || 'This member'} is no longer on Rotaract Connect. Their account was deleted, so this conversation is read-only.`
+    : inquiryBlockedMessage(recipientName);
   const confirmedParticipants = eventId ? participantsFor(eventId).filter(p => p.status === 'JOINED') : [];
 
-  const handleSend = () => {
-    if (!text.trim() || !user) return;
-    // Group messages have no single receiver — they fan out to every JOINED participant.
-    sendDirectMessage(conversationId, eventId, user, isGroupChat ? undefined : recipientId, recipientName, text.trim(), eventTitle || event?.title);
-    setText('');
+  // A completed (or cancelled) event's group chat is archived: history stays fully
+  // readable, but no new messages are allowed. Derived from the event's status so
+  // a realtime status change flips the chat to read-only without an app restart.
+  const isArchived = !!event && (event.status === 'COMPLETED' || event.status === 'CANCELLED');
+  const isOrganizer = !!user && !!event && (
+    user.id === event.organizer_user_id ||
+    event.co_organizer_user_ids?.includes(user.id) ||
+    (user.role === 'CLUB_PRESIDENT' && (user.club_id === event.organizing_club_id || event.participating_club_ids?.includes(user.club_id))) ||
+    user.role === 'APP_ADMIN' ||
+    user.position === 'App Admin' ||
+    user.role === 'DISTRICT_ADMIN' ||
+    user.system_role === 'DISTRICT_ADMIN' ||
+    user.system_role === 'APP_ADMIN'
+  );
+
+  const latestAnnouncement = useMemo(() => {
+    if (!isGroupChat || !event) return null;
+    return messages
+      .slice()
+      .reverse()
+      .find(m => (m.text?.startsWith('📢') || m.text?.startsWith('🚨')) && !m.deleted_at);
+  }, [isGroupChat, event, messages]);
+
+  const convState = conversationStateFor(conversationId, user?.id);
+  const isMuted = !!convState?.muted;
+
+  const [announcementDismissed, setAnnouncementDismissed] = useState(false);
+  const [announcementExpanded, setAnnouncementExpanded] = useState(false);
+  const [broadcastPriority, setBroadcastPriority] = useState<'none' | 'ALERT' | 'HIGH'>('none');
+
+  const toggleBroadcastPriority = () => {
+    setBroadcastPriority(prev => {
+      if (prev === 'none') return 'ALERT';
+      if (prev === 'ALERT') return 'HIGH';
+      return 'none';
+    });
   };
+
+  // Presence + typing over an ephemeral realtime channel (no DB writes).
+  const me = user ? { id: user.id, name: user.full_name } : null;
+  const { onlineIds, typingUsers, sendTyping } = useChatPresence(conversationId, me);
+
+  // While this chat is on screen its incoming messages must not become notifications.
+  // Handled natively rather than in the JS notification handler so it still applies
+  // in the states where JS is not running (see RotaractPresentationDelegate).
+  //
+  // The flag is re-asserted on a heartbeat and cleared when the app backgrounds:
+  // unmount cleanup alone is not enough, because force-closing the app runs no
+  // cleanup at all and a stuck flag suppresses this conversation's notifications
+  // entirely. Native also expires it, so the two guard each other.
+  useEffect(() => {
+    if (!isFocused) {
+      setActiveChatConversation(null);
+      return;
+    }
+    stopAlertSound();
+    setActiveChatConversation(conversationId);
+    const assert = () => RotaractNotifications?.setActiveConversation(conversationId);
+    assert();
+    const heartbeat = setInterval(assert, 60_000);
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') {
+        assert();
+        setActiveChatConversation(conversationId);
+      } else {
+        RotaractNotifications?.setActiveConversation(null);
+        setActiveChatConversation(null);
+      }
+    });
+    return () => {
+      clearInterval(heartbeat);
+      sub.remove();
+      RotaractNotifications?.setActiveConversation(null);
+      setActiveChatConversation(null);
+    };
+  }, [isFocused, conversationId]);
+  const typingThrottle = useRef<number>(0);
+
+  // Read receipts: mark the conversation read whenever it is on-screen and the
+  // latest message changes. One upsert per change — never per render or on
+  // background-prefetched messages.
+  const lastMsgId = messages.length ? messages[messages.length - 1].id : undefined;
+  useEffect(() => {
+    if (isFocused && user && conversationId && lastMsgId) {
+      markConversationRead(conversationId, user.id, lastMsgId);
+    }
+  }, [isFocused, lastMsgId, conversationId, user?.id, markConversationRead]);
+
+  // When a new message lands: if user is at the bottom or it is their own message,
+  // stay anchored at y=0; otherwise show the "New messages ↓" pill.
+  useEffect(() => {
+    if (!messages.length) return;
+    const mine = messages[messages.length - 1]?.sender_id === user?.id;
+    if (mine || atBottom.current) {
+      listRef.current?.scrollToOffset({ offset: 0, animated: true });
+      setShowNewMsgPill(false);
+    } else {
+      setShowNewMsgPill(true);
+    }
+  }, [lastMsgId, user?.id, messages]);
+
+  // Members who can be @mentioned: the event's JOINED participants, minus me.
+  const mentionableMembers = useMemo(() => {
+    if (!isGroupChat || !eventId) return [];
+    const joined = participantsFor(eventId).filter(p => p.status === 'JOINED');
+    return joined
+      .map(p => users.find(u => u.id === p.user_id))
+      .filter((u): u is NonNullable<typeof u> => !!u && u.id !== user?.id);
+  }, [isGroupChat, eventId, participantsFor, users, user?.id]);
+
+  // Matches an in-progress "@query" at the end of the composer. Anchored to the end
+  // because that is where a mention is actually being typed; matching anywhere would
+  // re-open the picker while editing earlier text.
+  const mentionQuery = useMemo(() => {
+    if (!isGroupChat) return null;
+    const m = text.match(/(?:^|\s)@([\p{L}\p{N}_.-]*)$/u);
+    return m ? m[1] : null;
+  }, [text, isGroupChat]);
+
+  const mentionMatches = useMemo(() => {
+    if (mentionQuery === null) return [];
+    const q = mentionQuery.toLowerCase();
+    return mentionableMembers
+      .filter(u => u.full_name.toLowerCase().includes(q))
+      .slice(0, 6);
+  }, [mentionQuery, mentionableMembers]);
+
+  const insertMention = useCallback((member: { id: string; full_name: string }) => {
+    setText(prev => prev.replace(/(^|\s)@([\p{L}\p{N}_.-]*)$/u, `$1@${member.full_name} `));
+    setMentions(prev => (prev.some(m => m.id === member.id) ? prev : [...prev, { id: member.id, full_name: member.full_name }]));
+  }, []);
+
+  const handleTextChange = useCallback((val: string) => {
+    setText(val);
+    // Throttle typing:true broadcasts to at most one every 1.5s.
+    const nowTs = Date.now();
+    if (val.length > 0 && nowTs - typingThrottle.current > 1500) {
+      typingThrottle.current = nowTs;
+      sendTyping(true);
+    }
+    if (val.length === 0) sendTyping(false);
+  }, [sendTyping]);
+
+  const scrollToMessage = useCallback((targetId: string) => {
+    const idx = reversedMessages.findIndex(m => m.id === targetId);
+    if (idx !== -1) {
+      setHighlightedMessageId(targetId);
+      listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.5 });
+      setTimeout(() => {
+        setHighlightedMessageId(prev => (prev === targetId ? null : prev));
+      }, 2500);
+    } else {
+      showToast({
+        type: 'info',
+        title: 'Message Not Found',
+        message: 'The message is not currently loaded in the chat history.',
+      });
+    }
+  }, [reversedMessages, showToast]);
+
+  useEffect(() => {
+    if (matchingMessageIds.length > 0) {
+      setCurrentMatchIndex(0);
+      scrollToMessage(matchingMessageIds[0]);
+    }
+  }, [matchingMessageIds, scrollToMessage]);
+
+  const handleNextMatch = useCallback(() => {
+    if (matchingMessageIds.length === 0) return;
+    const nextIdx = (currentMatchIndex + 1) % matchingMessageIds.length;
+    setCurrentMatchIndex(nextIdx);
+    scrollToMessage(matchingMessageIds[nextIdx]);
+  }, [matchingMessageIds, currentMatchIndex, scrollToMessage]);
+
+  const handlePrevMatch = useCallback(() => {
+    if (matchingMessageIds.length === 0) return;
+    const prevIdx = (currentMatchIndex - 1 + matchingMessageIds.length) % matchingMessageIds.length;
+    setCurrentMatchIndex(prevIdx);
+    scrollToMessage(matchingMessageIds[prevIdx]);
+  }, [matchingMessageIds, currentMatchIndex, scrollToMessage]);
+
+  const handleSend = () => {
+    if (!text.trim() || !user || cannotMessage || isArchived) return;
+    const finalMentions = mentions.filter(m => text.includes(`@${m.full_name}`));
+    const finalText =
+      broadcastPriority === 'HIGH'
+        ? `🚨 [URGENT ANNOUNCEMENT]\n${text.trim()}`
+        : broadcastPriority === 'ALERT'
+        ? `📢 [ANNOUNCEMENT]\n${text.trim()}`
+        : text.trim();
+    const replyMeta = replyingTo ? {
+      id: replyingTo.id,
+      senderName: replyingTo.sender_name,
+      text: replyingTo.text ? replyingTo.text.replace(/^(📢|🚨)\s*(\[(URGENT\s+)?ANNOUNCEMENT\])?\s*/i, '') : (replyingTo.attachment_path ? '📷 Photo' : ''),
+    } : undefined;
+
+    sendDirectMessage(
+      conversationId,
+      eventId,
+      user,
+      isGroupChat ? undefined : recipientId,
+      recipientName,
+      finalText,
+      eventTitle || event?.title,
+      undefined,
+      finalMentions.length ? finalMentions.map(m => m.id) : undefined,
+      undefined,
+      undefined,
+      replyMeta,
+    );
+    setText('');
+    setMentions([]);
+    setReplyingTo(null);
+    setBroadcastPriority('none');
+    sendTyping(false);
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+  };
+
+  const handleAttachPhoto = async () => {
+    if (!user || isArchived || cannotMessage) return;
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Permission needed', 'Photo access is required to send a photo.');
+        return;
+      }
+      const res = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.7,
+        base64: true,
+      });
+      if (res.canceled || !res.assets?.length) return;
+      const a = res.assets[0];
+      setUploading(true);
+      try {
+        // Private bucket, path scoped to the conversation + sender (see 0007 RLS).
+        const path = await uploadImageAsset('chat-media', `${conversationId}/${user.id}`, {
+          uri: a.uri, base64: a.base64, mimeType: a.mimeType, fileName: a.fileName,
+        });
+        const replyMeta = replyingTo ? {
+          id: replyingTo.id,
+          senderName: replyingTo.sender_name,
+          text: replyingTo.text ? replyingTo.text.replace(/^(📢|🚨)\s*(\[(URGENT\s+)?ANNOUNCEMENT\])?\s*/i, '') : (replyingTo.attachment_path ? '📷 Photo' : ''),
+        } : undefined;
+
+        sendDirectMessage(
+          conversationId, eventId, user, isGroupChat ? undefined : recipientId, recipientName,
+          '', eventTitle || event?.title, path, undefined, a.width, a.height, replyMeta,
+        );
+        setReplyingTo(null);
+        listRef.current?.scrollToOffset({ offset: 0, animated: true });
+      } catch (err: any) {
+        Alert.alert('Upload Failed', err?.message || 'Could not send the photo. Please try again.');
+      } finally {
+        setUploading(false);
+      }
+    } catch {
+      Alert.alert('Error', 'Unable to open the photo library.');
+    }
+  };
+
+  // Read-receipt status for one of MY messages.
+  //
+  // Compared by message ORDER, not wall-clock time: each reader's cursor records
+  // the last message id they read, and every device shares the same ordered list,
+  // so "their last-read message is at or after mine" is independent of device
+  // clock skew (comparing created_at vs last_read_at across two phones made "Seen"
+  // show only on whichever device had the faster clock). A timestamp check is kept
+  // as a fallback for legacy cursors that predate last_read_message_id.
+  const cursors = readCursorsFor(conversationId);
+  const messageIndex = useMemo(() => {
+    const m = new Map<string, number>();
+    messages.forEach((msg, i) => m.set(msg.id, i));
+    return m;
+  }, [messages]);
+
+  // How many participants (other than the author and current viewer) have read a given message.
+  const readCountFor = useCallback((msg: DirectMessage): number => {
+    const myPos = messageIndex.get(msg.id);
+    const msgTime = new Date(msg.created_at).getTime();
+    return cursors.filter(c => {
+      if (c.user_id === msg.sender_id || c.user_id === user?.id) return false;
+      // Primary: matched by message order
+      if (c.last_read_message_id) {
+        const readerPos = messageIndex.get(c.last_read_message_id);
+        if (readerPos !== undefined) return readerPos >= (myPos ?? 0);
+      }
+      // Fallback: timestamp check (must be at least 1s after the message creation to prevent local skew)
+      if (c.last_read_at) {
+        const readTime = new Date(c.last_read_at).getTime();
+        return readTime > msgTime + 1000;
+      }
+      return false;
+    }).length;
+  }, [cursors, messageIndex, user?.id]);
+
+  // The other participants who have read a given message.
+  const readersFor = useCallback((msg: DirectMessage) => {
+    const myPos = messageIndex.get(msg.id);
+    const msgTime = new Date(msg.created_at).getTime();
+    return cursors
+      .filter(c => c.user_id !== msg.sender_id && c.user_id !== user?.id)
+      .filter(c => {
+        if (c.last_read_message_id) {
+          const rp = messageIndex.get(c.last_read_message_id);
+          if (rp !== undefined) return rp >= (myPos ?? 0);
+        }
+        if (c.last_read_at) {
+          const readTime = new Date(c.last_read_at).getTime();
+          return readTime > msgTime + 1000;
+        }
+        return false;
+      })
+      .map(c => users.find(u => u.id === c.user_id))
+      .filter((u): u is NonNullable<typeof u> => !!u);
+  }, [cursors, messageIndex, users, user?.id]);
 
   if (!user) return null;
 
   const displayName = isGroupChat ? `${eventTitle || event?.title || 'Event'} Group Chat` : recipientUser?.full_name || recipientName;
-  const displayClub = isGroupChat ? `${confirmedParticipants.length} confirmed participants` : recipientUser?.club_name || 'Rotaract Club';
+  const recipientOnline = !isGroupChat && !!recipientUser && onlineIds.has(recipientUser.id);
+  const onlineGroupCount = isGroupChat ? Array.from(onlineIds).filter(id => id !== user.id).length : 0;
+  const displayClub = isGroupChat
+    ? `${confirmedParticipants.length} confirmed • ${onlineGroupCount} online`
+    : (recipientOnline ? 'Active now' : recipientUser?.club_name || 'Rotaract Club');
   const displayPosition = isGroupChat ? 'Official Event Chat' : recipientUser?.position || 'Rotaractor';
 
+  // "John is typing…" / "John and Maria are typing…" / "3 people are typing…"
+  const typingLabel = typingUsers.length === 0 ? null
+    : typingUsers.length === 1 ? `${typingUsers[0]?.name?.split(' ')?.[0] || 'Someone'} is typing…`
+    : typingUsers.length === 2 ? `${typingUsers[0]?.name?.split(' ')?.[0] || 'Someone'} and ${typingUsers[1]?.name?.split(' ')?.[0] || 'Someone'} are typing…`
+    : `${typingUsers.length} people are typing…`;
+
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.bg }]} edges={['bottom']}>
+    <View style={[styles.safe, { backgroundColor: themeColors.bg }]}>
       {/* Header Card */}
       <View style={[styles.userHeaderCard, { backgroundColor: themeColors.cardBg, borderBottomColor: themeColors.border }]}>
         {isGroupChat ? (
           <TouchableOpacity
             style={[styles.avatarCircle, { backgroundColor: themeColors.primary }]}
-            onPress={() => {
-              if (eventId) navigation.navigate('Participants', { eventId });
-            }}
+            onPress={() => setChatDetailsVisible(true)}
           >
             <Ionicons name="chatbubbles" size={20} color="#fff" />
           </TouchableOpacity>
         ) : (
-          <TouchableOpacity onPress={() => recipientUser && setSelectedUserModal(recipientUser)}>
-            <UserAvatar user={recipientUser ?? { full_name: displayName }} size={44} />
+          <TouchableOpacity onPress={() => setChatDetailsVisible(true)}>
+            <View>
+              <UserAvatar user={recipientUser ?? { full_name: displayName }} size={44} />
+              {recipientOnline && <View style={[styles.onlineDot, { borderColor: themeColors.cardBg }]} />}
+            </View>
           </TouchableOpacity>
         )}
 
         <TouchableOpacity
           style={{ flex: 1 }}
           activeOpacity={0.7}
-          onPress={() => {
-            if (!isGroupChat && recipientUser) {
-              setSelectedUserModal(recipientUser);
-            } else if (eventId) {
-              navigation.navigate('Participants', { eventId });
-            }
-          }}
+          onPress={() => setChatDetailsVisible(true)}
         >
           <View style={styles.nameRow}>
             <Text style={[styles.userName, { color: themeColors.text }]} numberOfLines={1}>{displayName}</Text>
             {!isGroupChat && <VerifiedCheck user={recipientUser} size={15} />}
           </View>
-          <Text style={[styles.userSub, { color: themeColors.textMuted }]} numberOfLines={1}>
+          <Text style={[styles.userSub, { color: recipientOnline ? themeColors.success : themeColors.textMuted }]} numberOfLines={1}>
             {displayPosition} • {displayClub}
           </Text>
         </TouchableOpacity>
+
+        {/* Search toggle button */}
+        <TouchableOpacity
+          style={[styles.headerActionBtn, { backgroundColor: isSearchOpen ? themeColors.primary + '20' : themeColors.surface }]}
+          onPress={() => {
+            setIsSearchOpen(prev => {
+              if (prev) {
+                setSearchQuery('');
+                setSearchFilter('all');
+                setHighlightedMessageId(null);
+              }
+              return !prev;
+            });
+          }}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons
+            name="search"
+            size={18}
+            color={isSearchOpen ? themeColors.primary : themeColors.textMuted}
+          />
+        </TouchableOpacity>
+
+        {/* Media gallery toggle button */}
+        <TouchableOpacity
+          style={[styles.headerActionBtn, { backgroundColor: themeColors.surface }]}
+          onPress={() => setMediaGalleryVisible(true)}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons
+            name="images-outline"
+            size={18}
+            color={themeColors.textMuted}
+          />
+        </TouchableOpacity>
+
+        {/* Mute / Unmute bell toggle button */}
+        <TouchableOpacity
+          style={[styles.headerActionBtn, { backgroundColor: isMuted ? 'rgba(239, 68, 68, 0.12)' : themeColors.surface }]}
+          onPress={() => {
+            if (user && conversationId) {
+              const nextMuted = !isMuted;
+              setConversationMuted(conversationId, user.id, nextMuted);
+              showToast({ title: nextMuted ? 'Conversation muted' : 'Conversation unmuted', type: 'info' });
+            }
+          }}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons
+            name={isMuted ? 'notifications-off' : 'notifications-outline'}
+            size={18}
+            color={isMuted ? '#EF4444' : themeColors.textMuted}
+          />
+        </TouchableOpacity>
       </View>
 
-      {/* Event Context Banner for Direct Messages */}
-      {!isGroupChat && (eventTitle || event) ? (
+      {/* In-Chat Search Bar */}
+      {isSearchOpen && (
+        <View style={[styles.searchContainer, { backgroundColor: themeColors.cardBg, borderBottomColor: themeColors.border }]}>
+          <View style={[styles.searchInputRow, { backgroundColor: themeColors.surface, borderColor: themeColors.border }]}>
+            <Ionicons name="search" size={16} color={themeColors.textMuted} />
+            <TextInput
+              style={[styles.searchInput, { color: themeColors.text }]}
+              placeholder="Search in conversation..."
+              placeholderTextColor={themeColors.textMuted}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              autoFocus
+              returnKeyType="search"
+            />
+            {!!searchQuery && (
+              <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="close-circle" size={16} color={themeColors.textMuted} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Match navigation controls and filter chips */}
+          <View style={styles.searchMetaRow}>
+            {/* Filter chips */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.searchChipsScroll}>
+              <TouchableOpacity
+                style={[
+                  styles.searchChip,
+                  searchFilter === 'all'
+                    ? { backgroundColor: themeColors.primary, borderColor: themeColors.primary }
+                    : { backgroundColor: themeColors.surface, borderColor: themeColors.border },
+                ]}
+                onPress={() => setSearchFilter('all')}
+              >
+                <Text style={[styles.searchChipText, { color: searchFilter === 'all' ? '#fff' : themeColors.text }]}>All</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.searchChip,
+                  searchFilter === 'announcements'
+                    ? { backgroundColor: '#F59E0B', borderColor: '#F59E0B' }
+                    : { backgroundColor: themeColors.surface, borderColor: themeColors.border },
+                ]}
+                onPress={() => setSearchFilter('announcements')}
+              >
+                <Text style={[styles.searchChipText, { color: searchFilter === 'announcements' ? '#fff' : themeColors.text }]}>📢 Announcements</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.searchChip,
+                  searchFilter === 'photos'
+                    ? { backgroundColor: themeColors.primary, borderColor: themeColors.primary }
+                    : { backgroundColor: themeColors.surface, borderColor: themeColors.border },
+                ]}
+                onPress={() => setSearchFilter('photos')}
+              >
+                <Text style={[styles.searchChipText, { color: searchFilter === 'photos' ? '#fff' : themeColors.text }]}>📷 Photos</Text>
+              </TouchableOpacity>
+            </ScrollView>
+
+            {/* Match Counter & Up/Down Arrows */}
+            <View style={styles.matchCounterRow}>
+              <Text style={[styles.matchCounterText, { color: themeColors.textMuted }]}>
+                {matchingMessageIds.length > 0
+                  ? `${currentMatchIndex + 1} of ${matchingMessageIds.length}`
+                  : (searchQuery.trim() || searchFilter !== 'all' ? 'No matches' : '')}
+              </Text>
+              {matchingMessageIds.length > 0 && (
+                <View style={styles.matchNavButtons}>
+                  <TouchableOpacity
+                    style={[styles.matchNavBtn, { backgroundColor: themeColors.surface }]}
+                    onPress={handlePrevMatch}
+                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                  >
+                    <Ionicons name="chevron-up" size={16} color={themeColors.text} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.matchNavBtn, { backgroundColor: themeColors.surface }]}
+                    onPress={handleNextMatch}
+                    hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                  >
+                    <Ionicons name="chevron-down" size={16} color={themeColors.text} />
+                  </TouchableOpacity>
+                </View>
+              )}
+              <TouchableOpacity
+                style={[styles.searchCloseBtn, { backgroundColor: themeColors.surface }]}
+                onPress={() => {
+                  setIsSearchOpen(false);
+                  setSearchQuery('');
+                  setSearchFilter('all');
+                  setHighlightedMessageId(null);
+                }}
+              >
+                <Ionicons name="close" size={16} color={themeColors.text} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {isArchived && (
+        <View style={[styles.archivedBanner, { backgroundColor: themeColors.textMuted + '1A', borderColor: themeColors.border }]}>
+          <Ionicons name="archive-outline" size={14} color={themeColors.textMuted} />
+          <Text style={[styles.archivedText, { color: themeColors.textMuted }]}>
+            This conversation is archived ({event?.status === 'CANCELLED' ? 'event cancelled' : 'event completed'}). You can read past messages but can't send new ones.
+          </Text>
+        </View>
+      )}
+
+      {/* Group chats keep a persistent "view event details" header. 1-on-1 event
+          chats show the event link inside the thread instead (see ListHeaderComponent). */}
+      {isGroupChat && eventId && (eventTitle || event) ? (
         <TouchableOpacity
           style={[styles.eventBanner, { backgroundColor: themeColors.primary + '1A', borderColor: themeColors.primary + '3D' }]}
-          onPress={() => {
-            if (eventId) navigation.navigate('EventDetail', { eventId });
-          }}
+          onPress={() => navigation.navigate('EventDetail', { eventId })}
         >
-          <Ionicons name="pricetag" size={14} color={themeColors.primary} />
-          <Text style={[styles.eventBannerText, { color: themeColors.primary }]} numberOfLines={1}>
-            Inquiry regarding: {eventTitle || event?.title}
+          <Ionicons name="calendar" size={14} color={themeColors.primary} />
+          <Text style={[styles.eventBannerText, { color: themeColors.primary }]}>
+            View event details: {eventTitle || event?.title}
           </Text>
-          {eventId && <Ionicons name="chevron-forward" size={14} color={themeColors.primary} />}
+          <Ionicons name="chevron-forward" size={14} color={themeColors.primary} />
         </TouchableOpacity>
       ) : null}
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <FlatList
-          data={messages}
-          keyExtractor={m => m.id}
-          contentContainerStyle={styles.messageList}
-          renderItem={({ item }) => {
-            const isMe = item.sender_id === user.id;
-            const senderUser = users.find(u => u.id === item.sender_id);
-            return (
-              <View style={[styles.messageWrapper, isMe ? styles.myWrapper : styles.theirWrapper]}>
-                {!isMe && (
-                  <TouchableOpacity onPress={() => senderUser && setSelectedUserModal(senderUser)}>
-                    <UserAvatar
-                      user={senderUser ?? { full_name: item.sender_name }}
-                      size={28}
-                    />
-                  </TouchableOpacity>
-                )}
-                <View
-                  style={[
-                    styles.bubble,
-                    isMe
-                      ? [styles.myBubble, { backgroundColor: themeColors.primary }]
-                      : [styles.theirBubble, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }],
-                  ]}
-                >
-                  {!isMe && (
-                    <TouchableOpacity onPress={() => senderUser && setSelectedUserModal(senderUser)}>
-                      <View style={styles.senderNameRow}>
-                        <Text style={[styles.senderName, { color: themeColors.primary }]}>
-                          {item.sender_name} {senderUser ? `(${senderUser.position})` : ''}
-                        </Text>
-                        <VerifiedCheck user={senderUser} size={12} />
-                      </View>
-                    </TouchableOpacity>
-                  )}
-                  <Text style={[styles.messageText, { color: isMe ? '#fff' : themeColors.text }]}>{item.text}</Text>
-                  <Text style={[styles.messageTime, { color: isMe ? 'rgba(255,255,255,0.7)' : themeColors.textMuted }]}>
-                    {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+      {/* 📢 / 🚨 Pinned Organizer Announcement Banner */}
+      {isGroupChat && latestAnnouncement && !announcementDismissed && (() => {
+        const isUrgent = latestAnnouncement.text.startsWith('🚨');
+        return (
+          <View
+            style={[
+              styles.announcementBanner,
+              isUrgent
+                ? { backgroundColor: isNightMode ? '#3B1212' : '#FEF2F2', borderColor: '#EF4444' }
+                : { backgroundColor: isNightMode ? themeColors.cardBg : '#FFFBEB', borderColor: '#F59E0B' },
+            ]}
+          >
+            <View style={styles.announcementTopRow}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                <Ionicons name={isUrgent ? 'warning' : 'megaphone'} size={14} color={isUrgent ? '#EF4444' : '#D97706'} />
+                <Text style={[styles.announcementTag, { color: isUrgent ? '#EF4444' : '#D97706' }]}>
+                  {isUrgent ? 'URGENT ANNOUNCEMENT' : 'ORGANIZER ANNOUNCEMENT'}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setAnnouncementDismissed(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="close" size={16} color={themeColors.textMuted} />
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity onPress={() => setAnnouncementExpanded(prev => !prev)} activeOpacity={0.8}>
+              <Text
+                style={[styles.announcementText, { color: themeColors.text }]}
+                numberOfLines={announcementExpanded ? undefined : 2}
+              >
+                {latestAnnouncement.text.replace(/^(📢|🚨)\s*(\[(URGENT\s+)?ANNOUNCEMENT\])?\s*/i, '')}
+              </Text>
+              <View style={styles.announcementMetaRow}>
+                <Text style={[styles.announcementAuthor, { color: themeColors.textMuted }]}>
+                  Pinned by {latestAnnouncement.sender_name} • {formatTime(latestAnnouncement.created_at)}
+                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  {(() => {
+                    const readers = readersFor(latestAnnouncement);
+                    const pCount = readers.length;
+                    return (
+                      <TouchableOpacity
+                        onPress={() => setExpandedSeenId(prev => (prev === latestAnnouncement.id ? null : latestAnnouncement.id))}
+                        style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                      >
+                        <Ionicons name="checkmark-done" size={13} color={pCount > 0 ? READ_TICK_COLOR : themeColors.textMuted} />
+                        {pCount > 0 ? (
+                          <View style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 2 }}>
+                            {readers.slice(0, 4).map((r, i) => (
+                              <View key={r.id} style={{ marginLeft: i > 0 ? -6 : 0, borderRadius: 9, borderWidth: 1.5, borderColor: themeColors.cardBg }}>
+                                <UserAvatar user={r} size={16} showBadge={false} />
+                              </View>
+                            ))}
+                            {pCount > 4 && (
+                              <Text style={{ fontSize: 10, fontWeight: '700', color: themeColors.textMuted, marginLeft: 4 }}>
+                                +{pCount - 4}
+                              </Text>
+                            )}
+                          </View>
+                        ) : (
+                          <Text style={{ fontSize: 11, fontWeight: '600', color: themeColors.textMuted }}>
+                            Not seen yet
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })()}
+                  <Text style={[styles.announcementToggleText, { color: themeColors.primary }]}>
+                    {announcementExpanded ? 'Show less' : 'Read full'}
                   </Text>
                 </View>
               </View>
+            </TouchableOpacity>
+          </View>
+        );
+      })()}
+
+      <View style={{ flex: 1 }}>
+        {reversedMessages.length === 0 ? (
+          <View style={[styles.emptyChatWrap, { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 }]}>
+            <View style={[styles.emptyIconCircle, { backgroundColor: themeColors.primary + '18' }]}>
+              <Ionicons name="chatbubbles-outline" size={36} color={themeColors.primary} />
+            </View>
+            <Text style={[styles.emptyTitle, { color: themeColors.text }]}>
+              {isGroupChat ? 'Event Group Chat' : displayName}
+            </Text>
+            <Text style={[styles.emptySub, { color: themeColors.textMuted }]}>
+              {isGroupChat ? 'Welcome! Send a message to start communicating with everyone.' : `No messages yet. Say hi to ${displayName}!`}
+            </Text>
+          </View>
+        ) : (
+          <FlatList
+            ref={listRef}
+            data={reversedMessages}
+            inverted
+            keyExtractor={m => m.id}
+            style={{ flex: 1 }}
+            contentContainerStyle={styles.messageList}
+            onScroll={handleScroll}
+            scrollEventThrottle={16}
+            onScrollToIndexFailed={(info) => {
+              listRef.current?.scrollToOffset({ offset: info.highestMeasuredFrameIndex * 50, animated: true });
+            }}
+            renderItem={({ item, index }) => {
+            const isMe = item.sender_id === user.id;
+            const isUrgent = !!item.text?.startsWith('🚨');
+            const isAnnouncement = !!item.is_broadcast || !!item.text?.startsWith('📢') || isUrgent;
+            const senderUser = users.find(u => u.id === item.sender_id);
+            const readCount = readCountFor(item);
+            const isRead = readCount > 0;
+            // Inverted list: chronological run starts when the older message (index + 1) has a different event_id
+            const msgEvent = !isGroupChat && item.event_id ? events.find(e => e.id === item.event_id) : undefined;
+            const showEventChip = !!msgEvent && (index === reversedMessages.length - 1 || reversedMessages[index + 1]?.event_id !== item.event_id);
+
+            const msgReactions = reactionsFor(item.id);
+            const reactionMap = new Map<string, { count: number; userReacted: boolean }>();
+            for (const r of msgReactions) {
+              const cur = reactionMap.get(r.emoji) || { count: 0, userReacted: false };
+              cur.count += 1;
+              if (r.user_id === user.id) cur.userReacted = true;
+              reactionMap.set(r.emoji, cur);
+            }
+            const groupedReactions = Array.from(reactionMap.entries()).map(([emoji, data]) => ({ emoji, ...data }));
+
+            const isMatchFocus = isSearchOpen && matchingMessageIds[currentMatchIndex] === item.id;
+            const isJumpHighlighted = highlightedMessageId === item.id;
+
+            return (
+              <SwipeableRow
+                onReply={() => !item.deleted_at && setReplyingTo(item)}
+              >
+              <View>
+                <View style={[styles.messageWrapper, isMe ? styles.myWrapper : styles.theirWrapper]}>
+                  {!isMe && (
+                    <TouchableOpacity onPress={() => senderUser && setSelectedUserModal(senderUser)}>
+                      <UserAvatar user={senderUser ?? { full_name: item.sender_name }} size={28} />
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity
+                    activeOpacity={isGroupChat ? 0.85 : 1}
+                    // Tap (group) reveals who's seen it; long-press opens the delete menu.
+                    onPress={isGroupChat ? () => setExpandedSeenId(prev => (prev === item.id ? null : item.id)) : undefined}
+                    onLongPress={() => setActionMsg(item)}
+                    delayLongPress={300}
+                    style={[
+                      styles.bubble,
+                      isUrgent
+                        ? [styles.announcementBubble, { backgroundColor: isNightMode ? '#3B1212' : '#FEF2F2', borderColor: '#EF4444' }]
+                        : isAnnouncement
+                        ? [styles.announcementBubble, { backgroundColor: isNightMode ? '#2B1E05' : '#FFFBEB', borderColor: '#F59E0B' }]
+                        : isMe
+                        ? [styles.myBubble, { backgroundColor: themeColors.primary }]
+                        : [styles.theirBubble, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }],
+                      item.deleted_at && styles.deletedBubble,
+                      (isMatchFocus || isJumpHighlighted) && [
+                        styles.highlightedBubble,
+                        { borderColor: isNightMode ? '#60A5FA' : '#2563EB' },
+                      ],
+                    ]}
+                  >
+                    {isAnnouncement && !item.deleted_at && (
+                      <View style={[styles.announcementBubbleHeader, isUrgent && { borderBottomColor: '#EF444466' }]}>
+                        <Ionicons name={isUrgent ? 'warning' : 'megaphone'} size={12} color={isUrgent ? '#EF4444' : '#D97706'} />
+                        <Text style={[styles.announcementBubbleHeaderText, isUrgent && { color: '#EF4444' }]}>
+                          {isUrgent ? 'URGENT ANNOUNCEMENT' : 'ORGANIZER ANNOUNCEMENT'}
+                        </Text>
+                      </View>
+                    )}
+                    {showEventChip && msgEvent && (
+                      <TouchableOpacity
+                        style={[styles.msgEventChip, { backgroundColor: isMe ? 'rgba(255,255,255,0.18)' : themeColors.primary + '18', borderColor: isMe ? 'rgba(255,255,255,0.35)' : themeColors.primary + '40' }]}
+                        onPress={() => item.event_id && navigation.navigate('EventDetail', { eventId: item.event_id })}
+                      >
+                        <Ionicons name="pricetag" size={11} color={isMe ? '#fff' : themeColors.primary} />
+                        <Text numberOfLines={1} style={[styles.msgEventChipText, { color: isMe ? '#fff' : themeColors.primary }]}>{msgEvent.title}</Text>
+                        <Ionicons name="chevron-forward" size={11} color={isMe ? 'rgba(255,255,255,0.85)' : themeColors.primary} />
+                      </TouchableOpacity>
+                    )}
+                    {!isMe && isGroupChat && (
+                      <TouchableOpacity onPress={() => senderUser && setSelectedUserModal(senderUser)}>
+                        <View style={styles.senderNameRow}>
+                          <Text style={[styles.senderName, { color: isAnnouncement ? '#D97706' : themeColors.primary }]}>
+                            {item.sender_name} {senderUser ? `(${senderUser.position})` : ''}
+                          </Text>
+                          <VerifiedCheck user={senderUser} size={12} />
+                        </View>
+                      </TouchableOpacity>
+                    )}
+
+                    {/* Quoted / Replied-to message snippet inside the bubble */}
+                    {!!item.reply_to_message_id && !item.deleted_at && (
+                      <TouchableOpacity
+                        style={[
+                          styles.quotedSnippet,
+                          {
+                            borderLeftColor: isMe ? 'rgba(255,255,255,0.9)' : themeColors.primary,
+                            backgroundColor: isMe ? 'rgba(0,0,0,0.14)' : (isNightMode ? '#1F2937' : '#F3F4F6'),
+                          },
+                        ]}
+                        onPress={() => item.reply_to_message_id && scrollToMessage(item.reply_to_message_id)}
+                        activeOpacity={0.8}
+                      >
+                        <View style={styles.quotedSnippetHeader}>
+                          <Ionicons name="arrow-undo" size={11} color={isMe ? 'rgba(255,255,255,0.95)' : themeColors.primary} />
+                          <Text style={[styles.quotedSnippetAuthor, { color: isMe ? '#fff' : themeColors.primary }]} numberOfLines={1}>
+                            {item.reply_to_sender_name || 'Replied Message'}
+                          </Text>
+                        </View>
+                        <Text style={[styles.quotedSnippetText, { color: isMe ? 'rgba(255,255,255,0.85)' : themeColors.textMuted }]} numberOfLines={2}>
+                          {item.reply_to_text || 'Original message'}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+
+                    {item.deleted_at ? (
+                      <View style={styles.tombstoneRow}>
+                        <Ionicons name="ban-outline" size={13} color={isMe ? 'rgba(255,255,255,0.85)' : themeColors.textMuted} />
+                        <Text style={[styles.tombstoneText, { color: isMe ? 'rgba(255,255,255,0.85)' : themeColors.textMuted }]}>
+                          This message was deleted
+                        </Text>
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        activeOpacity={0.85}
+                        onLongPress={() => setActionMsg(item)}
+                        delayLongPress={250}
+                      >
+                        {item.attachment_path && item.attachment_type === 'image' && (
+                          <ChatImage
+                            path={item.attachment_path}
+                            width={item.attachment_width}
+                            height={item.attachment_height}
+                            onPress={setFullImageUri}
+                            onLongPress={() => setActionMsg(item)}
+                          />
+                        )}
+                        {!!item.text && (
+                          <HighlightedText
+                            text={isAnnouncement ? item.text.replace(/^(📢|🚨)\s*(\[(URGENT\s+)?ANNOUNCEMENT\])?\s*/i, '') : item.text}
+                            query={isSearchOpen ? searchQuery : ''}
+                            baseColor={
+                              isUrgent
+                                ? (isNightMode ? '#FCA5A5' : '#991B1B')
+                                : isAnnouncement
+                                ? (isNightMode ? '#FDE68A' : '#78350F')
+                                : (isMe ? '#fff' : themeColors.text)
+                            }
+                            isNight={isNightMode}
+                          />
+                        )}
+                      </TouchableOpacity>
+                    )}
+
+                    {/* The meta row (time + ticks) is also a toggle target for the
+                        "Seen by …" detail — this is the tap that works on photo
+                        messages, where tapping the image opens it fullscreen. */}
+                    <TouchableOpacity
+                      style={styles.metaRow}
+                      activeOpacity={isGroupChat ? 0.6 : 1}
+                      onPress={isGroupChat ? () => setExpandedSeenId(prev => (prev === item.id ? null : item.id)) : undefined}
+                    >
+                      <Text style={[
+                        styles.messageTime,
+                        { color: isAnnouncement ? (isNightMode ? '#FDE68A99' : '#B45309') : (isMe ? 'rgba(255,255,255,0.7)' : themeColors.textMuted) }
+                      ]}>
+                        {formatTime(item.created_at)}
+                      </Text>
+                      {isMe && !item.deleted_at && item.send_status === 'sending' && <Ionicons name="time-outline" size={12} color="rgba(255,255,255,0.7)" />}
+                      {isMe && !item.deleted_at && item.send_status === 'failed' && (
+                        <TouchableOpacity onPress={() => retryMessage(item.id)} style={styles.retryBtn}>
+                          <Ionicons name="alert-circle" size={13} color="#FFD7D7" />
+                          <Text style={styles.retryText}>Retry</Text>
+                        </TouchableOpacity>
+                      )}
+                      {/* Delivery/read ticks: ✓ = sent, ✓✓ (colored) = read. */}
+                      {isMe && !item.deleted_at && item.send_status !== 'sending' && item.send_status !== 'failed' && (
+                        <View style={styles.receiptRow}>
+                          <Ionicons
+                            name={isRead ? 'checkmark-done' : 'checkmark'}
+                            size={15}
+                            color={isRead ? (isAnnouncement ? '#D97706' : READ_TICK_COLOR) : 'rgba(255,255,255,0.7)'}
+                          />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  </TouchableOpacity>
+                </View>
+                {/* Docked reaction chips */}
+                {groupedReactions.length > 0 && !item.deleted_at && (
+                  <View style={[styles.reactionChipsRow, isMe ? styles.reactionChipsRowMe : styles.reactionChipsRowThem]}>
+                    {groupedReactions.map(({ emoji, count, userReacted }) => (
+                      <TouchableOpacity
+                        key={emoji}
+                        style={[
+                          styles.reactionChip,
+                          {
+                            backgroundColor: userReacted ? (isMe ? themeColors.primary + '25' : themeColors.primary + '18') : (isNightMode ? '#1E293B' : '#FFFFFF'),
+                            borderColor: userReacted ? themeColors.primary : (isNightMode ? '#334155' : '#E2E8F0'),
+                          },
+                        ]}
+                        onPress={() => user && toggleMessageReaction(item.id, user.id, emoji)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.reactionChipEmoji}>{emoji}</Text>
+                        {count > 1 && (
+                          <Text style={[styles.reactionChipCount, { color: userReacted ? themeColors.primary : themeColors.textMuted }]}>
+                            {count}
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+                {isGroupChat && !item.deleted_at && (
+                  expandedSeenId === item.id ? (() => {
+                    const readers = readersFor(item);
+                    return (
+                      <TouchableOpacity
+                        style={[styles.seenByRow, isMe ? styles.myWrapper : styles.seenByTheir]}
+                        onPress={() => setExpandedSeenId(null)}
+                      >
+                        {readers.length === 0 ? (
+                          <Text style={[styles.seenByText, { color: themeColors.textMuted }]}>Not seen yet</Text>
+                        ) : (
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <View style={styles.compactSeenStack}>
+                              {readers.slice(0, 8).map((r, i) => (
+                                <View key={r.id} style={[styles.compactSeenAvatar, { marginLeft: i > 0 ? -6 : 0, borderColor: themeColors.bg }]}>
+                                  <UserAvatar user={r} size={18} showBadge={false} />
+                                </View>
+                              ))}
+                            </View>
+                            <Text style={[styles.seenByText, { color: themeColors.textMuted }]}>
+                              Seen by {readers.map(r => r.full_name?.split(' ')?.[0] || 'Member').join(', ')}
+                            </Text>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })() : (
+                    // Compact avatar-only summary under YOUR OWN group messages or ANNOUNCEMENTS
+                    (isMe || isAnnouncement) && readCount > 0 ? (() => {
+                      const readers = readersFor(item);
+                      return (
+                        <TouchableOpacity
+                          style={[styles.seenByRow, isMe ? styles.myWrapper : styles.seenByTheir]}
+                          onPress={() => setExpandedSeenId(item.id)}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons name="checkmark-done" size={12} color={isAnnouncement ? '#D97706' : READ_TICK_COLOR} />
+                          <View style={styles.compactSeenStack}>
+                            {readers.slice(0, 5).map((r, i) => (
+                              <View key={r.id} style={[styles.compactSeenAvatar, { marginLeft: i > 0 ? -6 : 0, borderColor: themeColors.bg }]}>
+                                <UserAvatar user={r} size={16} showBadge={false} />
+                              </View>
+                            ))}
+                            {readers.length > 5 && (
+                              <Text style={{ fontSize: 10, fontWeight: '700', color: themeColors.textMuted, marginLeft: 4 }}>
+                                +{readers.length - 5}
+                              </Text>
+                            )}
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })() : null
+                  )
+                )}
+              </View>
+              </SwipeableRow>
             );
           }}
-          ListEmptyComponent={
-            <Text style={[styles.empty, { color: themeColors.textMuted }]}>
-              {isGroupChat ? 'Welcome to the Event Group Chat! Send a message to start communicating.' : `No messages yet. Say hi to ${displayName}!`}
-            </Text>
-          }
         />
+        )}
 
-        <View style={[styles.inputBar, { backgroundColor: themeColors.cardBg, borderTopColor: themeColors.border }]}>
-          <TextInput
-            style={[styles.textInput, { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text }]}
-            placeholder={isGroupChat ? 'Message group chat...' : 'Type a message...'}
-            placeholderTextColor={themeColors.textMuted}
-            value={text}
-            onChangeText={setText}
-            multiline
-          />
+        {typingLabel ? (
+          <Text style={[styles.typingLabel, { color: themeColors.textMuted }]}>{typingLabel}</Text>
+        ) : null}
+
+        {isArchived ? (
+          <View style={[styles.archivedComposer, { backgroundColor: themeColors.cardBg, borderTopColor: themeColors.border }]}>
+            <Ionicons name="lock-closed" size={14} color={themeColors.textMuted} />
+            <Text style={[styles.archivedComposerText, { color: themeColors.textMuted }]}>Messaging is closed for this archived conversation</Text>
+          </View>
+        ) : cannotMessage ? (
           <TouchableOpacity
-            style={[styles.sendBtn, { backgroundColor: themeColors.primary }, !text.trim() && styles.sendBtnDisabled]}
-            disabled={!text.trim()}
-            onPress={handleSend}
+            style={[styles.archivedComposer, { backgroundColor: themeColors.cardBg, borderTopColor: themeColors.border }]}
+            onPress={() => setReasonVisible(true)}
+            activeOpacity={0.7}
           >
-            <Ionicons name="send" size={16} color="#fff" />
+            <Ionicons name="lock-closed" size={14} color={themeColors.textMuted} />
+            <Text style={[styles.archivedComposerText, { color: themeColors.textMuted }]}>
+              You can't message this account
+            </Text>
+            <Ionicons name="information-circle-outline" size={15} color={themeColors.textMuted} />
           </TouchableOpacity>
-        </View>
-      </KeyboardAvoidingView>
+        ) : (
+          <>
+            {/* Member picker, shown while an "@query" is being typed. A plain mapped
+                list rather than a FlatList: it is capped at six rows, and nesting a
+                VirtualizedList inside the message list warns at runtime. */}
+            {mentionMatches.length > 0 && (
+              <View style={[styles.mentionBar, { backgroundColor: themeColors.cardBg, borderTopColor: themeColors.border }]}>
+                {mentionMatches.map(member => (
+                  <TouchableOpacity
+                    key={member.id}
+                    style={styles.mentionRow}
+                    onPress={() => insertMention(member)}
+                    activeOpacity={0.7}
+                  >
+                    <UserAvatar user={member} size={28} showBadge={false} />
+                    <Text style={[styles.mentionName, { color: themeColors.text }]} numberOfLines={1}>
+                      {member.full_name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
 
-      {/* Member Profile Modal */}
+            {/* Confirmed mentions, so the user can see who the message will notify. */}
+            {mentions.length > 0 && (
+              <View style={[styles.mentionChipRow, { backgroundColor: themeColors.cardBg }]}>
+                {mentions.map(m => (
+                  <View key={m.id} style={[styles.mentionChip, { backgroundColor: themeColors.primary + '1A' }]}>
+                    <Text style={[styles.mentionChipText, { color: themeColors.primary }]}>@{m.full_name}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {showNewMsgPill && (
+              <View style={styles.newMsgPillWrap} pointerEvents="box-none">
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  style={[styles.newMsgPill, { backgroundColor: themeColors.primary }]}
+                  onPress={() => {
+                    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+                    setShowNewMsgPill(false);
+                  }}
+                >
+                  <Ionicons name="arrow-down" size={13} color="#fff" />
+                  <Text style={styles.newMsgPillText}>New messages</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            {/* Quote Preview Bar above composer */}
+            {replyingTo && (
+              <View style={[styles.replyPreviewBar, { backgroundColor: themeColors.cardBg, borderTopColor: themeColors.border }]}>
+                <View style={[styles.replyPreviewAccent, { backgroundColor: themeColors.primary }]} />
+                <View style={styles.replyPreviewContent}>
+                  <View style={styles.replyPreviewHeader}>
+                    <Ionicons name="arrow-undo" size={12} color={themeColors.primary} />
+                    <Text style={[styles.replyPreviewTitle, { color: themeColors.primary }]}>
+                      Replying to {replyingTo.sender_name}
+                    </Text>
+                  </View>
+                  <Text style={[styles.replyPreviewSnippet, { color: themeColors.textMuted }]} numberOfLines={1}>
+                    {replyingTo.text ? replyingTo.text.replace(/^(📢|🚨)\s*(\[(URGENT\s+)?ANNOUNCEMENT\])?\s*/i, '') : (replyingTo.attachment_path ? '📷 Photo' : 'Original message')}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.replyPreviewClose}
+                  onPress={() => setReplyingTo(null)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons name="close-circle" size={20} color={themeColors.textMuted} />
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Active Broadcast Priority Indicator Banner */}
+            {isOrganizer && isGroupChat && broadcastPriority !== 'none' && (
+              <View
+                style={[
+                  styles.priorityBanner,
+                  broadcastPriority === 'HIGH'
+                    ? { backgroundColor: isNightMode ? '#3B1212' : '#FEF2F2', borderColor: '#EF4444' }
+                    : { backgroundColor: isNightMode ? '#2B1E05' : '#FFFBEB', borderColor: '#F59E0B' },
+                ]}
+              >
+                <Ionicons
+                  name={broadcastPriority === 'HIGH' ? 'warning' : 'megaphone'}
+                  size={14}
+                  color={broadcastPriority === 'HIGH' ? '#EF4444' : '#D97706'}
+                />
+                <Text
+                  style={[
+                    styles.priorityBannerText,
+                    { color: broadcastPriority === 'HIGH' ? '#EF4444' : '#D97706' },
+                  ]}
+                >
+                  {broadcastPriority === 'HIGH'
+                    ? '🚨 Urgent Mode • Plays Alarm sound to all participants'
+                    : '📢 Announcement Mode • Plays Alert tone to all participants'}
+                </Text>
+                <TouchableOpacity onPress={() => setBroadcastPriority('none')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Ionicons
+                    name="close-circle"
+                    size={16}
+                    color={broadcastPriority === 'HIGH' ? '#EF4444' : '#D97706'}
+                  />
+                </TouchableOpacity>
+              </View>
+            )}
+
+            <View
+              style={[
+                styles.inputBar,
+                {
+                  backgroundColor: themeColors.cardBg,
+                  borderTopColor: themeColors.border,
+                  paddingBottom: isKeyboardVisible
+                    ? keyboardOffset + 8
+                    : Math.max(insets.bottom, 10),
+                },
+              ]}
+            >
+            <TouchableOpacity style={styles.attachBtn} onPress={handleAttachPhoto} disabled={uploading} hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}>
+              {uploading ? <ActivityIndicator size="small" color={themeColors.primary} /> : <Ionicons name="image" size={22} color={themeColors.primary} />}
+            </TouchableOpacity>
+            {isOrganizer && isGroupChat && (
+              <TouchableOpacity
+                style={[
+                  styles.announcementToggleBtn,
+                  broadcastPriority === 'ALERT' && { backgroundColor: '#F59E0B22', borderColor: '#F59E0B' },
+                  broadcastPriority === 'HIGH' && { backgroundColor: '#EF444422', borderColor: '#EF4444' },
+                ]}
+                onPress={toggleBroadcastPriority}
+                accessibilityLabel="Toggle broadcast priority"
+                hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+              >
+                <Ionicons
+                  name={broadcastPriority === 'HIGH' ? 'warning' : 'megaphone'}
+                  size={18}
+                  color={
+                    broadcastPriority === 'HIGH'
+                      ? '#EF4444'
+                      : broadcastPriority === 'ALERT'
+                      ? '#D97706'
+                      : themeColors.textMuted
+                  }
+                />
+              </TouchableOpacity>
+            )}
+            <TextInput
+              style={[
+                styles.textInput,
+                {
+                  backgroundColor: themeColors.surface,
+                  borderColor:
+                    broadcastPriority === 'HIGH'
+                      ? '#EF4444'
+                      : broadcastPriority === 'ALERT'
+                      ? '#F59E0B'
+                      : themeColors.border,
+                  color: themeColors.text,
+                },
+              ]}
+              placeholder={
+                broadcastPriority === 'HIGH'
+                  ? 'Broadcast urgent alert (Alarm)...'
+                  : broadcastPriority === 'ALERT'
+                  ? 'Broadcast announcement (Alert)...'
+                  : isGroupChat
+                  ? 'Message group chat...'
+                  : 'Type a message...'
+              }
+              placeholderTextColor={themeColors.textMuted}
+              value={text}
+              onChangeText={handleTextChange}
+              onBlur={() => sendTyping(false)}
+              multiline
+            />
+            <TouchableOpacity
+              style={[
+                styles.sendBtn,
+                {
+                  backgroundColor:
+                    broadcastPriority === 'HIGH'
+                      ? '#EF4444'
+                      : broadcastPriority === 'ALERT'
+                      ? '#D97706'
+                      : themeColors.primary,
+                },
+                !text.trim() && styles.sendBtnDisabled,
+              ]}
+              disabled={!text.trim()}
+              onPress={handleSend}
+              hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+            >
+              <Ionicons name="send" size={16} color="#fff" />
+            </TouchableOpacity>
+          </View>
+          </>
+        )}
+      </View>
+
+      {/* Long-press message menu: Quick reactions, reply, copy, and delete choices. */}
+      <BottomSheet
+        visible={!!actionMsg}
+        onClose={() => setActionMsg(null)}
+        cardStyle={[styles.menuCard, { backgroundColor: themeColors.cardBg }]}
+      >
+        {/* Floating Quick Reaction Bar */}
+        {actionMsg && !actionMsg.deleted_at && (
+          <View style={[styles.quickReactionContainer, { backgroundColor: isNightMode ? '#1E293B' : '#F1F5F9' }]}>
+            {['👍', '❤️', '😂', '😮', '😢', '👏'].map(emoji => {
+              const activeReaction = reactionsFor(actionMsg.id).find(r => r.user_id === user?.id && r.emoji === emoji);
+              return (
+                <TouchableOpacity
+                  key={emoji}
+                  style={[
+                    styles.quickReactionBtn,
+                    activeReaction && { backgroundColor: themeColors.primary + '28', borderColor: themeColors.primary, borderWidth: 1 }
+                  ]}
+                  onPress={() => {
+                    if (user) {
+                      toggleMessageReaction(actionMsg.id, user.id, emoji);
+                    }
+                    setActionMsg(null);
+                  }}
+                  activeOpacity={0.65}
+                >
+                  <Text style={styles.quickReactionEmoji}>{emoji}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
+
+        <Text style={[styles.menuTitle, { color: themeColors.textMuted }]}>Message Options</Text>
+        
+        {actionMsg && !actionMsg.deleted_at && (
+          <TouchableOpacity
+            style={styles.menuRow}
+            onPress={() => {
+              setReplyingTo(actionMsg);
+              setActionMsg(null);
+            }}
+          >
+            <Ionicons name="arrow-undo-outline" size={20} color={themeColors.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.menuLabel, { color: themeColors.text }]}>Reply</Text>
+              <Text style={[styles.menuSub, { color: themeColors.textMuted }]}>Quote this message in your reply</Text>
+            </View>
+          </TouchableOpacity>
+        )}
+
+        {actionMsg && !!actionMsg.text && !actionMsg.deleted_at && (
+          <TouchableOpacity
+            style={styles.menuRow}
+            onPress={() => {
+              if (actionMsg?.text) {
+                Clipboard.setString(actionMsg.text);
+                setActionMsg(null);
+                showToast({
+                  type: 'success',
+                  title: 'Copied',
+                  message: 'Message copied to clipboard',
+                });
+              }
+            }}
+          >
+            <Ionicons name="copy-outline" size={20} color={themeColors.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.menuLabel, { color: themeColors.text }]}>Copy Text</Text>
+              <Text style={[styles.menuSub, { color: themeColors.textMuted }]}>Copy message content to clipboard</Text>
+            </View>
+          </TouchableOpacity>
+        )}
+
+        {actionMsg && actionMsg.sender_id === user.id && !actionMsg.deleted_at && (
+          <TouchableOpacity
+            style={styles.menuRow}
+            onPress={() => { const id = actionMsg.id; setActionMsg(null); unsendMessage(id); }}
+          >
+            <Ionicons name="trash" size={20} color={themeColors.danger} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.menuLabel, { color: themeColors.danger }]}>Unsend for everyone</Text>
+              <Text style={[styles.menuSub, { color: themeColors.textMuted }]}>Removes it for all participants, leaving "This message was deleted"</Text>
+            </View>
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity
+          style={styles.menuRow}
+          onPress={() => { if (actionMsg) deleteMessageForMe(actionMsg.id, user.id); setActionMsg(null); }}
+        >
+          <Ionicons name="eye-off-outline" size={20} color={themeColors.text} />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.menuLabel, { color: themeColors.text }]}>Delete for me</Text>
+            <Text style={[styles.menuSub, { color: themeColors.textMuted }]}>Hides it from your view only</Text>
+          </View>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.menuRow, styles.menuCancel]} onPress={() => setActionMsg(null)}>
+          <Text style={[styles.menuLabel, { color: themeColors.textMuted, textAlign: 'center', flex: 1 }]}>Cancel</Text>
+        </TouchableOpacity>
+      </BottomSheet>
+
+      <FullImageModal
+        visible={!!fullImageUri}
+        imageUri={fullImageUri}
+        title="Photo"
+        onClose={() => setFullImageUri(null)}
+      />
+
       <UserProfileModal
         visible={!!selectedUserModal}
         targetUser={selectedUserModal}
         onClose={() => setSelectedUserModal(null)}
-        onStartChat={(targetUser) => {
+        eventContext={eventId && (eventTitle || event?.title) ? { eventId, eventTitle: eventTitle || event!.title } : undefined}
+        onStartChat={(targetUser, aboutEvent) => {
           setSelectedUserModal(null);
           if (targetUser.id !== recipientId) {
-            const conv = getOrCreateConversation(eventId, user, targetUser.id, targetUser.full_name);
+            if (!canMessageUser(users.find(u => u.id === targetUser.id), user)) {
+              setBlockedName(targetUser.full_name);
+              return;
+            }
+            const ctxEventId = aboutEvent ? eventId : undefined;
+            const conv = getOrCreateConversation(ctxEventId, user, targetUser.id, targetUser.full_name);
             navigation.push('Chat', {
               conversationId: conv.id,
-              eventId,
+              eventId: ctxEventId,
               recipientId: targetUser.id,
               recipientName: targetUser.full_name,
-              eventTitle,
+              eventTitle: aboutEvent ? (eventTitle || event?.title) : undefined,
             });
           }
         }}
       />
-    </SafeAreaView>
+          <ConfirmDialog
+        visible={reasonVisible}
+        title={recipientMissing ? 'Account deleted' : 'Messaging unavailable'}
+        message={blockReason}
+        onClose={() => setReasonVisible(false)}
+        confirmLabel="OK"
+      />
+
+      <ConfirmDialog
+        visible={!!blockedName}
+        title="Messaging unavailable"
+        message={blockedName ? inquiryBlockedMessage(blockedName) : undefined}
+        onClose={() => setBlockedName(null)}
+        confirmLabel="OK"
+      />
+
+      {/* Comprehensive Chat Details & Media Gallery */}
+      <ChatDetailsModal
+        visible={chatDetailsVisible}
+        onClose={() => setChatDetailsVisible(false)}
+        isGroupChat={isGroupChat}
+        otherUser={recipientUser}
+        event={event}
+        participants={participantUsers}
+        messages={messages}
+        isMuted={isMuted}
+        onToggleMute={() => {
+          if (user && conversationId) {
+            const nextMuted = !isMuted;
+            setConversationMuted(conversationId, user.id, nextMuted);
+            showToast({ title: nextMuted ? 'Conversation muted' : 'Conversation unmuted', type: 'info' });
+          }
+        }}
+        onOpenSearch={() => {
+          setIsSearchOpen(true);
+        }}
+        onOpenMediaGallery={() => {
+          setMediaGalleryVisible(true);
+        }}
+        onSelectUser={(u) => {
+          setSelectedUserModal(u);
+        }}
+        onNavigateEvent={(evId) => {
+          navigation.navigate('EventDetail', { eventId: evId });
+        }}
+      />
+
+      <ChatMediaGalleryModal
+        visible={mediaGalleryVisible}
+        messages={messages}
+        onClose={() => setMediaGalleryVisible(false)}
+        onJumpToMessage={(msgId) => {
+          scrollToMessage(msgId);
+        }}
+      />
+    </View>
+  );
+}
+
+/** Highlights matched substrings when search is active. */
+function HighlightedText({
+  text,
+  query,
+  baseColor,
+  isNight,
+}: {
+  text: string;
+  query: string;
+  baseColor: string;
+  isNight: boolean;
+}) {
+  if (!query.trim()) {
+    return <Text style={[styles.messageText, { color: baseColor }]}>{text}</Text>;
+  }
+
+  const escaped = query.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+  const parts = text.split(new RegExp(`(${escaped})`, 'gi'));
+  return (
+    <Text style={[styles.messageText, { color: baseColor }]}>
+      {parts.map((part, i) =>
+        part.toLowerCase() === query.toLowerCase() ? (
+          <Text
+            key={i}
+            style={{
+              backgroundColor: isNight ? '#B45309' : '#FEF08A',
+              color: isNight ? '#FEF3C7' : '#78350F',
+              fontWeight: '800',
+            }}
+          >
+            {part}
+          </Text>
+        ) : (
+          part
+        )
+      )}
+    </Text>
+  );
+}
+
+/** Renders a chat photo, resolving a signed URL with pre-reserved aspect ratio to eliminate layout shifts. */
+function ChatImage({
+  path,
+  width,
+  height,
+  onPress,
+  onLongPress,
+}: {
+  path: string;
+  width?: number;
+  height?: number;
+  onPress: (uri: string) => void;
+  onLongPress?: () => void;
+}) {
+  const uri = useSignedUrl('chat-media', path);
+  const { colors } = useTheme();
+
+  const MAX_WIDTH = 220;
+  const MAX_HEIGHT = 280;
+  const aspectRatio = width && height && width > 0 && height > 0 ? width / height : 4 / 3;
+  let displayWidth = MAX_WIDTH;
+  let displayHeight = displayWidth / aspectRatio;
+  if (displayHeight > MAX_HEIGHT) {
+    displayHeight = MAX_HEIGHT;
+    displayWidth = displayHeight * aspectRatio;
+  }
+
+  const imageStyle = {
+    width: displayWidth,
+    height: displayHeight,
+    borderRadius: 12,
+    marginBottom: 4,
+  };
+
+  if (!uri) {
+    return (
+      <View style={[imageStyle, styles.chatImageLoading, { backgroundColor: colors.surface }]}>
+        <ActivityIndicator color={colors.primary} />
+      </View>
+    );
+  }
+  return (
+    <TouchableOpacity activeOpacity={0.9} onPress={() => onPress(uri)} onLongPress={onLongPress} delayLongPress={300}>
+      <Image source={{ uri }} style={imageStyle} resizeMode="cover" />
+    </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
+  mentionBar: { borderTopWidth: StyleSheet.hairlineWidth, paddingVertical: 4 },
+  mentionRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 8 },
+  mentionName: { fontSize: 14, fontWeight: '600', flex: 1 },
+  mentionChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 14, paddingTop: 6 },
+  mentionChip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  mentionChipText: { fontSize: 12, fontWeight: '700' },
   userHeaderCard: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 12, borderBottomWidth: 1 },
   avatarCircle: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  headerAvatarImg: { width: '100%', height: '100%', borderRadius: 22 },
-  avatarInitials: { color: '#fff', fontSize: 16, fontWeight: '800' },
+  onlineDot: { position: 'absolute', bottom: 0, right: 0, width: 12, height: 12, borderRadius: 6, backgroundColor: '#22C55E', borderWidth: 2 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   userName: { fontSize: 15, fontWeight: '700' },
   userSub: { fontSize: 12, marginTop: 1 },
-  viewEventBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  archivedBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: 1 },
+  archivedText: { flex: 1, fontSize: 11, fontWeight: '600' },
   eventBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 8, borderWidth: 1 },
   eventBannerText: { flex: 1, fontSize: 12, fontWeight: '700' },
+  msgEventChip: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', maxWidth: '100%', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10, borderWidth: 1, marginBottom: 6 },
+  msgEventChipText: { fontSize: 11, fontWeight: '800', flexShrink: 1 },
   messageList: { padding: 16, paddingBottom: 24, gap: 12 },
   messageWrapper: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
   myWrapper: { justifyContent: 'flex-end' },
   theirWrapper: { justifyContent: 'flex-start' },
-  msgAvatar: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  msgAvatarText: { color: '#fff', fontSize: 10, fontWeight: '800' },
   bubble: { maxWidth: '78%', padding: 12, borderRadius: 16 },
   myBubble: { borderBottomRightRadius: 4 },
   theirBubble: { borderBottomLeftRadius: 4, borderWidth: 1 },
+  deletedBubble: { opacity: 0.85 },
+  tombstoneRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  tombstoneText: { fontSize: 13, fontStyle: 'italic' },
   senderNameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   senderName: { fontSize: 11, fontWeight: '700' },
   messageText: { fontSize: 14, lineHeight: 20 },
-  messageTime: { fontSize: 10, alignSelf: 'flex-end', marginTop: 4 },
-  inputBar: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingVertical: 10, borderTopWidth: 1 },
-  textInput: { flex: 1, borderRadius: 20, borderWidth: 1, paddingHorizontal: 16, paddingVertical: 8, maxHeight: 100, fontSize: 15 },
-  sendBtn: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-end', marginTop: 4 },
+  messageTime: { fontSize: 10 },
+  retryBtn: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  retryText: { fontSize: 10, color: '#FFD7D7', fontWeight: '700' },
+  receiptRow: { flexDirection: 'row', alignItems: 'center', gap: 1 },
+  receiptCount: { fontSize: 10, fontWeight: '800' },
+  seenByRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3, marginHorizontal: 4, flexWrap: 'wrap' },
+  seenByTheir: { justifyContent: 'flex-start', paddingLeft: 36 },
+  seenByText: { fontSize: 11, fontStyle: 'italic' },
+  seenByAvatars: { flexDirection: 'row', gap: 2 },
+  seenByAvatar: { borderRadius: 8, overflow: 'hidden' },
+  chatImage: { width: 200, height: 200, borderRadius: 12, marginBottom: 4 },
+  chatImageLoading: { alignItems: 'center', justifyContent: 'center' },
+  typingLabel: { fontSize: 12, fontStyle: 'italic', paddingHorizontal: 20, paddingBottom: 4 },
+  // Composer proportions follow the Messenger/Instagram convention: a ~56dp bar
+  // (40dp controls + 8dp vertical padding) with 40dp circular actions. 40dp is the
+  // drawn size; `hitSlop` on each control lifts the touch target to Material's 48dp
+  // minimum without inflating the visual weight of the bar.
+  inputBar: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 8, borderTopWidth: 1 },
+  attachBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  // minHeight matches the 40dp action buttons so the row is optically aligned;
+  // maxHeight ~5 lines before the field scrolls internally (Messenger caps similarly).
+  textInput: { flex: 1, borderRadius: 20, borderWidth: 1, paddingHorizontal: 16, paddingVertical: 10, minHeight: 40, maxHeight: 120, fontSize: 15 },
+  sendBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   sendBtnDisabled: { opacity: 0.5 },
+  archivedComposer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 16, borderTopWidth: 1 },
+  archivedComposerText: { fontSize: 12, fontWeight: '600' },
+  emptyChatWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
+  emptyIconCircle: { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
+  emptyTitle: { fontSize: 18, fontWeight: '800', textAlign: 'center', marginBottom: 6 },
+  emptySub: { fontSize: 13, textAlign: 'center', lineHeight: 19, paddingHorizontal: 20 },
   empty: { textAlign: 'center', marginTop: 40 },
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-  profileModalCard: { width: '100%', borderRadius: 20, padding: 24, alignItems: 'center' },
-  closeModalBtn: { position: 'absolute', top: 14, right: 14, padding: 6 },
-  modalAvatar: { width: 64, height: 64, borderRadius: 32, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
-  modalAvatarText: { color: '#fff', fontSize: 24, fontWeight: '800' },
-  modalName: { fontSize: 18, fontWeight: '800' },
-  modalVerifiedBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, marginTop: 6, marginBottom: 12 },
-  modalVerifiedText: { fontSize: 11, fontWeight: '700' },
-  profileDetails: { width: '100%', gap: 10, paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth },
-  detailRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  detailText: { fontSize: 13 },
-  detailLabel: { fontWeight: '600' },
+  menuCard: { borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 16, gap: 4 },
+  menuTitle: { fontSize: 11, fontWeight: '800', letterSpacing: 1, marginBottom: 8, marginLeft: 4 },
+  menuRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14, paddingHorizontal: 8 },
+  menuLabel: { fontSize: 15, fontWeight: '700' },
+  menuSub: { fontSize: 12, marginTop: 1 },
+  menuCancel: { justifyContent: 'center', marginTop: 4 },
+  newMsgPillWrap: {
+    position: 'absolute',
+    bottom: 60,
+    alignSelf: 'center',
+    zIndex: 10,
+  },
+  newMsgPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  newMsgPillText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  announcementBanner: { padding: 12, borderBottomWidth: 1, borderWidth: 1, marginHorizontal: 12, marginTop: 6, borderRadius: 12 },
+  announcementTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
+  announcementTag: { fontSize: 11, fontWeight: '900', letterSpacing: 0.5 },
+  announcementText: { fontSize: 13, lineHeight: 18 },
+  announcementMetaRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 },
+  announcementAuthor: { fontSize: 10 },
+  priorityBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+  },
+  priorityBannerText: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  announcementToggleText: { fontSize: 11, fontWeight: '700' },
+  announcementToggleBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'transparent' },
+  headerMuteBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
+  announcementBubble: {
+    borderWidth: 1.5,
+    borderRadius: 16,
+  },
+  announcementBubbleHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 6,
+    paddingBottom: 4,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#F59E0B66',
+  },
+  announcementBubbleHeaderText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#D97706',
+    letterSpacing: 0.5,
+  },
+  compactSeenStack: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  compactSeenAvatar: {
+    borderRadius: 10,
+    borderWidth: 1.5,
+  },
+  quotedSnippet: {
+    borderLeftWidth: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 6,
+    marginBottom: 6,
+  },
+  quotedSnippetHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 2,
+  },
+  quotedSnippetAuthor: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  quotedSnippetText: {
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  reactionChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    marginTop: 3,
+    marginHorizontal: 4,
+  },
+  reactionChipsRowMe: {
+    justifyContent: 'flex-end',
+  },
+  reactionChipsRowThem: {
+    justifyContent: 'flex-start',
+    paddingLeft: 36,
+  },
+  reactionChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 12,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 1.5,
+    elevation: 1,
+  },
+  reactionChipEmoji: {
+    fontSize: 13,
+  },
+  reactionChipCount: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  quickReactionContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    borderRadius: 24,
+    marginBottom: 8,
+  },
+  quickReactionBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  quickReactionEmoji: {
+    fontSize: 24,
+  },
+  replyPreviewBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+  },
+  replyPreviewAccent: {
+    width: 3,
+    height: '100%',
+    borderRadius: 2,
+    marginRight: 10,
+  },
+  replyPreviewContent: {
+    flex: 1,
+  },
+  replyPreviewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  replyPreviewTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  replyPreviewSnippet: {
+    fontSize: 12,
+    marginTop: 1,
+  },
+  replyPreviewClose: {
+    padding: 4,
+    marginLeft: 8,
+  },
+  headerActionBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 4,
+  },
+  searchContainer: {
+    paddingHorizontal: 14,
+    paddingTop: 8,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+  },
+  searchInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    padding: 0,
+  },
+  searchMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 8,
+    gap: 8,
+  },
+  searchChipsScroll: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  searchChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  searchChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  matchCounterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  matchCounterText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  matchNavButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  matchNavBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  searchCloseBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  highlightedBubble: {
+    borderWidth: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+    elevation: 4,
+  },
 });

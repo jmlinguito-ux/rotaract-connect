@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -8,13 +8,15 @@ import * as ImagePicker from 'expo-image-picker';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
 import { useTheme } from '../../context/ThemeContext';
+import { uploadPublicImage } from '../../services/storage';
 import { useAppRefreshControl } from '../../hooks/useAppRefreshControl';
 import { RootStackParamList } from '../../navigation/types';
-import { ROLE_BADGES } from '../../utils/roles';
+import { getHighestRoleBadge, isAppAdmin, isDistrictAdmin, positionRoleLabel } from '../../utils/roles';
 import UserAvatar from '../../components/UserAvatar';
 import FullImageModal from '../../components/FullImageModal';
 import RoleBadgeIcon from '../../components/RoleBadgeIcon';
 import { VerifiedName } from '../../components/VerifiedCheck';
+import EmergencySosButton from '../../components/EmergencySosButton';
 
 export default function ProfileScreen() {
   const { user, signOut, updateAvatar } = useAuth();
@@ -23,10 +25,11 @@ export default function ProfileScreen() {
   const refreshControl = useAppRefreshControl();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [fullImageUri, setFullImageUri] = useState<string | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   if (!user) return null;
   const stats = userStats(user.id);
-  const roleBadge = ROLE_BADGES[user.role];
+  const roleBadge = getHighestRoleBadge(user);
 
   const handlePickImage = async () => {
     try {
@@ -41,10 +44,26 @@ export default function ProfileScreen() {
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.8,
+        base64: true,
       });
 
-      if (!result.canceled && result.assets && result.assets[0].uri) {
-        updateAvatar(result.assets[0].uri);
+      if (result.canceled || !result.assets?.[0]?.uri) return;
+      const asset = result.assets[0];
+      setUploadingAvatar(true);
+      try {
+        // Upload to Supabase Storage and persist the public URL — NOT the local
+        // file:// uri, which would vanish on the next launch / other devices.
+        const url = await uploadPublicImage('avatars', user.id, {
+          uri: asset.uri,
+          base64: asset.base64,
+          mimeType: asset.mimeType,
+          fileName: asset.fileName,
+        });
+        await updateAvatar(url);
+      } catch (err: any) {
+        Alert.alert('Upload Failed', err?.message || 'Could not upload your photo. Please try again.');
+      } finally {
+        setUploadingAvatar(false);
       }
     } catch (e) {
       Alert.alert('Error', 'Failed to pick image from photo library.');
@@ -66,9 +85,12 @@ export default function ProfileScreen() {
             <TouchableOpacity
               style={[styles.cameraBadge, { backgroundColor: themeColors.primary, borderColor: themeColors.cardBg }]}
               onPress={handlePickImage}
+              disabled={uploadingAvatar}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Ionicons name="camera" size={12} color="#fff" />
+              {uploadingAvatar
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Ionicons name="camera" size={12} color="#fff" />}
             </TouchableOpacity>
           </View>
           {roleBadge ? (
@@ -83,6 +105,7 @@ export default function ProfileScreen() {
             checkSize={18}
           />
           <Text style={[styles.username, { color: themeColors.textMuted }]}>@{user.username}</Text>
+          <Text style={[styles.roleText, { color: themeColors.primary }]}>{positionRoleLabel(user.position, user)}</Text>
           <View style={[styles.clubPill, { backgroundColor: themeColors.primary + '1A' }]}>
             <Ionicons name="people" size={12} color={themeColors.primary} />
             <Text style={[styles.clubPillText, { color: themeColors.primary }]}>{user.club_name}</Text>
@@ -99,10 +122,14 @@ export default function ProfileScreen() {
           <Row icon="trophy-outline" label="Scoreboard" colors={themeColors} onPress={() => navigation.navigate('Scoreboard')} />
           <Row icon="ribbon-outline" label="Activity Portfolio" colors={themeColors} onPress={() => navigation.navigate('ActivityPortfolio')} />
           <Row icon="analytics-outline" label="District Analytics" colors={themeColors} onPress={() => navigation.navigate('Analytics')} />
-          {user.role === 'APP_ADMIN' && (
+          {(isAppAdmin(user) || isDistrictAdmin(user)) && (
             <Row icon="key-outline" label="Roles & Permissions" colors={themeColors} onPress={() => navigation.navigate('RoleManagement')} />
           )}
           <Row icon="settings-outline" label="Settings" colors={themeColors} onPress={() => navigation.navigate('Settings')} />
+        </View>
+
+        <View style={{ marginHorizontal: 20, marginTop: 12 }}>
+          <EmergencySosButton variant="full" />
         </View>
 
         <TouchableOpacity style={styles.logout} onPress={signOut}>
@@ -154,7 +181,8 @@ const styles = StyleSheet.create({
   roleBadgePillText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.3 },
   name: { fontSize: 22, fontWeight: '800' },
   username: { fontSize: 14, marginTop: 2 },
-  clubPill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, marginTop: 10 },
+  roleText: { fontSize: 13, fontWeight: '700', marginTop: 4 },
+  clubPill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, marginTop: 8 },
   clubPillText: { fontSize: 12, fontWeight: '700' },
   role: { fontSize: 12, marginTop: 6, letterSpacing: 0.5 },
   statsRow: { flexDirection: 'row', marginHorizontal: 16, borderRadius: 14, borderWidth: 1, padding: 16, marginBottom: 16 },

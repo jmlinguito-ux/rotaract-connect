@@ -1,11 +1,11 @@
 import React from 'react';
 import { View, Text, Image, TouchableOpacity, StyleSheet, StyleProp, ViewStyle } from 'react-native';
-import { AppUser, UserRole } from '../types';
-import { ROLE_BADGES } from '../utils/roles';
+import { AppUser, UserRole, SystemRole, ClubRole } from '../types';
+import { getHighestRoleBadge } from '../utils/roles';
 import RoleBadgeIcon from './RoleBadgeIcon';
 
 interface Props {
-  user: AppUser | { full_name: string; avatar_url?: string; role?: UserRole; verification_status?: string; position?: string };
+  user: AppUser | { full_name: string; avatar_url?: string; role?: UserRole; system_role?: SystemRole; club_role?: ClubRole; verification_status?: string; position?: string };
   size?: number;
   showBadge?: boolean;
   /** Called with the photo URI when the avatar is tapped and the user has one. */
@@ -21,12 +21,7 @@ export default function UserAvatar({ user, size = 48, showBadge = true, onPressI
     : 'RC';
 
   const avatarUri = user.avatar_url;
-
-  // Officers whose title says President but whose role has not been set yet still
-  // read as Presidents, matching how the rest of the app treats them.
-  const impliedRole: UserRole | undefined = user.role
-    ?? (user.position?.toLowerCase().includes('president') ? 'CLUB_PRESIDENT' : undefined);
-  const badge = impliedRole ? ROLE_BADGES[impliedRole] : undefined;
+  const badge = getHighestRoleBadge(user as Partial<AppUser>);
 
   const badgeSize = Math.max(16, Math.round(size * 0.35));
   // The wheel is a ring mark, so it needs to fill more of the badge than a solid

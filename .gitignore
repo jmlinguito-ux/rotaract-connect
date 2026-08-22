@@ -64,3 +64,8 @@ Build rotaractconnect_*.txt
 
 # supabase cli temp files
 supabase/.temp/
+
+# Local Expo module build output
+modules/*/android/build/
+modules/*/android/.gradle/
+**/.gradle/

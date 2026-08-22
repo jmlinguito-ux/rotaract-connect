@@ -1,9 +1,18 @@
+import React, { useEffect } from 'react';
+import { View } from 'react-native';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import * as SplashScreen from 'expo-splash-screen';
+import { navigationRef } from './navigationRef';
+import { PushNotifications } from '../components/PushNotifications';
+import { SyncErrorBanner } from '../components/SyncErrorBanner';
+import { SyncStatusBanner } from '../components/SyncStatusBanner';
 import { StatusBar } from 'expo-status-bar';
 import { RootStackParamList } from './types';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { useEmergencyAlerts } from '../hooks/useEmergencyAlerts';
+import EmergencyAlertModal from '../components/EmergencyAlertModal';
 import AuthStack from './AuthStack';
 import MainTabs from './MainTabs';
 import EventDetailScreen from '../screens/events/EventDetailScreen';
@@ -23,11 +32,14 @@ import ScoreboardScreen from '../screens/scoreboard/ScoreboardScreen';
 import ChatScreen from '../screens/messaging/ChatScreen';
 import SettingsScreen from '../screens/profile/SettingsScreen';
 import RoleManagementScreen from '../screens/admin/RoleManagementScreen';
+import OrganizerBroadcastScreen from '../screens/events/OrganizerBroadcastScreen';
+import AuditLogsScreen from '../screens/admin/AuditLogsScreen';
+import CertificateScannerScreen from '../screens/verification/CertificateScannerScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function RootNavigator() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
   const { isNightMode, colors: themeColors } = useTheme();
 
   const navTheme = {
@@ -42,9 +54,20 @@ export default function RootNavigator() {
     },
   };
 
+  // Nothing renders until the stored session is known: the native splash is still
+  // covering the screen, so there is no frame in which the auth stack can appear.
+  useEffect(() => {
+    if (!isLoading) SplashScreen.hideAsync().catch(() => {});
+  }, [isLoading]);
+
+  if (isLoading) return null;
+
   return (
-    <NavigationContainer theme={navTheme}>
-      <StatusBar style={isNightMode ? 'light' : 'dark'} />
+    <NavigationContainer theme={navTheme} ref={navigationRef}>
+      {/* The nav header is themeColors.primary (deep pink) in BOTH themes, and the
+          status bar sits on top of it — so its glyphs must always be light. Keying
+          this off isNightMode put dark glyphs on the pink header in light mode. */}
+      <StatusBar style="light" />
       <Stack.Navigator
         screenOptions={{
           headerStyle: { backgroundColor: themeColors.primary },
@@ -69,14 +92,41 @@ export default function RootNavigator() {
             <Stack.Screen name="ActivityPortfolio" component={ActivityPortfolioScreen} options={{ title: 'Activity Portfolio' }} />
             <Stack.Screen name="Analytics" component={AnalyticsScreen} options={{ title: 'Analytics Dashboard' }} />
             <Stack.Screen name="Scoreboard" component={ScoreboardScreen} options={{ title: 'Member Scoreboard' }} />
+            {/* Edge-swipe-back stays ENABLED: it is a core iOS affordance and the
+                default native-stack gesture is edge-only, so it does not collide
+                with SwipeableRow's mid-bubble swipe-to-reply. (Do not turn on
+                fullScreenGestureEnabled — that one would collide.) */}
             <Stack.Screen name="Chat" component={ChatScreen} options={({ route }) => ({ title: route.params.recipientName || 'Chat' })} />
             <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: 'Settings & Preferences' }} />
             <Stack.Screen name="RoleManagement" component={RoleManagementScreen} options={{ title: 'Roles & Permissions' }} />
+            <Stack.Screen name="OrganizerBroadcast" component={OrganizerBroadcastScreen} options={{ title: 'Send Banner Notification' }} />
+            <Stack.Screen name="AuditLogs" component={AuditLogsScreen} options={{ title: 'Audit & Governance' }} />
+            <Stack.Screen name="CertificateScanner" component={CertificateScannerScreen} options={{ headerShown: false }} />
           </>
         ) : (
           <Stack.Screen name="Auth" component={AuthStack} options={{ headerShown: false }} />
         )}
       </Stack.Navigator>
+      <PushNotifications />
+      {isAuthenticated && (
+        <>
+          <SyncErrorBanner />
+          <SyncStatusBanner />
+          <GlobalEmergencyAlert />
+        </>
+      )}
     </NavigationContainer>
+  );
+}
+
+function GlobalEmergencyAlert() {
+  const { activeAlert, distanceMetersAway, dismissAlert } = useEmergencyAlerts();
+  return (
+    <EmergencyAlertModal
+      visible={!!activeAlert}
+      alert={activeAlert}
+      distanceMetersAway={distanceMetersAway}
+      onDismiss={dismissAlert}
+    />
   );
 }

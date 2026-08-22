@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, Modal, StyleSheet, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform, ScrollView, Keyboard } from 'react-native';
+import { View, Text, Modal, StyleSheet, TouchableOpacity, TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
+import { useTheme } from '../context/ThemeContext';
+import AppModalKeyboardWrapper from './keyboard/AppModalKeyboardWrapper';
 
 interface DeclineReasonModalProps {
   visible: boolean;
@@ -23,8 +25,9 @@ export function DeclineReasonModal({
   onConfirm,
   onCancel,
 }: DeclineReasonModalProps) {
+  const { colors: themeColors } = useTheme();
   const [remarks, setRemarks] = useState<string>('');
-  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const [focused, setFocused] = useState(false);
 
   useEffect(() => {
     if (visible) {
@@ -32,79 +35,55 @@ export function DeclineReasonModal({
     }
   }, [visible]);
 
-  useEffect(() => {
-    const showSub = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-      () => setIsKeyboardVisible(true),
-    );
-    const hideSub = Keyboard.addListener(
-      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-      () => setIsKeyboardVisible(false),
-    );
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, []);
-
   const handleConfirm = () => {
     onConfirm(remarks.trim());
   };
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
-      <KeyboardAvoidingView
-        style={styles.avoidView}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView
-          contentContainerStyle={[
-            styles.backdrop,
-            {
-              justifyContent: isKeyboardVisible ? 'flex-end' : 'center',
-              paddingBottom: isKeyboardVisible ? 24 : 20,
-            },
-          ]}
-          keyboardShouldPersistTaps="handled"
-          bounces={false}
-        >
-          <View style={styles.card}>
-            <View style={styles.header}>
-              <View style={styles.iconCircle}>
-                <Ionicons name="alert-circle" size={22} color={colors.danger} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.title}>{title ?? 'Decline Join Request'}</Text>
-                <Text style={styles.sub}>
-                  {description ??
-                    `Enter remarks for ${applicantName} explaining why their request for ${eventTitle ? `"${eventTitle}"` : 'the event'} was declined.`}
-                </Text>
-              </View>
+      <AppModalKeyboardWrapper>
+        <View style={[styles.card, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}>
+          <View style={styles.header}>
+            <View style={styles.iconCircle}>
+              <Ionicons name="alert-circle" size={22} color={colors.danger} />
             </View>
-
-            <Text style={styles.sectionLabel}>Enter Reason</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Type your reason here (optional)..."
-              placeholderTextColor={colors.textMuted}
-              value={remarks}
-              onChangeText={setRemarks}
-              multiline
-              numberOfLines={4}
-            />
-
-            <View style={styles.actions}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={onCancel}>
-                <Text style={styles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.confirmBtn} onPress={handleConfirm}>
-                <Ionicons name="send" size={14} color="#fff" />
-                <Text style={styles.confirmText}>Decline & Send</Text>
-              </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.title, { color: themeColors.text }]}>{title ?? 'Decline Join Request'}</Text>
+              <Text style={[styles.sub, { color: themeColors.textMuted }]}>
+                {description ??
+                  `Enter remarks for ${applicantName} explaining why their request for ${eventTitle ? `"${eventTitle}"` : 'the event'} was declined.`}
+              </Text>
             </View>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+
+          <Text style={[styles.sectionLabel, { color: themeColors.primary }]}>Enter Reason</Text>
+          <TextInput
+            style={[
+              styles.input,
+              { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text },
+              focused && { borderColor: themeColors.primary, borderWidth: 1.5 },
+            ]}
+            placeholder="Type your reason here (optional)..."
+            placeholderTextColor={themeColors.textMuted}
+            value={remarks}
+            onChangeText={setRemarks}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
+            multiline
+            numberOfLines={4}
+          />
+
+          <View style={styles.actions}>
+            <TouchableOpacity style={styles.cancelBtn} onPress={onCancel}>
+              <Text style={[styles.cancelText, { color: themeColors.textMuted }]}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.confirmBtn} onPress={handleConfirm}>
+              <Ionicons name="send" size={14} color="#fff" />
+              <Text style={styles.confirmText}>Decline & Send</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </AppModalKeyboardWrapper>
     </Modal>
   );
 }

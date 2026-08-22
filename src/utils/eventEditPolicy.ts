@@ -1,5 +1,6 @@
 import type { AppUser, EventParticipant, RotaractEvent } from '../types';
-import { approverClubIdsFor, isDistrictAdmin, isOnOrganizingTeam } from './eventApproval';
+import { approverClubIdsFor, isOnOrganizingTeam } from './eventApproval';
+import { isDistrictAdmin, isClubPresident } from './roles';
 
 /** Fields that can be frozen while the rest of the event stays editable. */
 export interface LockedFields {
@@ -30,6 +31,7 @@ export function editLockRulesForSubmit(cutoffHours: number, needsApproval: boole
   const rules = [
     `Schedule and venue freeze ${cutoffHours} hours before the start time, once members can no longer leave.`,
     'Schedule and venue also freeze as soon as any attendance or check-in is recorded.',
+    'Both freezes only start applying once someone outside the organizing team has joined — your own team joining never locks the event.',
     'Capacity can never be lowered below the number of members who have already joined.',
     'The "requires approval to join" setting locks once the first member joins.',
     'Nothing can be edited at all once the event is ongoing, completed, or cancelled.',
@@ -51,7 +53,7 @@ export function editLockRulesForApproval(isDistrictEvent: boolean, willPublish: 
       : 'Your approval is recorded now; the event publishes once the remaining club Presidents approve.',
     'Only the organizing team, their own Club President, and District Administrators can change the details afterwards.',
     'If they change the venue, team, capacity, visibility or event type, your approval is cleared and you will be asked to review it again.',
-    'Schedule and venue freeze before the start time and once attendance is recorded.',
+    'Schedule and venue freeze before the start time and once attendance is recorded, once a member outside the organizing team has joined.',
     'Once the event is ongoing, completed, or cancelled, nobody can edit it.',
     ...(isDistrictEvent
       ? ['As a District Event, only a District Administrator can change it after this approval.']
@@ -95,7 +97,20 @@ export function eventEditPolicy(
   participants: EventParticipant[],
 ): EventEditPolicy {
   const joined = participants.filter(p => p.status === 'JOINED');
-  const attendanceRecorded = participants.some(p => !!p.checked_in_at || p.attendance_status === 'ATTENDED');
+
+  // These locks exist to protect people who committed on the strength of the
+  // published details. Someone on the organizing team is not such a person: they
+  // are the ones making the change, so their own participation must not freeze the
+  // event. Only an OUTSIDER — a participant who is neither the organizer nor a
+  // co-organizer — can trigger a lock. Compared by id because that is all
+  // isOnOrganizingTeam checks, and it avoids a users[] lookup that can miss.
+  const isOrganizingTeamMember = (userId: string) =>
+    event.organizer_user_id === userId || (event.co_organizer_user_ids ?? []).includes(userId);
+
+  const outsidersJoined = joined.filter(p => !isOrganizingTeamMember(p.user_id));
+  const outsiderAttendance = participants.some(
+    p => !isOrganizingTeamMember(p.user_id) && (!!p.checked_in_at || p.attendance_status === 'ATTENDED'),
+  );
 
   const base: EventEditPolicy = {
     canEdit: true,
@@ -111,12 +126,12 @@ export function eventEditPolicy(
 
   const onTeam = isOnOrganizingTeam(event, user);
   const admin = isDistrictAdmin(user);
-  const organizingClubPresident = user.role === 'CLUB_PRESIDENT' && user.club_id === event.organizing_club_id;
+  const organizingClubPresident = isClubPresident(user, event.organizing_club_id);
 
   // Presidents of partner or co-organizing clubs approve events; they do not edit them.
   if (!onTeam && !admin && !organizingClubPresident) {
     const isApproverPresident =
-      user.role === 'CLUB_PRESIDENT' && approverClubIdsFor(event, users).includes(user.club_id);
+      isClubPresident(user) && approverClubIdsFor(event, users).includes(user.club_id);
     return blocked(
       isApproverPresident
         ? 'Your club is an approver on this event, not its organizer. Only the organizing team, their Club President, and District Administrators can change the details.'
@@ -154,11 +169,13 @@ export function eventEditPolicy(
   // --- Field-level locks ---------------------------------------------------
   const lockedFields: LockedFields = {};
 
-  if (attendanceRecorded) {
+  if (outsiderAttendance) {
     const note = 'Schedule and venue are locked because attendance has already been recorded for this event.';
     lockedFields.schedule = note;
     lockedFields.location = note;
-  } else {
+  } else if (outsidersJoined.length > 0) {
+    // Only meaningful once someone outside the organizing team has joined: the
+    // lock's whole justification is that those members can no longer withdraw.
     const cutoffHours = event.lock_leave_cutoff_hours ?? 24;
     const hoursUntilStart = (new Date(event.start_datetime).getTime() - Date.now()) / 3_600_000;
     if (hoursUntilStart <= cutoffHours) {
@@ -168,8 +185,14 @@ export function eventEditPolicy(
     }
   }
 
+  if (outsidersJoined.length > 0) {
+    const n = outsidersJoined.length;
+    lockedFields.requiresApproval = `${n} ${n === 1 ? 'member has' : 'members have'} already joined under the current setting, so the join rule can no longer be changed.`;
+  }
+
+  // Capacity is a headcount constraint, not a fairness one: it must never sit below
+  // the number of people actually holding a place, organizing team included.
   if (joined.length > 0) {
-    lockedFields.requiresApproval = `${joined.length} ${joined.length === 1 ? 'member has' : 'members have'} already joined under the current setting, so the join rule can no longer be changed.`;
     lockedFields.maxParticipants = `Cannot go below ${joined.length} — that many ${joined.length === 1 ? 'member has' : 'members have'} already joined.`;
   }
 

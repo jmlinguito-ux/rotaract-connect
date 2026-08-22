@@ -1,13 +1,14 @@
-import React, { useState, useRef } from 'react';
-import { View, Text, TextInput, StyleSheet, ScrollView, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, Keyboard, Pressable } from 'react-native';
+import React, { useState, useRef, useMemo } from 'react';
+import { View, Text, TextInput, StyleSheet, TouchableOpacity, Alert, Platform, Keyboard, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { colors } from '../../theme/colors';
-import { AreaOfFocus, EventType, EventVisibility } from '../../types';
+import { AreaOfFocus, EventType, EventVisibility, RotaractEvent } from '../../types';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
 import { RootStackParamList } from '../../navigation/types';
 import { LocationPicker } from '../../components/LocationPicker';
 import { DEFAULT_LOCATION, LocationValue } from '../../components/location/shared';
@@ -17,6 +18,7 @@ import { CalendarGridModal } from '../../components/CalendarGridModal';
 import { SegmentedTimeInput } from '../../components/SegmentedTimeInput';
 import { ConfirmRulesModal } from '../../components/ConfirmRulesModal';
 import { editLockRulesForSubmit } from '../../utils/eventEditPolicy';
+import { KeyboardAwareScrollView, useKeyboardAwareOnFocus } from '../../components/KeyboardAwareScrollView';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'CreateEvent'>;
 
@@ -27,32 +29,63 @@ defaultStart.setHours(9, 0, 0, 0);
 const defaultEnd = new Date(defaultStart);
 defaultEnd.setHours(13, 0, 0, 0);
 
-export default function CreateEventScreen({ navigation }: Props) {
+export default function CreateEventScreen({ route, navigation }: Props) {
+  const template = route.params?.templateEvent;
   const { user } = useAuth();
-  const { createEvent, users } = useData();
+  const { createEvent, users, clubs } = useData();
+  const { colors: themeColors, isNightMode } = useTheme();
+  const onFocusAware = useKeyboardAwareOnFocus();
 
-  const [title, setTitle] = useState('');
-  const [desc, setDesc] = useState('');
-  const [type, setType] = useState<EventType>('SERVICE_PROJECT');
+  const [title, setTitle] = useState(template ? `${template.title} (Copy)` : '');
+  const [desc, setDesc] = useState(template?.description ?? '');
+  const [type, setType] = useState<EventType>(template?.event_type ?? 'SERVICE_PROJECT');
   const [selectedCoOrganizers, setSelectedCoOrganizers] = useState<string[]>([]);
   const [coOrgQuery, setCoOrgQuery] = useState('');
   const [isCoOrgFocused, setIsCoOrgFocused] = useState(false);
   const coOrgInputRef = useRef<TextInput>(null);
-  const [location, setLocation] = useState<LocationValue>(DEFAULT_LOCATION);
-  const [areasOfFocus, setAreasOfFocus] = useState<AreaOfFocus[]>([]);
-  const [coverPhoto, setCoverPhoto] = useState<string | undefined>();
-  const [maxP, setMaxP] = useState('50');
-  const [visibility, setVisibility] = useState<EventVisibility>('VERIFIED_ROTARACTORS');
-  const [requiresApproval, setRequiresApproval] = useState(false);
-  const [allowInvites, setAllowInvites] = useState(true);
+
+
+  const [location, setLocation] = useState<LocationValue>(
+    template
+      ? {
+          address: template.address,
+          city: template.city,
+          latitude: template.latitude,
+          longitude: template.longitude,
+        }
+      : DEFAULT_LOCATION,
+  );
+  const [areasOfFocus, setAreasOfFocus] = useState<AreaOfFocus[]>(template?.areas_of_focus ?? []);
+  const [coverPhoto, setCoverPhoto] = useState<string | undefined>(template?.cover_photo);
+  const [maxP, setMaxP] = useState(template ? String(template.max_participants) : '50');
+  const [visibility, setVisibility] = useState<EventVisibility>(template?.visibility ?? 'VERIFIED_ROTARACTORS');
+  const [requiresApproval, setRequiresApproval] = useState(template?.requires_approval ?? false);
+  const [allowInvites, setAllowInvites] = useState(template?.allow_participant_invites ?? true);
+  const [geofenceRadius, setGeofenceRadius] = useState<number>(template?.geofence_radius_meters ?? 300);
   const [contactNumber, setContactNumber] = useState(user?.contact_number ?? '0917 123 4567');
   const [contactEmail, setContactEmail] = useState(user?.email ?? '');
   const [lockCutoffHours, setLockCutoffHours] = useState<number>(24);
 
   // Single Date & Initial --:-- -- Times state
   const [eventDate, setEventDate] = useState<Date>(defaultStart);
-  const [startTime, setStartTime] = useState<Date | null>(null);
-  const [endTime, setEndTime] = useState<Date | null>(null);
+  const [startTime, setStartTime] = useState<Date | null>(() => {
+    if (template) {
+      const orig = new Date(template.start_datetime);
+      const d = new Date(defaultStart);
+      d.setHours(orig.getHours(), orig.getMinutes(), 0, 0);
+      return d;
+    }
+    return null;
+  });
+  const [endTime, setEndTime] = useState<Date | null>(() => {
+    if (template) {
+      const orig = new Date(template.end_datetime);
+      const d = new Date(defaultStart);
+      d.setHours(orig.getHours(), orig.getMinutes(), 0, 0);
+      return d;
+    }
+    return null;
+  });
   const [startTimeError, setStartTimeError] = useState<string | null>(null);
   const [endTimeError, setEndTimeError] = useState<string | null>(null);
 
@@ -66,9 +99,12 @@ export default function CreateEventScreen({ navigation }: Props) {
   const willNeedApproval = (() => {
     if (!user) return true;
     if (type === 'DISTRICT_EVENT') return !(user.role === 'DISTRICT_ADMIN' || user.role === 'APP_ADMIN');
+    const coOrgClubIds = selectedCoOrganizers
+      .map(id => users.find(u => u.id === id)?.club_id)
+      .filter((id): id is string => Boolean(id));
     const involvedClubIds = new Set([
       user.club_id,
-      ...selectedCoOrganizers.map(id => users.find(u => u.id === id)?.club_id).filter(Boolean),
+      ...coOrgClubIds,
     ]);
     return !(user.role === 'CLUB_PRESIDENT' && involvedClubIds.size === 1);
   })();
@@ -176,25 +212,31 @@ export default function CreateEventScreen({ navigation }: Props) {
     const isPresident = user.role === 'CLUB_PRESIDENT';
     const isDistrictEvent = type === 'DISTRICT_EVENT';
 
-    // Clubs pulled in by the co-organizers each need their own President's approval,
-    // so a President can only self-publish an event that involves no other club.
-    const coOrganizerClubIds = selectedCoOrganizers
+    const coOrgClubIds = selectedCoOrganizers
       .map(id => users.find(u => u.id === id)?.club_id)
-      .filter((id): id is string => !!id);
-    const involvedClubIds = [...new Set([user.club_id, ...coOrganizerClubIds])];
+      .filter((id): id is string => Boolean(id));
+    // participating_club_ids still means "every club involved" — it drives club
+    // event lists, analytics and the inter-club map filter. With the co-host picker
+    // gone it is simply the organizing club plus the co-organizers' clubs.
+    const involvedClubIds = Array.from(new Set([
+      user.club_id,
+      ...coOrgClubIds,
+    ]));
+
     const isSingleClubEvent = involvedClubIds.length === 1;
 
-    let initialStatus: 'RECRUITING' | 'PENDING_APPROVAL' = 'PENDING_APPROVAL';
+    let initialStatus: RotaractEvent['status'] = 'PENDING_APPROVAL';
+    let approvedByClubIds: string[] = [];
 
     if (isDistrictEvent) {
-      initialStatus = isDistrictAdmin ? 'RECRUITING' : 'PENDING_APPROVAL';
-    } else {
-      initialStatus = isPresident && isSingleClubEvent ? 'RECRUITING' : 'PENDING_APPROVAL';
+      initialStatus = (user.role === 'DISTRICT_ADMIN' || user.role === 'APP_ADMIN') ? 'RECRUITING' : 'PENDING_APPROVAL';
+    } else if (user.role === 'CLUB_PRESIDENT' && isSingleClubEvent) {
+      initialStatus = 'RECRUITING';
+      approvedByClubIds = [user.club_id];
+    } else if (user.role === 'CLUB_PRESIDENT') {
+      initialStatus = 'PENDING_APPROVAL';
+      approvedByClubIds = [user.club_id];
     }
-
-    // A President submitting a multi-club event has implicitly approved for their own club.
-    const approvedByClubIds =
-      !isDistrictEvent && isPresident && initialStatus === 'PENDING_APPROVAL' ? [user.club_id] : [];
 
     const created = createEvent({
       title,
@@ -211,17 +253,20 @@ export default function CreateEventScreen({ navigation }: Props) {
       organizing_club_name: user.club_name,
       organizer_user_id: user.id,
       co_organizer_user_ids: selectedCoOrganizers,
-      participating_club_ids: [],
+      participating_club_ids: involvedClubIds,
       max_participants: parseInt(maxP, 10) || 50,
-      requires_approval: requiresApproval,
-      allow_participant_invites: allowInvites,
-      visibility,
+      // District events: open to all verified members, no join approval, and the
+      // whole district is invited on publish — so these are forced, not user-set.
+      requires_approval: isDistrictEvent ? false : requiresApproval,
+      allow_participant_invites: isDistrictEvent ? false : allowInvites,
+      visibility: isDistrictEvent ? 'VERIFIED_ROTARACTORS' : visibility,
       cover_photo: coverPhoto,
       contact_number: contactNumber.trim() || undefined,
       contact_email: contactEmail.trim() || undefined,
       areas_of_focus: isServiceProject ? areasOfFocus : undefined,
       lock_leave_cutoff_hours: lockCutoffHours,
       approved_by_club_ids: approvedByClubIds,
+      geofence_radius_meters: geofenceRadius,
     });
 
     if (initialStatus === 'RECRUITING') {
@@ -250,91 +295,81 @@ export default function CreateEventScreen({ navigation }: Props) {
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['bottom', 'left', 'right']}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+    <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.bg }]} edges={['bottom', 'left', 'right']}>
+      <KeyboardAwareScrollView
+        contentContainerStyle={styles.container}
+        keyboardShouldPersistTaps="handled"
+        keyboardTopMargin={32}
+        onScrollBeginDrag={() => {
+          Keyboard.dismiss();
+          setIsCoOrgFocused(false);
+          setCoOrgQuery('');
+        }}
       >
-        <ScrollView
-          contentContainerStyle={styles.container}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-          automaticallyAdjustKeyboardInsets={true}
-          onScrollBeginDrag={() => {
+        <Pressable
+          style={{ flex: 1 }}
+          onPress={() => {
             Keyboard.dismiss();
             setIsCoOrgFocused(false);
             setCoOrgQuery('');
           }}
         >
-          <Pressable
-            style={{ flex: 1 }}
-            onPress={() => {
-              Keyboard.dismiss();
-              setIsCoOrgFocused(false);
-              setCoOrgQuery('');
-            }}
-          >
           <CoverPhotoPicker value={coverPhoto} onChange={setCoverPhoto} />
 
-          <Text style={styles.label}>Event Type</Text>
+          <Text style={[styles.label, { color: themeColors.text }]}>Event Type</Text>
           <View style={styles.typeRow}>
             <TouchableOpacity
-              style={[styles.typeCard, type === 'SERVICE_PROJECT' && styles.typeCardActive]}
+              style={[styles.typeCard, { backgroundColor: themeColors.surface, borderColor: themeColors.border }, type === 'SERVICE_PROJECT' && styles.typeCardActive]}
               onPress={() => setType('SERVICE_PROJECT')}
             >
-              <FontAwesome5 name="hands-helping" size={16} color={type === 'SERVICE_PROJECT' ? '#fff' : colors.primary} />
-              <Text style={[styles.typeText, type === 'SERVICE_PROJECT' && styles.typeTextActive]}>Service Project</Text>
+              <FontAwesome5 name="hands-helping" size={16} color={type === 'SERVICE_PROJECT' ? '#fff' : themeColors.primary} />
+              <Text style={[styles.typeText, { color: themeColors.text }, type === 'SERVICE_PROJECT' && styles.typeTextActive]}>Service Project</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.typeCard, type === 'FELLOWSHIP' && styles.typeCardActive]}
+              style={[styles.typeCard, { backgroundColor: themeColors.surface, borderColor: themeColors.border }, type === 'FELLOWSHIP' && styles.typeCardActive]}
               onPress={() => setType('FELLOWSHIP')}
             >
-              <Ionicons name="people" size={18} color={type === 'FELLOWSHIP' ? '#fff' : colors.primary} />
-              <Text style={[styles.typeText, type === 'FELLOWSHIP' && styles.typeTextActive]}>Fellowship</Text>
+              <Ionicons name="people" size={18} color={type === 'FELLOWSHIP' ? '#fff' : themeColors.primary} />
+              <Text style={[styles.typeText, { color: themeColors.text }, type === 'FELLOWSHIP' && styles.typeTextActive]}>Fellowship</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.typeCard, type === 'DISTRICT_EVENT' && { backgroundColor: '#B45309', borderColor: '#B45309' }]}
+              style={[styles.typeCard, { backgroundColor: themeColors.surface, borderColor: themeColors.border }, type === 'DISTRICT_EVENT' && { backgroundColor: '#C9A227', borderColor: '#C9A227' }]}
               onPress={() => setType('DISTRICT_EVENT')}
             >
-              <Ionicons name="ribbon" size={18} color={type === 'DISTRICT_EVENT' ? '#fff' : '#B45309'} />
-              <Text style={[styles.typeText, type === 'DISTRICT_EVENT' && styles.typeTextActive]}>District Event</Text>
+              <Ionicons name="ribbon" size={18} color={type === 'DISTRICT_EVENT' ? '#fff' : '#C9A227'} />
+              <Text style={[styles.typeText, { color: themeColors.text }, type === 'DISTRICT_EVENT' && styles.typeTextActive]}>District Event</Text>
             </TouchableOpacity>
           </View>
-          {type === 'DISTRICT_EVENT' && (
-            <View style={styles.districtNoticeBanner}>
-              <Ionicons name="trophy-outline" size={16} color="#B45309" />
-              <Text style={styles.districtNoticeText}>
-                🏆 District Event: +200 PTS awarded to all attendees (+10 PTS/hr) & organizers upon completion.
-              </Text>
-            </View>
-          )}
 
           <Field
             label="Event Name"
             value={title}
             onChangeText={setTitle}
-            placeholder={isServiceProject ? 'Community Coastal Cleanup' : 'Rotaract Fellowship Night'}
+            placeholder={isServiceProject ? 'Community Coastal Cleanup' : type === 'DISTRICT_EVENT' ? 'District 3800 Assembly' : 'Rotaract Fellowship Night'}
           />
           <Field
             label="Description"
             value={desc}
             onChangeText={setDesc}
-            placeholder={isServiceProject ? "What's this project about?" : 'Describe your fellowship gathering...'}
+            placeholder={isServiceProject ? "What's this project about?" : type === 'DISTRICT_EVENT' ? 'Describe this district-wide event — agenda, who should attend, and what to expect...' : 'Describe your fellowship gathering...'}
             multiline
             numberOfLines={4}
           />
           {isServiceProject && <AreasOfFocusPicker selected={areasOfFocus} onChange={setAreasOfFocus} />}
 
           {/* Involved Co-Organizers & Team Members Picker (Moved Below Description) */}
-          <Text style={styles.label}>Involved Co-Organizers & Team Members</Text>
+          <Text style={[styles.label, { color: themeColors.text }]}>Involved Co-Organizers & Team Members</Text>
 
           {/* Tag Input Container Box with Inline Pills */}
           <TouchableOpacity
             activeOpacity={1}
-            style={[styles.pillBoxContainer, isCoOrgFocused && styles.pillBoxFocused]}
+            style={[
+              styles.pillBoxContainer,
+              { backgroundColor: themeColors.surface, borderColor: themeColors.border },
+              isCoOrgFocused && { borderColor: themeColors.primary, borderWidth: 1.5 },
+            ]}
             onPress={() => coOrgInputRef.current?.focus()}
           >
             {selectedCoOrganizers.map(id => {
@@ -364,6 +399,7 @@ export default function CreateEventScreen({ navigation }: Props) {
               onChangeText={setCoOrgQuery}
               onFocus={(e: any) => {
                 setIsCoOrgFocused(true);
+                onFocusAware();
                 if (Platform.OS === 'web' && e?.target?.scrollIntoView) {
                   setTimeout(() => {
                     e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -386,7 +422,7 @@ export default function CreateEventScreen({ navigation }: Props) {
                   setIsCoOrgFocused(false);
                 }}
               />
-              <View style={[styles.coOrgDropdown, { zIndex: 2 }]}>
+              <View style={[styles.coOrgDropdown, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border, zIndex: 2 }]}>
                 {users
                   .filter(u => {
                     if (u.id === user?.id) return false;
@@ -400,7 +436,7 @@ export default function CreateEventScreen({ navigation }: Props) {
                     return (
                       <TouchableOpacity
                         key={u.id}
-                        style={styles.coOrgDropdownItem}
+                        style={[styles.coOrgDropdownItem, { borderBottomColor: themeColors.border }]}
                         onPress={() => {
                           setSelectedCoOrganizers(prev => [...prev, u.id]);
                           setCoOrgQuery('');
@@ -408,31 +444,39 @@ export default function CreateEventScreen({ navigation }: Props) {
                           setIsCoOrgFocused(false);
                         }}
                       >
-                        <View style={styles.coOrgItemAvatar}>
+                        <View style={[styles.coOrgItemAvatar, { backgroundColor: themeColors.primary }]}>
                           <Text style={styles.coOrgItemAvatarText}>{u.full_name[0]}</Text>
                         </View>
                         <View style={{ flex: 1 }}>
-                          <Text style={styles.coOrgItemName}>{u.full_name}</Text>
-                          <Text style={styles.coOrgItemSub}>{u.position || 'Member'} • {shortClub}</Text>
+                          <Text style={[styles.coOrgItemName, { color: themeColors.text }]}>{u.full_name}</Text>
+                          <Text style={[styles.coOrgItemSub, { color: themeColors.textMuted }]}>{u.position || 'Member'} • {shortClub}</Text>
                         </View>
-                        <Ionicons name="add-circle" size={18} color={colors.primary} />
+                        <Ionicons name="add-circle" size={18} color={themeColors.primary} />
                       </TouchableOpacity>
                     );
                   })}
                 {users.filter(u => u.id !== user?.id && !selectedCoOrganizers.includes(u.id) && (u.full_name.toLowerCase().includes(coOrgQuery.toLowerCase()) || u.club_name.toLowerCase().includes(coOrgQuery.toLowerCase()))).length === 0 && (
-                  <Text style={styles.noMatchText}>No members found matching "{coOrgQuery}"</Text>
+                  <Text style={[styles.noMatchText, { color: themeColors.textMuted }]}>No members found matching "{coOrgQuery}"</Text>
                 )}
               </View>
             </View>
           )}
 
+
           {/* Date Selector Input Box */}
-          <Text style={styles.label}>Date</Text>
-          <TouchableOpacity style={styles.inputBoxWithIcon} onPress={() => setCalendarModalVisible(true)}>
-            <Text style={styles.inputBoxText}>
+          <Text style={[styles.label, { color: themeColors.text }]}>Date</Text>
+          <TouchableOpacity
+            style={[
+              styles.inputBoxWithIcon,
+              { backgroundColor: themeColors.surface, borderColor: themeColors.border },
+              calendarModalVisible && { borderColor: themeColors.primary, borderWidth: 1.5 },
+            ]}
+            onPress={() => setCalendarModalVisible(true)}
+          >
+            <Text style={[styles.inputBoxText, { color: themeColors.text }]}>
               {eventDate.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })}
             </Text>
-            <Ionicons name="calendar-outline" size={18} color={colors.text} />
+            <Ionicons name="calendar-outline" size={18} color={calendarModalVisible ? themeColors.primary : themeColors.text} />
           </TouchableOpacity>
 
           {/* Side-by-Side 3-Segment Time Inputs (Initial --:-- --) */}
@@ -498,7 +542,7 @@ export default function CreateEventScreen({ navigation }: Props) {
           {activePickerTarget && (
             <View style={styles.pickerContainer}>
               <View style={styles.pickerHeader}>
-                <Text style={styles.pickerHeaderTitle}>
+                <Text style={[styles.pickerHeaderTitle, { color: themeColors.text }]}>
                   Select {activePickerTarget === 'startTime' ? 'Start Time' : 'End Time'}
                 </Text>
                 <TouchableOpacity style={styles.pickerDoneBtn} onPress={() => setActivePickerTarget(null)}>
@@ -519,44 +563,118 @@ export default function CreateEventScreen({ navigation }: Props) {
             </View>
           )}
 
-          <LocationPicker value={location} onChange={setLocation} />
+          <LocationPicker value={location} onChange={setLocation} geofenceRadius={geofenceRadius} />
+
+          {/* Check-In Geofence Perimeter Radius */}
+          <Text style={[styles.label, { color: themeColors.text }]}>Check-In Geofence Perimeter</Text>
+          <Text style={[styles.subHint, { color: themeColors.textMuted }]}>
+            Participants within this {geofenceRadius}m radius can verify attendance with 1-tap GPS check-in.
+          </Text>
+          <View style={styles.radiusPillsRow}>
+            {[
+              { label: '100m (Indoor)', value: 100 },
+              { label: '300m (Standard)', value: 300 },
+              { label: '500m (Campus)', value: 500 },
+              { label: '1km (District)', value: 1000 },
+            ].map(r => {
+              const isSelected = geofenceRadius === r.value;
+              return (
+                <TouchableOpacity
+                  key={r.value}
+                  activeOpacity={0.7}
+                  style={[
+                    styles.radiusPill,
+                    isSelected && styles.radiusPillActive,
+                  ]}
+                  onPress={() => setGeofenceRadius(r.value)}
+                >
+                  <Ionicons
+                    name={isSelected ? 'shield-checkmark' : 'ellipse-outline'}
+                    size={13}
+                    color={isSelected ? '#fff' : colors.textMuted}
+                  />
+                  <Text
+                    style={[
+                      styles.radiusPillText,
+                      isSelected && styles.radiusPillTextActive,
+                    ]}
+                  >
+                    {r.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
 
           <Field label="Max Participants" value={maxP} onChangeText={setMaxP} keyboardType="number-pad" placeholder="50" />
           <Field label="Contact Number" value={contactNumber} onChangeText={handleContactNumberChange} keyboardType="phone-pad" placeholder="0917 123 4567" maxLength={13} />
           <Field label="Contact Email" value={contactEmail} onChangeText={setContactEmail} keyboardType="email-address" autoCapitalize="none" placeholder="event@rotaract.org" />
 
-          <Text style={styles.label}>Visibility</Text>
-          <View style={styles.visRow}>
-            {([
-              { key: 'VERIFIED_ROTARACTORS', label: 'Verified' },
-              { key: 'CLUB_ONLY', label: 'Club only' },
-              { key: 'INVITATION_ONLY', label: 'Invite only' },
-            ] as { key: EventVisibility; label: string }[]).map(v => (
-              <TouchableOpacity key={v.key} onPress={() => setVisibility(v.key)} style={[styles.visChip, visibility === v.key && styles.visChipActive]}>
-                <Text style={[styles.visChipText, visibility === v.key && styles.visChipTextActive]}>{v.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          {/* District events are always open to every verified member and, on
+              publish, invite the whole district — so visibility/approval/invite
+              controls are hidden for them. */}
+          {type === 'DISTRICT_EVENT' ? (
+            <View style={styles.districtInfoRow}>
+              <Ionicons name="globe-outline" size={15} color={themeColors.textMuted} />
+              <Text style={[styles.districtInfoText, { color: themeColors.textMuted }]}>
+                Open to all verified members. Publishing invites everyone in the district.
+              </Text>
+            </View>
+          ) : (
+            <>
+              <Text style={[styles.label, { color: themeColors.text }]}>Visibility</Text>
+              <View style={styles.visRow}>
+                {([
+                  { key: 'VERIFIED_ROTARACTORS', label: 'Verified' },
+                  { key: 'CLUB_ONLY', label: 'Club only' },
+                  { key: 'INVITATION_ONLY', label: 'Invite only' },
+                ] as { key: EventVisibility; label: string }[]).map(v => (
+                  <TouchableOpacity
+                    key={v.key}
+                    onPress={() => setVisibility(v.key)}
+                    style={[
+                      styles.visChip,
+                      { backgroundColor: themeColors.surface, borderColor: themeColors.border },
+                      visibility === v.key && [styles.visChipActive, { backgroundColor: themeColors.primary, borderColor: themeColors.primary }],
+                    ]}
+                  >
+                    <Text style={[styles.visChipText, { color: themeColors.text }, visibility === v.key && styles.visChipTextActive]}>{v.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </>
+          )}
 
-          <Text style={styles.label}>Lock Leave Cutoff (Hours Before Start)</Text>
+          <Text style={[styles.label, { color: themeColors.text }]}>Lock Leave Cutoff (Hours Before Start)</Text>
           <View style={styles.visRow}>
             {[6, 12, 24].map(hrs => (
-              <TouchableOpacity key={hrs} onPress={() => setLockCutoffHours(hrs)} style={[styles.visChip, lockCutoffHours === hrs && styles.visChipActive]}>
-                <Text style={[styles.visChipText, lockCutoffHours === hrs && styles.visChipTextActive]}>{hrs}h</Text>
+              <TouchableOpacity
+                key={hrs}
+                onPress={() => setLockCutoffHours(hrs)}
+                style={[
+                  styles.visChip,
+                  { backgroundColor: themeColors.surface, borderColor: themeColors.border },
+                  lockCutoffHours === hrs && [styles.visChipActive, { backgroundColor: themeColors.primary, borderColor: themeColors.primary }],
+                ]}
+              >
+                <Text style={[styles.visChipText, { color: themeColors.text }, lockCutoffHours === hrs && styles.visChipTextActive]}>{hrs}h</Text>
               </TouchableOpacity>
             ))}
           </View>
 
-          <Toggle label="Requires organizer approval to join" value={requiresApproval} onChange={setRequiresApproval} />
-          <Toggle label="Participants can invite others" value={allowInvites} onChange={setAllowInvites} />
+          {type !== 'DISTRICT_EVENT' && (
+            <>
+              <Toggle label="Requires organizer approval to join" value={requiresApproval} onChange={setRequiresApproval} />
+              <Toggle label="Participants can invite others" value={allowInvites} onChange={setAllowInvites} />
+            </>
+          )}
 
           <TouchableOpacity style={styles.submitBtn} onPress={submit}>
             <Ionicons name="add-circle" size={20} color="#fff" />
             <Text style={styles.submitText}>Publish Event</Text>
           </TouchableOpacity>
-          </Pressable>
-        </ScrollView>
-      </KeyboardAvoidingView>
+        </Pressable>
+      </KeyboardAwareScrollView>
 
       <ConfirmRulesModal
         visible={confirmVisible}
@@ -573,18 +691,22 @@ export default function CreateEventScreen({ navigation }: Props) {
 }
 
 function Field({ label, ...rest }: any) {
+  const { colors: themeColors } = useTheme();
   const [focused, setFocused] = useState(false);
+  const onFocusAware = useKeyboardAwareOnFocus();
   return (
     <>
-      <Text style={styles.label}>{label}</Text>
+      <Text style={[styles.label, { color: themeColors.text }]}>{label}</Text>
       <TextInput
         style={[
           styles.input,
-          focused && styles.inputFocused,
+          { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text },
+          focused && [styles.inputFocused, { borderColor: themeColors.primary }],
           rest.multiline && { minHeight: 90, textAlignVertical: 'top' },
         ]}
         onFocus={(e: any) => {
           setFocused(true);
+          onFocusAware();
           if (Platform.OS === 'web' && e?.target?.scrollIntoView) {
             setTimeout(() => {
               e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -596,7 +718,7 @@ function Field({ label, ...rest }: any) {
           setFocused(false);
           rest.onBlur?.(e);
         }}
-        placeholderTextColor={colors.textMuted}
+        placeholderTextColor={themeColors.textMuted}
         {...rest}
       />
     </>
@@ -604,10 +726,11 @@ function Field({ label, ...rest }: any) {
 }
 
 function Toggle({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
+  const { colors: themeColors } = useTheme();
   return (
-    <TouchableOpacity style={styles.toggleRow} onPress={() => onChange(!value)}>
-      <Text style={styles.toggleLabel}>{label}</Text>
-      <View style={[styles.toggle, value && styles.toggleOn]}>
+    <TouchableOpacity style={[styles.toggleRow, { borderBottomColor: themeColors.border }]} onPress={() => onChange(!value)}>
+      <Text style={[styles.toggleLabel, { color: themeColors.text }]}>{label}</Text>
+      <View style={[styles.toggle, { backgroundColor: themeColors.border }, value && [styles.toggleOn, { backgroundColor: themeColors.primary }]]}>
         <View style={[styles.toggleKnob, value && styles.toggleKnobOn]} />
       </View>
     </TouchableOpacity>
@@ -625,8 +748,8 @@ const styles = StyleSheet.create({
   typeCardActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   typeText: { fontSize: 11, fontWeight: '700', color: colors.text, textAlign: 'center' },
   typeTextActive: { color: '#fff' },
-  districtNoticeBanner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#FEF3C7', padding: 10, borderRadius: 10, marginTop: 8 },
-  districtNoticeText: { fontSize: 11, color: '#92400E', fontWeight: '700', flex: 1 },
+  districtInfoRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4, marginBottom: 4 },
+  districtInfoText: { fontSize: 12, color: colors.textMuted, flex: 1, lineHeight: 16 },
   subLabelHint: { fontSize: 11, color: colors.textMuted, marginBottom: 8 },
   pillBoxContainer: {
     flexDirection: 'row',
@@ -717,9 +840,43 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12,
   },
+  subHint: { fontSize: 12, marginBottom: 8, marginTop: -2 },
   pickerContainer: { backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.border, marginTop: 10, padding: 12, overflow: 'hidden' },
   pickerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, paddingHorizontal: 4 },
   pickerHeaderTitle: { fontSize: 13, fontWeight: '700', color: colors.text },
   pickerDoneBtn: { backgroundColor: colors.primary, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 8 },
   pickerDoneText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+
+  // Geofence radius pills
+  radiusPillsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+    marginTop: 4,
+  },
+  radiusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  radiusPillActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  radiusPillText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  radiusPillTextActive: {
+    color: '#fff',
+    fontWeight: '700',
+  },
 });

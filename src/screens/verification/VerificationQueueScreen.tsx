@@ -11,6 +11,8 @@ import UserAvatar from '../../components/UserAvatar';
 import { RootStackParamList } from '../../navigation/types';
 import { VerificationApplication, VerificationStatus } from '../../types';
 
+import { isAppAdmin, isDistrictAdmin, isDistrictAreaAdmin, canGovernClub, isClubPresident } from '../../utils/roles';
+
 type Tab = 'ALL' | VerificationStatus;
 
 const TAB_LABEL: Record<Tab, string> = {
@@ -28,46 +30,79 @@ const TAB_LABEL: Record<Tab, string> = {
 
 export default function VerificationQueueScreen() {
   const { user } = useAuth();
-  const { applications } = useData();
+  const { applications, clubs } = useData();
   const { colors: themeColors } = useTheme();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [tab, setTab] = useState<Tab>('ALL');
 
-  // Filter queue items to ONLY include what is relevant to the user's role
+  const callerIsAppAdmin = isAppAdmin(user);
+  const callerIsDistrictAdmin = isDistrictAdmin(user);
+  const callerIsClubPres = isClubPresident(user);
+
+  // Filter queue items based on combined system and club authorities
   const roleScope = useMemo(() => {
     if (!user) return applications;
-    if (user.role === 'CLUB_PRESIDENT') {
+    if (callerIsAppAdmin) return applications;
+    // A District Area Admin sees the same district queue, narrowed to their own Zone.
+    if (isDistrictAreaAdmin(user)) {
+      return applications.filter(
+        a =>
+          canGovernClub(user, a.club_id, clubs) &&
+          (a.position.toLowerCase().includes('president') ||
+            (a.club_id === user.club_id && callerIsClubPres)),
+      );
+    }
+    if (callerIsDistrictAdmin && callerIsClubPres) {
+      return applications.filter(
+        a => a.position.toLowerCase().includes('president') ||
+        (a.club_id === user.club_id && !a.position.toLowerCase().includes('president'))
+      );
+    }
+    if (callerIsDistrictAdmin) {
+      return applications.filter(a => a.position.toLowerCase().includes('president'));
+    }
+    if (callerIsClubPres) {
       return applications.filter(
         a => a.club_id === user.club_id && !a.position.toLowerCase().includes('president')
       );
     }
-    if (user.role === 'DISTRICT_ADMIN') {
-      return applications.filter(
-        a => a.position.toLowerCase().includes('president')
-      );
-    }
     return applications;
-  }, [applications, user]);
+  }, [applications, user, clubs, callerIsAppAdmin, callerIsDistrictAdmin, callerIsClubPres]);
 
   const visibleTabs: Tab[] = useMemo(() => {
-    if (user?.role === 'CLUB_PRESIDENT') {
-      return ['ALL', 'AWAITING_CLUB_VALIDATION', 'VERIFIED', 'REJECTED'];
+    if (callerIsAppAdmin) {
+      return ['ALL', 'AWAITING_CLUB_VALIDATION', 'AWAITING_DISTRICT_VALIDATION', 'AWAITING_ADMIN_VERIFICATION', 'VERIFIED', 'REJECTED'];
     }
-    if (user?.role === 'DISTRICT_ADMIN') {
+    if (callerIsDistrictAdmin && callerIsClubPres) {
+      return ['ALL', 'AWAITING_CLUB_VALIDATION', 'AWAITING_DISTRICT_VALIDATION', 'VERIFIED', 'REJECTED'];
+    }
+    if (callerIsDistrictAdmin) {
       return ['ALL', 'AWAITING_DISTRICT_VALIDATION', 'AWAITING_CLUB_VALIDATION', 'VERIFIED', 'REJECTED'];
     }
-    return ['ALL', 'AWAITING_CLUB_VALIDATION', 'AWAITING_DISTRICT_VALIDATION', 'AWAITING_ADMIN_VERIFICATION', 'VERIFIED', 'REJECTED'];
-  }, [user]);
+    if (callerIsClubPres) {
+      return ['ALL', 'AWAITING_CLUB_VALIDATION', 'VERIFIED', 'REJECTED'];
+    }
+    return ['ALL', 'AWAITING_CLUB_VALIDATION', 'AWAITING_DISTRICT_VALIDATION', 'VERIFIED', 'REJECTED'];
+  }, [callerIsAppAdmin, callerIsDistrictAdmin, callerIsClubPres]);
 
   const actionRequiredCount = useMemo(() => {
-    if (user?.role === 'CLUB_PRESIDENT') {
-      return roleScope.filter(a => a.status === 'AWAITING_CLUB_VALIDATION').length;
+    if (callerIsAppAdmin) {
+      return roleScope.filter(a => a.status.startsWith('AWAITING')).length;
     }
-    if (user?.role === 'DISTRICT_ADMIN') {
+    if (callerIsDistrictAdmin && callerIsClubPres) {
+      return roleScope.filter(
+        a => (a.status === 'AWAITING_DISTRICT_VALIDATION' && a.position.toLowerCase().includes('president')) ||
+             (a.status === 'AWAITING_CLUB_VALIDATION' && a.club_id === user?.club_id)
+      ).length;
+    }
+    if (callerIsDistrictAdmin) {
       return roleScope.filter(a => a.status === 'AWAITING_DISTRICT_VALIDATION').length;
     }
-    return roleScope.filter(a => a.status.startsWith('AWAITING')).length;
-  }, [roleScope, user]);
+    if (callerIsClubPres) {
+      return roleScope.filter(a => a.status === 'AWAITING_CLUB_VALIDATION' && a.club_id === user?.club_id).length;
+    }
+    return 0;
+  }, [roleScope, user, callerIsAppAdmin, callerIsDistrictAdmin, callerIsClubPres]);
 
   const list = tab === 'ALL' ? roleScope : roleScope.filter(a => a.status === tab);
 

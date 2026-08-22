@@ -11,9 +11,27 @@ This directory contains the production-ready PostgreSQL SQL schema, row-level se
 2. Note down your **Project URL** and **anon public API Key** from **Project Settings > API**.
 
 ### Step 2: Run Database Schema & Seeds
-1. Open your Supabase Dashboard and click on **SQL Editor** on the left sidebar.
-2. Click **New Query**, copy the contents of [`supabase/schema.sql`](file:///Users/jonahmicahinguito/dev/rotaract-connect/supabase/schema.sql) and click **Run**.
-3. Create another query, copy the contents of [`supabase/seed.sql`](file:///Users/jonahmicahinguito/dev/rotaract-connect/supabase/seed.sql), and click **Run**.
+
+The schema lives in `supabase/migrations/` and is applied by the Supabase CLI — do
+not paste SQL into the dashboard by hand. `schema.sql` used to hold the base tables
+and was retired: it was never part of the migration chain, so it silently drifted,
+and its unqualified `uuid_generate_v4()` fails on hosted Supabase (extensions are
+not on the migration `search_path`). `0000_initial_schema.sql` replaces it.
+
+```bash
+supabase link --project-ref <your-project-ref>
+supabase db push      # applies every migration in order
+```
+
+To rebuild a database from scratch (**destructive** — drops all data):
+
+```bash
+supabase db reset --linked   # migrations, then supabase/seed.sql
+```
+
+> **Note:** the CLI reaches `db.<ref>.supabase.co` over IPv6. If Docker/Colima is
+> running, its VM has no IPv6 route and these commands time out — stop Docker first.
+> `supabase db dump`, conversely, *requires* Docker.
 
 ---
 
@@ -95,7 +113,7 @@ useEffect(() => {
 
 ## 🖼️ Photo Storage Setup
 
-The schema creates three Storage buckets (see section 5 of `schema.sql`) — no extra dashboard setup is needed:
+The schema creates three Storage buckets (see `supabase/migrations/0000_initial_schema.sql`) — no extra dashboard setup is needed:
 
 | Bucket | Public? | Path convention | Used for |
 |---|---|---|---|

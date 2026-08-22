@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect, useMemo } from 'react';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -10,18 +10,22 @@ import UserAvatar from '../../components/UserAvatar';
 import { VerifiedName } from '../../components/VerifiedCheck';
 import { RootStackParamList } from '../../navigation/types';
 import { formatDistance, punctuality } from '../../utils/checkIn';
+import { formatTime, formatDate } from '../../utils/timeFormat';
 import { EventParticipant } from '../../types';
+import { exportVolunteerCertificatePDF } from '../../utils/pdfCertificate';
+import { isFullDistrictAdmin } from '../../utils/roles';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ActivityPortfolio'>;
 type FilterMode = 'ATTENDED' | 'JOINED' | 'ORGANIZED';
 
 export default function ActivityPortfolioScreen({ route, navigation }: Props) {
   const { user } = useAuth();
-  const { userStats, events, participants, impacts } = useData();
+  const { userStats, events, participants, impacts, users } = useData();
   const { colors: themeColors } = useTheme();
 
   const initialFilter = route.params?.initialFilter || 'ATTENDED';
   const [filter, setFilter] = useState<FilterMode>(initialFilter);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   useEffect(() => {
     if (route.params?.initialFilter) {
@@ -66,7 +70,117 @@ export default function ActivityPortfolioScreen({ route, navigation }: Props) {
       };
     });
 
+  // Comprehensive list of all events where the user earned volunteer service hours or participated
+  const verifiedServiceItems = useMemo(() => {
+    const map = new Map<string, { event: typeof events[0]; participant: EventParticipant; impact?: typeof impacts[0] }>();
+
+    // 1. Attended / joined events
+    allEventsList.forEach(item => {
+      if (!item) return;
+      map.set(item.event.id, item);
+    });
+
+    // 2. Organized events
+    organizedEventsList.forEach(item => {
+      if (!map.has(item.event.id)) {
+        map.set(item.event.id, item);
+      }
+    });
+
+    // Sort by event start_datetime descending (newest first)
+    return Array.from(map.values()).sort(
+      (a, b) => new Date(b.event.start_datetime).getTime() - new Date(a.event.start_datetime).getTime()
+    );
+  }, [allEventsList, organizedEventsList]);
+
+  // Dynamically resolve Club President & DRR from database roles
+  const clubPresident = useMemo(() => {
+    return (
+      users.find(
+        u =>
+          u.club_id === user.club_id &&
+          (u.club_role === 'CLUB_PRESIDENT' || u.role === 'CLUB_PRESIDENT' || u.position?.toLowerCase().includes('president'))
+      ) || null
+    );
+  }, [users, user.club_id]);
+
+  // Whoever signs the District Rotaract Representative line. District AREA Admins
+  // are deliberately excluded: their authority covers one Zone, while this signature
+  // is given on behalf of the whole District. isFullDistrictAdmin encodes that split,
+  // and the position-title fallbacks are filtered through it too — "District Area
+  // Admin" contains "district admin" as a substring and would otherwise match.
+  const drrUser = useMemo(() => {
+    return (
+      users.find(
+        u =>
+          isFullDistrictAdmin(u) &&
+          (u.system_role === 'DISTRICT_ADMIN' ||
+            u.role === 'DISTRICT_ADMIN' ||
+            u.position?.toLowerCase().includes('district admin') ||
+            u.position?.toLowerCase().includes('district rotaract representative') ||
+            u.position?.toLowerCase().includes('drr'))
+      ) || null
+    );
+  }, [users]);
+
   const displayList = filter === 'ATTENDED' ? attendedEventsList : filter === 'JOINED' ? allEventsList : organizedEventsList;
+
+  const totalHours = stats.hours;
+  const milestoneInfo = useMemo(() => {
+    if (totalHours >= 100) {
+      return {
+        tier: 'Diamond Rotary Fellow',
+        icon: '💎',
+        color: '#3B82F6',
+        nextTier: null,
+        nextTarget: 100,
+        progress: 1,
+        remaining: 0,
+      };
+    }
+    if (totalHours >= 50) {
+      return {
+        tier: 'Gold Humanitarian',
+        icon: '🥇',
+        color: '#EAB308',
+        nextTier: 'Diamond Rotary Fellow',
+        nextTarget: 100,
+        progress: totalHours / 100,
+        remaining: 100 - totalHours,
+      };
+    }
+    if (totalHours >= 25) {
+      return {
+        tier: 'Silver Champion',
+        icon: '🥈',
+        color: '#94A3B8',
+        nextTier: 'Gold Humanitarian',
+        nextTarget: 50,
+        progress: totalHours / 50,
+        remaining: 50 - totalHours,
+      };
+    }
+    if (totalHours >= 10) {
+      return {
+        tier: 'Bronze Volunteer',
+        icon: '🥉',
+        color: '#D97706',
+        nextTier: 'Silver Champion',
+        nextTarget: 25,
+        progress: totalHours / 25,
+        remaining: 25 - totalHours,
+      };
+    }
+    return {
+      tier: 'Aspiring Volunteer',
+      icon: '🌟',
+      color: '#10B981',
+      nextTier: 'Bronze Volunteer',
+      nextTarget: 10,
+      progress: totalHours / 10,
+      remaining: 10 - totalHours,
+    };
+  }, [totalHours]);
 
   const badges = [
     { title: 'Verified Rotaractor', icon: 'shield-checkmark', color: themeColors.success, desc: 'Official active status verified' },
@@ -89,6 +203,103 @@ export default function ActivityPortfolioScreen({ route, navigation }: Props) {
           <View style={[styles.statusPill, { backgroundColor: themeColors.primary + '1A' }]}>
             <Ionicons name="ribbon" size={12} color={themeColors.primary} />
             <Text style={[styles.statusText, { color: themeColors.primary }]}>Rotaract Activity Portfolio</Text>
+          </View>
+
+          {/* Export Action: Official PDF Certificate & Service Transcript */}
+          <View style={styles.exportBtnRow}>
+            <TouchableOpacity
+              style={[styles.exportPdfBtn, { backgroundColor: themeColors.primary }]}
+              disabled={exportingPdf}
+              activeOpacity={0.8}
+              onPress={async () => {
+                setExportingPdf(true);
+                try {
+                  await exportVolunteerCertificatePDF({
+                    user,
+                    attendedItems: verifiedServiceItems as any,
+                    stats,
+                    clubPresidentName: clubPresident?.full_name,
+                    clubPresidentRole: clubPresident
+                      ? `${clubPresident.position || 'Club President'}, ${user.club_name || 'Rotaract Club'}`
+                      : undefined,
+                    clubPresidentSignatureUrl:
+                      user.id === clubPresident?.id ? user.signature_url : clubPresident?.signature_url,
+                    drrName: drrUser?.full_name,
+                    drrRole: drrUser
+                      ? `${drrUser.position || 'District Rotaract Representative'}, RID 3800`
+                      : undefined,
+                    drrSignatureUrl:
+                      user.id === drrUser?.id ? user.signature_url : drrUser?.signature_url,
+                  });
+                } finally {
+                  setExportingPdf(false);
+                }
+              }}
+            >
+              {exportingPdf ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="document-text" size={15} color="#fff" />
+                  <Text style={styles.exportPdfBtnText}>Download PDF Certificate</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Quick Scanner Shortcut */}
+          <TouchableOpacity
+            style={[styles.verifyScannerLink, { backgroundColor: themeColors.surface, borderColor: themeColors.border }]}
+            activeOpacity={0.75}
+            onPress={() => navigation.navigate('CertificateScanner')}
+          >
+            <Ionicons name="qr-code-outline" size={15} color={themeColors.primary} />
+            <Text style={[styles.verifyScannerLinkText, { color: themeColors.text }]}>
+              Verify a Certificate <Text style={{ color: themeColors.primary, fontWeight: '800' }}>(Scan QR)</Text>
+            </Text>
+            <Ionicons name="chevron-forward" size={13} color={themeColors.textMuted} />
+          </TouchableOpacity>
+        </View>
+
+        {/* 🌟 Volunteer Milestone Progression HUD */}
+        <View style={[styles.milestoneCard, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}>
+          <View style={styles.milestoneHeader}>
+            <View style={[styles.milestoneIconWrap, { backgroundColor: milestoneInfo.color + '20' }]}>
+              <Text style={styles.milestoneEmoji}>{milestoneInfo.icon}</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={styles.milestoneTierRow}>
+                <Text style={[styles.milestoneTier, { color: themeColors.text }]}>{milestoneInfo.tier}</Text>
+                <View style={[styles.hoursPill, { backgroundColor: themeColors.primary + '18' }]}>
+                  <Text style={[styles.hoursPillText, { color: themeColors.primary }]}>{totalHours} Hours</Text>
+                </View>
+              </View>
+              <Text style={[styles.milestoneSub, { color: themeColors.textMuted }]}>
+                {milestoneInfo.nextTier
+                  ? `${milestoneInfo.remaining}h remaining until ${milestoneInfo.nextTier}`
+                  : 'Highest volunteer distinction unlocked!'}
+              </Text>
+            </View>
+          </View>
+
+          {/* Linear Progress Bar */}
+          <View style={[styles.progressBarTrack, { backgroundColor: themeColors.surface }]}>
+            <View
+              style={[
+                styles.progressBarFill,
+                {
+                  backgroundColor: milestoneInfo.color,
+                  width: `${Math.min(100, Math.round(milestoneInfo.progress * 100))}%`,
+                },
+              ]}
+            />
+          </View>
+          <View style={styles.progressLabelsRow}>
+            <Text style={[styles.progressLabel, { color: themeColors.textMuted }]}>0 hrs</Text>
+            <Text style={[styles.progressLabelBold, { color: milestoneInfo.color }]}>
+              {Math.min(100, Math.round(milestoneInfo.progress * 100))}%
+            </Text>
+            <Text style={[styles.progressLabel, { color: themeColors.textMuted }]}>{milestoneInfo.nextTarget} hrs</Text>
           </View>
         </View>
 
@@ -180,7 +391,7 @@ export default function ActivityPortfolioScreen({ route, navigation }: Props) {
             let checkInDetails = '';
             if (p.checked_in_at) {
               const checkInDate = new Date(p.checked_in_at);
-              const timeStr = checkInDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+              const timeStr = formatTime(checkInDate);
               const pState = punctuality(ev, checkInDate);
               const distStr = p.check_in_distance_m !== undefined ? ` • ${formatDistance(p.check_in_distance_m)}` : '';
               checkInDetails = `Checked in at ${timeStr} (${pState.onTime ? 'On time' : `Late ${pState.lateByMinutes} min`}${distStr})`;
@@ -215,7 +426,7 @@ export default function ActivityPortfolioScreen({ route, navigation }: Props) {
                       {ev.event_type.replace('_', ' ')}
                     </Text>
                   </View>
-                  <Text style={[styles.date, { color: themeColors.textMuted }]}>{new Date(ev.start_datetime).toLocaleDateString()}</Text>
+                  <Text style={[styles.date, { color: themeColors.textMuted }]}>{formatDate(ev.start_datetime, { short: true })}</Text>
                 </View>
 
                 <Text style={[styles.actTitle, { color: themeColors.text }]}>{ev.title}</Text>
@@ -279,8 +490,29 @@ const styles = StyleSheet.create({
   avatarText: { color: '#fff', fontWeight: '800', fontSize: 24 },
   name: { fontSize: 20, fontWeight: '800' },
   club: { fontSize: 13, marginTop: 2 },
-  statusPill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, marginTop: 10 },
-  statusText: { fontSize: 11, fontWeight: '700' },
+  statusPill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12, marginTop: 8 },
+  statusText: { fontSize: 12, fontWeight: '700' },
+  exportBtnRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 14, width: '100%' },
+  exportPdfBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 12 },
+  exportPdfBtnText: { color: '#fff', fontSize: 12, fontWeight: '800' },
+  exportCsvBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 12, borderWidth: 1 },
+  exportCsvBtnText: { fontSize: 12, fontWeight: '700' },
+  verifyScannerLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 9, borderRadius: 10, borderWidth: 1, width: '100%', marginTop: 10 },
+  verifyScannerLinkText: { fontSize: 12, fontWeight: '600', flex: 1, marginLeft: 8 },
+  milestoneCard: { padding: 16, borderRadius: 16, borderWidth: 1, marginBottom: 16 },
+  milestoneHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
+  milestoneIconWrap: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  milestoneEmoji: { fontSize: 22 },
+  milestoneTierRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  milestoneTier: { fontSize: 15, fontWeight: '800' },
+  hoursPill: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
+  hoursPillText: { fontSize: 11, fontWeight: '800' },
+  milestoneSub: { fontSize: 12, marginTop: 2 },
+  progressBarTrack: { height: 8, borderRadius: 4, overflow: 'hidden', marginBottom: 6 },
+  progressBarFill: { height: '100%', borderRadius: 4 },
+  progressLabelsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  progressLabel: { fontSize: 10, fontWeight: '600' },
+  progressLabelBold: { fontSize: 11, fontWeight: '800' },
   statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
   statBox: { width: '48%', padding: 14, borderRadius: 14, borderWidth: 1, alignItems: 'center' },
   statVal: { fontSize: 22, fontWeight: '800', marginTop: 4 },

@@ -16,10 +16,10 @@ const Tab = createBottomTabNavigator<MainTabParamList>();
 
 export default function MainTabs() {
   const { user } = useAuth();
-  const { notificationsFor } = useData();
+  const { unreadInboxCountForUser } = useData();
   const { colors: themeColors } = useTheme();
 
-  const unreadCount = user ? notificationsFor(user.id).filter(n => !n.is_read).length : 0;
+  const unreadCount = user ? unreadInboxCountForUser(user.id) : 0;
 
   return (
     <Tab.Navigator
@@ -52,7 +52,7 @@ export default function MainTabs() {
         options={{
           title: 'Inbox',
           tabBarBadge: unreadCount > 0 ? unreadCount : undefined,
-          tabBarBadgeStyle: { backgroundColor: colors.primary, color: '#fff', fontSize: 11, fontWeight: '800' },
+          tabBarBadgeStyle: { backgroundColor: themeColors.primary, color: '#fff', fontSize: 11, fontWeight: '800' },
         }}
       />
       <Tab.Screen name="ProfileTab" component={ProfileScreen} options={{ title: 'Profile' }} />

@@ -1,5 +1,17 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Dimensions, Easing, Modal, Pressable, StyleSheet, ViewStyle } from 'react-native';
+import {
+  Animated,
+  Dimensions,
+  Easing,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  StyleSheet,
+  ViewStyle,
+} from 'react-native';
+import { useTheme } from '../context/ThemeContext';
+import { useKeyboardOffset } from './keyboard/useKeyboardOffset';
 
 interface BottomSheetProps {
   visible: boolean;
@@ -20,9 +32,11 @@ const SCREEN_HEIGHT = Dimensions.get('window').height;
  * ourselves and leave the Modal itself un-animated.
  */
 export function BottomSheet({ visible, onClose, children, cardStyle }: BottomSheetProps) {
+  const { colors: themeColors } = useTheme();
   const [mounted, setMounted] = useState(visible);
   const [sheetHeight, setSheetHeight] = useState(SCREEN_HEIGHT * 0.5);
   const progress = useRef(new Animated.Value(0)).current;
+  const keyboardOffset = useKeyboardOffset();
 
   useEffect(() => {
     if (visible) {
@@ -54,21 +68,36 @@ export function BottomSheet({ visible, onClose, children, cardStyle }: BottomShe
 
   return (
     <Modal visible transparent animationType="none" onRequestClose={onClose} statusBarTranslucent>
-      <Animated.View style={[styles.backdrop, { opacity: progress }]}>
-        <Pressable style={styles.backdropPress} onPress={onClose} />
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoid}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
         <Animated.View
-          style={[styles.card, cardStyle, { transform: [{ translateY }] }]}
-          onLayout={e => setSheetHeight(e.nativeEvent.layout.height)}
+          style={[
+            styles.backdrop,
+            { opacity: progress },
+            // iOS is handled by KeyboardAvoidingView above; Android runs
+            // edge-to-edge where that is inert, so lift the bottom-anchored card
+            // by the live keyboard height instead.
+            Platform.OS === 'android' && keyboardOffset > 0 ? { paddingBottom: keyboardOffset } : null,
+          ]}
         >
-          {children}
+          <Pressable style={styles.backdropPress} onPress={onClose} />
+          <Animated.View
+            style={[styles.card, { backgroundColor: themeColors.cardBg }, cardStyle, { transform: [{ translateY }] }]}
+            onLayout={e => setSheetHeight(e.nativeEvent.layout.height)}
+          >
+            {children}
+          </Animated.View>
         </Animated.View>
-      </Animated.View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  keyboardAvoid: { flex: 1 },
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  backdropPress: { ...StyleSheet.absoluteFillObject },
+  backdropPress: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
   card: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24 },
 });

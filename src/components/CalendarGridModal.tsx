@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Modal } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
+import { useTheme } from '../context/ThemeContext';
 
 interface CalendarGridModalProps {
   visible: boolean;
@@ -13,6 +14,7 @@ interface CalendarGridModalProps {
 const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 export function CalendarGridModal({ visible, selectedDate, onSelectDate, onClose }: CalendarGridModalProps) {
+  const { colors: themeColors, isNightMode } = useTheme();
   const [viewDate, setViewDate] = useState<Date>(selectedDate || new Date());
 
   const viewYear = viewDate.getFullYear();
@@ -87,20 +89,20 @@ export function CalendarGridModal({ visible, selectedDate, onSelectDate, onClose
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={onClose}>
-        <TouchableOpacity style={styles.calendarCard} activeOpacity={1}>
+        <TouchableOpacity style={[styles.calendarCard, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]} activeOpacity={1}>
           {/* Header Row */}
           <View style={styles.headerRow}>
             <TouchableOpacity style={styles.monthSelectorBtn}>
-              <Text style={styles.monthYearText}>{monthYearHeader}</Text>
-              <Ionicons name="caret-down" size={14} color={colors.text} />
+              <Text style={[styles.monthYearText, { color: themeColors.text }]}>{monthYearHeader}</Text>
+              <Ionicons name="caret-down" size={14} color={themeColors.text} />
             </TouchableOpacity>
 
             <View style={styles.navArrows}>
               <TouchableOpacity style={styles.arrowBtn} onPress={handlePrevMonth}>
-                <Ionicons name="arrow-up" size={18} color={colors.text} />
+                <Ionicons name="arrow-up" size={18} color={themeColors.text} />
               </TouchableOpacity>
               <TouchableOpacity style={styles.arrowBtn} onPress={handleNextMonth}>
-                <Ionicons name="arrow-down" size={18} color={colors.text} />
+                <Ionicons name="arrow-down" size={18} color={themeColors.text} />
               </TouchableOpacity>
             </View>
           </View>
@@ -108,7 +110,7 @@ export function CalendarGridModal({ visible, selectedDate, onSelectDate, onClose
           {/* Weekday Names Header Row */}
           <View style={styles.weekdayRow}>
             {WEEKDAYS.map((w, idx) => (
-              <Text key={idx} style={styles.weekdayText}>{w}</Text>
+              <Text key={idx} style={[styles.weekdayText, { color: themeColors.textMuted }]}>{w}</Text>
             ))}
           </View>
 
@@ -119,13 +121,14 @@ export function CalendarGridModal({ visible, selectedDate, onSelectDate, onClose
               return (
                 <TouchableOpacity
                   key={index}
-                  style={[styles.dayCell, selected && styles.dayCellSelected]}
+                  style={[styles.dayCell, selected && [styles.dayCellSelected, { backgroundColor: themeColors.primary }]]}
                   onPress={() => handleSelect(cell.date)}
                 >
                   <Text
                     style={[
                       styles.dayText,
-                      !cell.isCurrentMonth && styles.dayTextOtherMonth,
+                      { color: themeColors.text },
+                      !cell.isCurrentMonth && [styles.dayTextOtherMonth, { color: themeColors.textMuted + '66' }],
                       selected && styles.dayTextSelected,
                     ]}
                   >
@@ -139,10 +142,10 @@ export function CalendarGridModal({ visible, selectedDate, onSelectDate, onClose
           {/* Footer Link Actions */}
           <View style={styles.footerRow}>
             <TouchableOpacity onPress={() => onSelectDate(new Date())}>
-              <Text style={styles.footerLinkText}>Clear</Text>
+              <Text style={[styles.footerLinkText, { color: themeColors.primary }]}>Clear</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={handleToday}>
-              <Text style={styles.footerLinkText}>Today</Text>
+              <Text style={[styles.footerLinkText, { color: themeColors.primary }]}>Today</Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>

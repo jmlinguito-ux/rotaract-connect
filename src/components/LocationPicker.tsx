@@ -1,8 +1,10 @@
 import React, { useEffect, useRef } from 'react';
 import { Text, View } from 'react-native';
-import MapView, { MapPressEvent, Marker } from 'react-native-maps';
+import MapView, { MapPressEvent, Marker, Circle } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { colors } from '../theme/colors';
+import { useTheme } from '../context/ThemeContext';
+import { lightMapStyle, darkMapStyle } from '../theme/mapStyles';
 import { LocationPickerProps, LocationSummary, styles } from './location/shared';
 import { PlaceSearchField } from './location/PlaceSearchField';
 
@@ -11,7 +13,8 @@ import { PlaceSearchField } from './location/PlaceSearchField';
  * suggestions, or tap (or drag) the pin on the map. Either one back-fills the
  * other, so the address text and the coordinates stay in agreement.
  */
-export function LocationPicker({ value, onChange }: LocationPickerProps) {
+export function LocationPicker({ value, onChange, geofenceRadius = 300 }: LocationPickerProps) {
+  const { isNightMode } = useTheme();
   const mapRef = useRef<MapView>(null);
   const isMapReady = useRef(false);
 
@@ -71,6 +74,7 @@ export function LocationPicker({ value, onChange }: LocationPickerProps) {
       <View style={styles.mapWrap}>
         <MapView
           ref={mapRef}
+          key={`picker-map-${isNightMode ? 'dark' : 'light'}`}
           style={{ flex: 1 }}
           initialRegion={{
             latitude: value.latitude,
@@ -78,12 +82,26 @@ export function LocationPicker({ value, onChange }: LocationPickerProps) {
             latitudeDelta: 0.02,
             longitudeDelta: 0.02,
           }}
+          userInterfaceStyle={isNightMode ? 'dark' : 'light'}
+          customMapStyle={isNightMode ? darkMapStyle : lightMapStyle}
+          showsUserLocation={false}
+          onUserLocationChange={() => {}}
           onPress={onMapPress}
           onMapReady={() => {
             isMapReady.current = true;
           }}
         >
+          {/* Geofence Perimeter Circle */}
+          <Circle
+            center={{ latitude: value.latitude, longitude: value.longitude }}
+            radius={geofenceRadius}
+            fillColor="rgba(212, 19, 103, 0.15)"
+            strokeColor="#D41367"
+            strokeWidth={2}
+          />
+
           <Marker
+            key={`picker_marker_${value.latitude}_${value.longitude}`}
             coordinate={{ latitude: value.latitude, longitude: value.longitude }}
             pinColor={colors.primary}
             draggable
@@ -94,7 +112,7 @@ export function LocationPicker({ value, onChange }: LocationPickerProps) {
           />
         </MapView>
         <View style={styles.mapHint} pointerEvents="none">
-          <Text style={styles.mapHintText}>Tap or drag the pin to adjust</Text>
+          <Text style={styles.mapHintText}>Tap or drag pin · {geofenceRadius}m check-in perimeter</Text>
         </View>
       </View>
 

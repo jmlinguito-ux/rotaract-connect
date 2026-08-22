@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { AuthStackParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
+import { useTheme } from '../../context/ThemeContext';
 import { zones } from '../../data/mockData';
 import { useData } from '../../context/DataContext';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,7 +12,9 @@ import { Ionicons } from '@expo/vector-icons';
 type Props = NativeStackScreenProps<AuthStackParamList, 'ClubSelect'>;
 
 export default function ClubSelectScreen({ navigation, route }: Props) {
+  const { colors: themeColors } = useTheme();
   const [query, setQuery] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
   // Clubs come from the data layer so clubs added by a district admin show up here.
   const { clubs } = useData();
 
@@ -26,7 +29,7 @@ export default function ClubSelectScreen({ navigation, route }: Props) {
   }, [query, clubs]);
 
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.bg }]} edges={['top', 'bottom']}>
       {/* Top Navigation Header */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -40,22 +43,24 @@ export default function ClubSelectScreen({ navigation, route }: Props) {
           }}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
-          <Ionicons name="chevron-back" size={22} color={colors.primary} />
-          <Text style={styles.backBtnText}>Register</Text>
+          <Ionicons name="chevron-back" size={22} color={themeColors.primary} />
+          <Text style={[styles.backBtnText, { color: themeColors.primary }]}>Register</Text>
         </TouchableOpacity>
 
-        <Text style={styles.headerTitle}>Select Club</Text>
+        <Text style={[styles.headerTitle, { color: themeColors.text }]}>Select Club</Text>
         <View style={{ width: 70 }} />
       </View>
 
-      <View style={styles.searchWrap}>
-        <Ionicons name="search" size={18} color={colors.textMuted} />
+      <View style={[styles.searchWrap, { backgroundColor: themeColors.surface, borderColor: isSearchFocused ? themeColors.primary : themeColors.border }, isSearchFocused && { borderWidth: 1.5 }]}>
+        <Ionicons name="search" size={18} color={isSearchFocused ? themeColors.primary : themeColors.textMuted} />
         <TextInput
-          style={styles.search}
+          style={[styles.search, { color: themeColors.text }]}
           placeholder="Search clubs, cities…"
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={themeColors.textMuted}
           value={query}
           onChangeText={setQuery}
+          onFocus={() => setIsSearchFocused(true)}
+          onBlur={() => setIsSearchFocused(false)}
           autoFocus
         />
       </View>

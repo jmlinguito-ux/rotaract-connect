@@ -1,7 +1,18 @@
 import { RotaractEvent } from '../types';
 
-/** A participant must be within this many metres of the venue to check in. */
+/** A participant must be within this many metres of the venue to check in (default fallback). */
 export const CHECK_IN_RADIUS_M = 300;
+
+/** Default departure grace period before recording an auto check-out (in minutes). */
+export const DEFAULT_DEPARTURE_GRACE_MINUTES = 30;
+
+/** Returns the effective geofence perimeter radius in meters for an event. */
+export function getEventGeofenceRadius(event?: RotaractEvent | null): number {
+  if (!event || typeof event.geofence_radius_meters !== 'number' || event.geofence_radius_meters <= 0) {
+    return CHECK_IN_RADIUS_M;
+  }
+  return event.geofence_radius_meters;
+}
 
 /** Check-in opens this many minutes before the event's start time. */
 export const CHECK_IN_OPENS_MINUTES_BEFORE = 30;

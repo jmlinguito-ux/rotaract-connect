@@ -1,16 +1,26 @@
 {
   "expo": {
-    "name": "rotaract-connect",
+    "name": "Rotaract Connect",
     "slug": "rotaract-connect",
     "version": "1.0.0",
     "orientation": "portrait",
+    "scheme": "rotaractconnect",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FFFFFF"
+    },
     "ios": {
+      "deploymentTarget": "16.4",
       "supportsTablet": true,
       "bundleIdentifier": "com.rotaractconnect.app",
       "infoPlist": {
-        "NSPhotoLibraryUsageDescription": "Rotaract Connect needs access to your photos to allow you to upload and crop cover photos for events."
+        "NSPhotoLibraryUsageDescription": "Rotaract Connect needs access to your photos to allow you to upload and crop cover photos for events.",
+        "NSLocationWhenInUseUsageDescription": "Rotaract Connect uses your location to confirm event check-in and power nearby emergency SOS alerts.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Rotaract Connect uses background location to automatically check you in when you arrive at an event venue, even with the app closed, and to ensure you receive urgent emergency broadcasts from nearby Rotaractors.",
+        "UIBackgroundModes": ["location", "fetch", "remote-notification"]
       }
     },
     "android": {
@@ -20,12 +30,19 @@
         "foregroundImage": "./assets/android-icon-foreground.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false,
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyDVd2ymIl2wn_xXWcZ4FPbzq6YUkDqsERA"
         }
-      }
+      },
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_LOCATION",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -35,7 +52,9 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Rotaract Connect uses your location to confirm you are at the venue when you check in to an event."
+          "locationWhenInUsePermission": "Rotaract Connect uses your location to confirm event check-in and power nearby emergency SOS alerts.",
+          "locationAlwaysAndWhenInUsePermission": "Rotaract Connect uses background location to automatically check you in when you arrive at an event venue, even with the app closed, and to ensure you receive urgent emergency broadcasts from nearby Rotaractors.",
+          "isAndroidBackgroundLocationEnabled": true
         }
       ],
       [
@@ -45,13 +64,43 @@
         }
       ],
       "@react-native-community/datetimepicker",
-      "./plugins/withDisableScriptSandboxing"
+      "./plugins/withDisableScriptSandboxing",
+      "./plugins/withConversationNotifications",
+      "expo-audio",
+      "expo-asset",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#D41367",
+          "defaultChannel": "general_v6",
+          "sounds": [
+            "./assets/sounds/chime.wav",
+            "./assets/sounds/alert.wav",
+            "./assets/sounds/emergency.wav"
+          ]
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "16.4"
+          }
+        }
+      ],
+      "expo-splash-screen",
+      "expo-sharing"
     ],
     "extra": {
       "eas": {
         "projectId": "0f6d4311-21c9-4826-929f-67efb348a59d"
       }
     },
-    "owner": "jmlinguito"
+    "owner": "jmlinguito",
+    "runtimeVersion": "1.0.0",
+    "updates": {
+      "url": "https://u.expo.dev/0f6d4311-21c9-4826-929f-67efb348a59d"
+    }
   }
 }

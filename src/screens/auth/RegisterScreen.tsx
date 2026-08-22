@@ -1,19 +1,22 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, Modal, Image, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Platform, Modal, Image, Alert, ActivityIndicator } from 'react-native';
+import { KeyboardAwareScrollView, useKeyboardAwareOnFocus } from '../../components/KeyboardAwareScrollView';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { AuthStackParamList } from '../../navigation/types';
 import { colors } from '../../theme/colors';
 import { useAuth } from '../../context/AuthContext';
 import { useData } from '../../context/DataContext';
+import { useTheme } from '../../context/ThemeContext';
 import { zones } from '../../data/mockData';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import FullImageModal from '../../components/FullImageModal';
+import TermsAndPrivacyModal from '../../components/TermsAndPrivacyModal';
+import { PickedImage } from '../../services/storage';
+import { ROTARACT_POSITIONS, getPositionClubRole } from '../../utils/roles';
 
 type Props = NativeStackScreenProps<AuthStackParamList, 'Register'>;
-
-const POSITIONS = ['President', 'Officer', 'Member'];
 
 export default function RegisterScreen({ navigation }: Props) {
   const { signUp } = useAuth();
@@ -29,14 +32,22 @@ export default function RegisterScreen({ navigation }: Props) {
   const [memberId, setMemberId] = useState('');
   const [contactNumber, setContactNumber] = useState('');
   const [position, setPosition] = useState('Member');
-  const [positionModalVisible, setPositionModalVisible] = useState(false);
-  const [proofUrl, setProofUrl] = useState<string | null>(null);
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [isPositionDropdownOpen, setIsPositionDropdownOpen] = useState(false);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [legalModalVisible, setLegalModalVisible] = useState(false);
+  const [legalModalTab, setLegalModalTab] = useState<'terms' | 'privacy'>('terms');
+  // Hold the full picked asset (uri + base64) so the image can be uploaded to
+  // Supabase Storage AFTER sign-up establishes a session (uploads need the new
+  // user's id + auth). The `.uri` is only used for the on-screen preview.
+  const [proofAsset, setProofAsset] = useState<PickedImage | null>(null);
+  const [avatarAsset, setAvatarAsset] = useState<PickedImage | null>(null);
+  const proofUrl = proofAsset?.uri ?? null;
+  const avatarUrl = avatarAsset?.uri ?? null;
   const [fullImageUri, setFullImageUri] = useState<{ uri: string; title: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const pickImage = async (onPicked: (uri: string) => void, square: boolean) => {
+  const pickImage = async (onPicked: (asset: PickedImage) => void, square: boolean) => {
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
@@ -48,17 +59,19 @@ export default function RegisterScreen({ navigation }: Props) {
         allowsEditing: true,
         ...(square ? { aspect: [1, 1] as [number, number] } : {}),
         quality: 0.8,
+        base64: true,
       });
       if (!res.canceled && res.assets?.[0]?.uri) {
-        onPicked(res.assets[0].uri);
+        const a = res.assets[0];
+        onPicked({ uri: a.uri, base64: a.base64, mimeType: a.mimeType, fileName: a.fileName });
       }
     } catch (e) {
       Alert.alert('Upload Error', 'Unable to open image library.');
     }
   };
 
-  const handlePickProof = () => pickImage(setProofUrl, false);
-  const handlePickAvatar = () => pickImage(setAvatarUrl, true);
+  const handlePickProof = () => pickImage(setProofAsset, false);
+  const handlePickAvatar = () => pickImage(setAvatarAsset, true);
 
   const selectedClub = clubs.find(c => c.id === selectedClubId);
   const selectedZone = selectedClub ? zones.find(z => z.id === selectedClub.zone_id) : null;
@@ -81,21 +94,24 @@ export default function RegisterScreen({ navigation }: Props) {
 
   const passwordMismatch = confirmPassword.length > 0 && password !== confirmPassword;
   const memberIdValid = memberId.length === 8;
-  const canSubmit = fullName && email && username && password && confirmPassword && !passwordMismatch && selectedClubId && memberIdValid;
+  const canSubmit = Boolean(
+    fullName.trim() &&
+    email.trim() &&
+    username.trim() &&
+    password &&
+    confirmPassword &&
+    !passwordMismatch &&
+    selectedClubId &&
+    memberIdValid &&
+    agreedToTerms
+  );
 
   return (
     <SafeAreaView style={styles.safe}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
+      <KeyboardAwareScrollView
+        contentContainerStyle={styles.container}
+        keyboardDismissMode="on-drag"
       >
-        <ScrollView
-          contentContainerStyle={styles.container}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
-          automaticallyAdjustKeyboardInsets={true}
-        >
           <TouchableOpacity
             onPress={() => {
               if (navigation.canGoBack()) {
@@ -191,16 +207,57 @@ export default function RegisterScreen({ navigation }: Props) {
             <Text style={styles.errorText}>Rotaract Member ID must be 8 digits</Text>
           ) : null}
 
-          <Text style={styles.label}>Position</Text>
-          <TouchableOpacity
-            style={styles.selector}
-            onPress={() => setPositionModalVisible(true)}
-          >
-            <Text style={position ? styles.selectorText : styles.selectorPlaceholder}>
-              {position || 'Select Position'}
-            </Text>
-            <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
-          </TouchableOpacity>
+          <View style={{ marginBottom: 16 }}>
+            <Text style={styles.label}>Position *</Text>
+            <TouchableOpacity
+              style={[styles.selector, isPositionDropdownOpen && { borderColor: colors.primary }]}
+              onPress={() => setIsPositionDropdownOpen(!isPositionDropdownOpen)}
+            >
+              <Text style={position ? styles.selectorText : styles.selectorPlaceholder}>
+                {position || 'Select Position'}
+              </Text>
+              <Ionicons name={isPositionDropdownOpen ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textMuted} />
+            </TouchableOpacity>
+
+            {isPositionDropdownOpen && (
+              <View style={styles.inlineDropdownMenu}>
+                <ScrollView
+                  nestedScrollEnabled={true}
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={true}
+                  style={{ maxHeight: 220 }}
+                >
+                  {ROTARACT_POSITIONS.map(p => {
+                    const isSelected = position === p;
+                    const clubRole = getPositionClubRole(p);
+                    const roleHint = clubRole === 'CLUB_PRESIDENT' ? 'Executive' : clubRole === 'OFFICER' ? 'Officer' : 'General';
+                    return (
+                      <TouchableOpacity
+                        key={p}
+                        style={[styles.overlayDropdownItem, isSelected && { backgroundColor: colors.primary + '14' }]}
+                        onPress={() => {
+                          setPosition(p);
+                          setIsPositionDropdownOpen(false);
+                        }}
+                      >
+                        <View style={styles.checkmarkWrap}>
+                          {isSelected ? (
+                            <Ionicons name="checkmark-circle" size={18} color={colors.primary} />
+                          ) : (
+                            <Ionicons name="ellipse-outline" size={14} color={colors.textMuted} />
+                          )}
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.overlayDropdownText, { color: isSelected ? colors.primary : colors.text, fontWeight: isSelected ? '700' : '400' }]}>{p}</Text>
+                          <Text style={{ fontSize: 11, color: isSelected ? colors.primary : colors.textMuted, marginTop: 1 }}>{roleHint}</Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            )}
+          </View>
 
           <Text style={styles.label}>Rotaract ID / Membership Proof (Optional)</Text>
           {proofUrl ? (
@@ -245,6 +302,53 @@ export default function RegisterScreen({ navigation }: Props) {
             </Text>
           </View>
 
+          {/* User Agreement & Privacy Terms Checkbox Card */}
+          <View style={styles.agreementCard}>
+            <TouchableOpacity
+              style={styles.checkboxRow}
+              activeOpacity={0.8}
+              onPress={() => setAgreedToTerms(prev => !prev)}
+            >
+              <View style={[styles.checkbox, agreedToTerms && styles.checkboxActive]}>
+                {agreedToTerms && <Ionicons name="checkmark" size={14} color="#fff" />}
+              </View>
+              <View style={styles.agreementTextWrap}>
+                <Text style={styles.agreementText}>
+                  I have read and agree to the{' '}
+                  <Text
+                    style={styles.legalLink}
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      setLegalModalTab('terms');
+                      setLegalModalVisible(true);
+                    }}
+                  >
+                    User Agreement & Terms
+                  </Text>{' '}
+                  and{' '}
+                  <Text
+                    style={styles.legalLink}
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      setLegalModalTab('privacy');
+                      setLegalModalVisible(true);
+                    }}
+                  >
+                    Privacy Policy
+                  </Text>
+                  , and confirm that I am an active member of Rotary International / District 3800.
+                </Text>
+              </View>
+            </TouchableOpacity>
+
+            <View style={styles.privacyNoteRow}>
+              <Ionicons name="shield-checkmark-outline" size={13} color={colors.textMuted} />
+              <Text style={styles.privacyNoteText}>
+                Your data is protected under the Philippine Data Privacy Act (RA 10173).
+              </Text>
+            </View>
+          </View>
+
           {error ? (
             <View style={styles.errorBanner}>
               <Ionicons name="alert-circle" size={16} color={colors.danger} />
@@ -265,15 +369,19 @@ export default function RegisterScreen({ navigation }: Props) {
                 club_id: selectedClubId ?? '',
                 club_name: selectedClub?.club_name ?? '',
                 position,
-                role: position === 'President' ? 'CLUB_PRESIDENT' : 'MEMBER',
-                avatar_url: avatarUrl || undefined,
+                role: getPositionClubRole(position) === 'CLUB_PRESIDENT' ? 'CLUB_PRESIDENT' : 'MEMBER',
+                avatar_asset: avatarAsset || undefined,
                 member_id: memberId,
-                proof_url: proofUrl || undefined,
+                proof_asset: proofAsset || undefined,
               });
               setLoading(false);
 
               if (result.error) {
                 setError(result.error);
+              } else if (result.needsVerification) {
+                // Email confirmation required — verify the emailed code before the
+                // account is activated.
+                navigation.navigate('EmailVerification', { email: result.email ?? email });
               } else {
                 navigation.navigate('VerificationPending');
               }
@@ -298,40 +406,16 @@ export default function RegisterScreen({ navigation }: Props) {
           >
             <Text style={styles.linkText}>Already have an account? <Text style={styles.linkTextBold}>Sign In</Text></Text>
           </TouchableOpacity>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAwareScrollView>
 
-      {/* Position Dropdown Modal */}
-      <Modal visible={positionModalVisible} transparent animationType="fade" onRequestClose={() => setPositionModalVisible(false)}>
-        <TouchableOpacity style={styles.modalBackdrop} activeOpacity={1} onPress={() => setPositionModalVisible(false)}>
-          <TouchableOpacity style={styles.modalCard} activeOpacity={1} onPress={e => e.stopPropagation()}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Position</Text>
-              <TouchableOpacity onPress={() => setPositionModalVisible(false)}>
-                <Ionicons name="close" size={20} color={colors.textMuted} />
-              </TouchableOpacity>
-            </View>
-            <View style={{ gap: 8 }}>
-              {POSITIONS.map(p => {
-                const isSelected = position === p;
-                return (
-                  <TouchableOpacity
-                    key={p}
-                    style={[styles.positionOption, isSelected && styles.positionOptionActive]}
-                    onPress={() => {
-                      setPosition(p);
-                      setPositionModalVisible(false);
-                    }}
-                  >
-                    <Text style={[styles.positionOptionText, isSelected && styles.positionOptionTextActive]}>{p}</Text>
-                    {isSelected && <Ionicons name="checkmark-circle" size={20} color={colors.primary} />}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
+
+
+      <TermsAndPrivacyModal
+        visible={legalModalVisible}
+        initialTab={legalModalTab}
+        onClose={() => setLegalModalVisible(false)}
+        onAccept={() => setAgreedToTerms(true)}
+      />
 
       <FullImageModal
         visible={!!fullImageUri}
@@ -345,21 +429,34 @@ export default function RegisterScreen({ navigation }: Props) {
 
 function Field(props: any) {
   const { label, ...rest } = props;
+  const { colors: themeColors } = useTheme();
+  const [focused, setFocused] = useState(false);
+  const kavOnFocus = useKeyboardAwareOnFocus();
   return (
     <>
-      <Text style={styles.label}>{label}</Text>
+      <Text style={[styles.label, { color: themeColors.text }]}>{label}</Text>
       <TextInput
-        style={styles.input}
-        placeholderTextColor={colors.textMuted}
+        style={[
+          styles.input,
+          { backgroundColor: themeColors.surface, borderColor: themeColors.border, color: themeColors.text },
+          focused && { borderColor: themeColors.primary, borderWidth: 1.5 },
+        ]}
+        placeholderTextColor={themeColors.textMuted}
+        {...rest}
         onFocus={(e: any) => {
+          setFocused(true);
           if (Platform.OS === 'web' && e?.target?.scrollIntoView) {
             setTimeout(() => {
               e.target.scrollIntoView({ behavior: 'smooth', block: 'center' });
             }, 100);
           }
+          kavOnFocus();       // lift above the keyboard (native)
           rest.onFocus?.(e);
         }}
-        {...rest}
+        onBlur={(e: any) => {
+          setFocused(false);
+          rest.onBlur?.(e);
+        }}
       />
     </>
   );
@@ -382,18 +479,33 @@ function PasswordField({
   setShowPassword: (show: boolean) => void;
   error?: string;
 }) {
+  const { colors: themeColors } = useTheme();
+  const [focused, setFocused] = useState(false);
+  const kavOnFocus = useKeyboardAwareOnFocus();
   return (
     <>
-      <Text style={styles.label}>{label}</Text>
-      <View style={[styles.passwordWrap, !!error && styles.inputError]}>
+      <Text style={[styles.label, { color: themeColors.text }]}>{label}</Text>
+      <View
+        style={[
+          styles.passwordWrap,
+          { backgroundColor: themeColors.surface, borderColor: themeColors.border },
+          focused && { borderColor: themeColors.primary, borderWidth: 1.5 },
+          !!error && styles.inputError,
+        ]}
+      >
         <TextInput
-          style={styles.passwordInput}
+          style={[styles.passwordInput, { color: themeColors.text }]}
           value={value}
           onChangeText={onChangeText}
           placeholder={placeholder || '••••••••'}
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={themeColors.textMuted}
           secureTextEntry={!showPassword}
           autoCapitalize="none"
+          onFocus={(e: any) => {
+            setFocused(true);
+            kavOnFocus();
+          }}
+          onBlur={() => setFocused(false)}
         />
         <TouchableOpacity
           style={styles.eyeBtn}
@@ -403,7 +515,7 @@ function PasswordField({
           <Ionicons
             name={showPassword ? 'eye-off-outline' : 'eye-outline'}
             size={20}
-            color={colors.textMuted}
+            color={focused ? themeColors.primary : themeColors.textMuted}
           />
         </TouchableOpacity>
       </View>
@@ -483,12 +595,89 @@ const styles = StyleSheet.create({
   linkBtn: { marginTop: 20, alignItems: 'center', paddingVertical: 10 },
   linkText: { color: colors.textMuted, fontSize: 14 },
   linkTextBold: { color: colors.primary, fontWeight: '700' },
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-  modalCard: { width: '100%', maxWidth: 360, backgroundColor: '#fff', borderRadius: 20, padding: 20 },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  modalTitle: { fontSize: 18, fontWeight: '800', color: colors.text },
-  positionOption: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 14, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
-  positionOptionActive: { borderColor: colors.primary, backgroundColor: colors.primary + '0D' },
-  positionOptionText: { fontSize: 15, fontWeight: '600', color: colors.text },
-  positionOptionTextActive: { color: colors.primary, fontWeight: '800' },
+  inlineDropdownMenu: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: '#fff',
+    marginTop: 6,
+    marginBottom: 6,
+    overflow: 'hidden',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+  },
+  overlayDropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    gap: 8,
+  },
+  checkmarkWrap: {
+    width: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  overlayDropdownText: {
+    fontSize: 15,
+  },
+  agreementCard: {
+    marginTop: 18,
+    padding: 14,
+    borderRadius: 14,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: 10,
+  },
+  checkboxRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#D1D5DB',
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  checkboxActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  agreementTextWrap: {
+    flex: 1,
+  },
+  agreementText: {
+    fontSize: 13,
+    color: colors.text,
+    lineHeight: 19,
+  },
+  legalLink: {
+    color: colors.primary,
+    fontWeight: '700',
+    textDecorationLine: 'underline',
+  },
+  privacyNoteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  privacyNoteText: {
+    flex: 1,
+    fontSize: 11,
+    color: colors.textMuted,
+    lineHeight: 15,
+  },
 });
