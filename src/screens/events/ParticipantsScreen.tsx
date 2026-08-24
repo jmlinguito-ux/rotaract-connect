@@ -188,20 +188,20 @@ export default function ParticipantsScreen({ route, navigation }: Props) {
                 <Text style={[styles.meta, { color: themeColors.textMuted }]}>{u?.club_name} • {u?.position}</Text>
                 {isCheckedIn ? (
                   <View style={styles.checkInBadge}>
-                    <Ionicons name="checkmark-circle" size={12} color={colors.success} />
-                    <Text style={styles.checkInBadgeText}>
+                    <Ionicons name="checkmark-circle" size={12} color={themeColors.success} />
+                    <Text style={[styles.checkInBadgeText, { color: themeColors.success }]}>
                       Checked-In {p.check_in_distance_m ? `(${formatDistance(p.check_in_distance_m)})` : ''}
                     </Text>
                   </View>
                 ) : p.attendance_status === 'ABSENT' ? (
-                  <Text style={[styles.attendance, { color: colors.danger }]}>ABSENT</Text>
+                  <Text style={[styles.attendance, { color: themeColors.danger }]}>ABSENT</Text>
                 ) : null}
               </View>
 
               {isOrganizer && p.status === 'PENDING' && user ? (
                 <View style={{ flexDirection: 'row', gap: 6 }}>
                   <TouchableOpacity
-                    style={styles.approveBtn}
+                    style={[styles.approveBtn, { backgroundColor: themeColors.success }]}
                     onPress={() => {
                       approveParticipant(p.id, user);
                       Alert.alert('Approved!', `${u?.full_name ?? 'Participant'} approved.`);
@@ -210,10 +210,10 @@ export default function ParticipantsScreen({ route, navigation }: Props) {
                     <Ionicons name="checkmark" size={14} color="#fff" />
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={styles.declineBtn}
+                    style={[styles.declineBtn, { borderColor: themeColors.danger }]}
                     onPress={() => setDeclineTarget({ participantId: p.id, applicantName: u?.full_name })}
                   >
-                    <Ionicons name="close" size={14} color={colors.danger} />
+                    <Ionicons name="close" size={14} color={themeColors.danger} />
                   </TouchableOpacity>
                 </View>
               ) : isOrganizer && p.status === 'JOINED' && isCheckedIn && !p.checked_out_at ? (

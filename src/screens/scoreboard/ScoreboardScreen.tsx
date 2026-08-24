@@ -26,7 +26,7 @@ type PeriodFilter = 'RY_2026_2027' | 'RY_2025_2026' | 'ALL_TIME';
 export default function ScoreboardScreen({ navigation }: Props) {
   const { user } = useAuth();
   const { users, events, participants, clubs, impacts, getOrCreateConversation } = useData();
-  const { colors: themeColors } = useTheme();
+  const { colors: themeColors, isNightMode } = useTheme();
 
   const [viewMode, setViewMode] = useState<ViewMode>('INDIVIDUAL');
   const [tab, setTab] = useState<FilterTab>('DISTRICT');
@@ -687,67 +687,67 @@ export default function ScoreboardScreen({ navigation }: Props) {
             {/* Spacious Event Type Points Cards */}
             <View style={{ gap: 10 }}>
               {/* District Event Card */}
-              <View style={[styles.typeCardBox, { backgroundColor: '#FEF3C7', borderColor: '#F59E0B' }]}>
+              <View style={[styles.typeCardBox, { backgroundColor: isNightMode ? '#451A0344' : '#FEF3C7', borderColor: isNightMode ? '#F59E0B66' : '#F59E0B' }]}>
                 <View style={styles.typeCardHeader}>
-                  <Ionicons name="ribbon" size={16} color="#B45309" />
-                  <Text style={[styles.typeCardTitle, { color: '#78350F' }]}>District Event</Text>
+                  <Ionicons name="ribbon" size={16} color={isNightMode ? '#FBBF24' : '#B45309'} />
+                  <Text style={[styles.typeCardTitle, { color: isNightMode ? '#FCD34D' : '#78350F' }]}>District Event</Text>
                 </View>
                 <View style={styles.ptsPillRow}>
-                  <View style={styles.ptsPill}>
-                    <Text style={styles.ptsPillLabel}>Organized</Text>
-                    <Text style={[styles.ptsPillValue, { color: '#B45309' }]}>+500 PTS</Text>
+                  <View style={[styles.ptsPill, { backgroundColor: isNightMode ? themeColors.surface : '#fff' }]}>
+                    <Text style={[styles.ptsPillLabel, { color: themeColors.textMuted }]}>Organized</Text>
+                    <Text style={[styles.ptsPillValue, { color: isNightMode ? '#FBBF24' : '#B45309' }]}>+500 PTS</Text>
                   </View>
-                  <View style={styles.ptsPill}>
-                    <Text style={styles.ptsPillLabel}>Attended</Text>
-                    <Text style={[styles.ptsPillValue, { color: '#B45309' }]}>+200 PTS</Text>
+                  <View style={[styles.ptsPill, { backgroundColor: isNightMode ? themeColors.surface : '#fff' }]}>
+                    <Text style={[styles.ptsPillLabel, { color: themeColors.textMuted }]}>Attended</Text>
+                    <Text style={[styles.ptsPillValue, { color: isNightMode ? '#FBBF24' : '#B45309' }]}>+200 PTS</Text>
                   </View>
-                  <View style={styles.ptsPill}>
-                    <Text style={styles.ptsPillLabel}>Per Hour</Text>
-                    <Text style={[styles.ptsPillValue, { color: '#B45309' }]}>+20 PTS/hr</Text>
+                  <View style={[styles.ptsPill, { backgroundColor: isNightMode ? themeColors.surface : '#fff' }]}>
+                    <Text style={[styles.ptsPillLabel, { color: themeColors.textMuted }]}>Per Hour</Text>
+                    <Text style={[styles.ptsPillValue, { color: isNightMode ? '#FBBF24' : '#B45309' }]}>+20 PTS/hr</Text>
                   </View>
                 </View>
               </View>
 
               {/* Service Project Card */}
-              <View style={[styles.typeCardBox, { backgroundColor: '#EBF9F3', borderColor: colors.success }]}>
+              <View style={[styles.typeCardBox, { backgroundColor: isNightMode ? '#064E3B33' : '#EBF9F3', borderColor: themeColors.success }]}>
                 <View style={styles.typeCardHeader}>
-                  <FontAwesome5 name="hands-helping" size={14} color="#065F46" />
-                  <Text style={[styles.typeCardTitle, { color: '#065F46' }]}>Service Project</Text>
+                  <FontAwesome5 name="hands-helping" size={14} color={isNightMode ? '#34D399' : '#065F46'} />
+                  <Text style={[styles.typeCardTitle, { color: isNightMode ? '#6EE7B7' : '#065F46' }]}>Service Project</Text>
                 </View>
                 <View style={styles.ptsPillRow}>
-                  <View style={styles.ptsPill}>
-                    <Text style={styles.ptsPillLabel}>Organized</Text>
-                    <Text style={[styles.ptsPillValue, { color: '#065F46' }]}>+100 PTS</Text>
+                  <View style={[styles.ptsPill, { backgroundColor: isNightMode ? themeColors.surface : '#fff' }]}>
+                    <Text style={[styles.ptsPillLabel, { color: themeColors.textMuted }]}>Organized</Text>
+                    <Text style={[styles.ptsPillValue, { color: isNightMode ? '#34D399' : '#065F46' }]}>+100 PTS</Text>
                   </View>
-                  <View style={styles.ptsPill}>
-                    <Text style={styles.ptsPillLabel}>Attended</Text>
-                    <Text style={[styles.ptsPillValue, { color: '#065F46' }]}>+50 PTS</Text>
+                  <View style={[styles.ptsPill, { backgroundColor: isNightMode ? themeColors.surface : '#fff' }]}>
+                    <Text style={[styles.ptsPillLabel, { color: themeColors.textMuted }]}>Attended</Text>
+                    <Text style={[styles.ptsPillValue, { color: isNightMode ? '#34D399' : '#065F46' }]}>+50 PTS</Text>
                   </View>
-                  <View style={styles.ptsPill}>
-                    <Text style={styles.ptsPillLabel}>Per Hour</Text>
-                    <Text style={[styles.ptsPillValue, { color: '#065F46' }]}>+10 PTS/hr</Text>
+                  <View style={[styles.ptsPill, { backgroundColor: isNightMode ? themeColors.surface : '#fff' }]}>
+                    <Text style={[styles.ptsPillLabel, { color: themeColors.textMuted }]}>Per Hour</Text>
+                    <Text style={[styles.ptsPillValue, { color: isNightMode ? '#34D399' : '#065F46' }]}>+10 PTS/hr</Text>
                   </View>
                 </View>
               </View>
 
               {/* Fellowship Card */}
-              <View style={[styles.typeCardBox, { backgroundColor: '#FFF4E5', borderColor: colors.warning }]}>
+              <View style={[styles.typeCardBox, { backgroundColor: isNightMode ? '#7C2D1233' : '#FFF4E5', borderColor: themeColors.warning }]}>
                 <View style={styles.typeCardHeader}>
-                  <Ionicons name="people" size={16} color="#9A3412" />
-                  <Text style={[styles.typeCardTitle, { color: '#9A3412' }]}>Fellowship</Text>
+                  <Ionicons name="people" size={16} color={isNightMode ? '#FB923C' : '#9A3412'} />
+                  <Text style={[styles.typeCardTitle, { color: isNightMode ? '#FDBA74' : '#9A3412' }]}>Fellowship</Text>
                 </View>
                 <View style={styles.ptsPillRow}>
-                  <View style={styles.ptsPill}>
-                    <Text style={styles.ptsPillLabel}>Organized</Text>
-                    <Text style={[styles.ptsPillValue, { color: '#9A3412' }]}>+50 PTS</Text>
+                  <View style={[styles.ptsPill, { backgroundColor: isNightMode ? themeColors.surface : '#fff' }]}>
+                    <Text style={[styles.ptsPillLabel, { color: themeColors.textMuted }]}>Organized</Text>
+                    <Text style={[styles.ptsPillValue, { color: isNightMode ? '#FB923C' : '#9A3412' }]}>+50 PTS</Text>
                   </View>
-                  <View style={styles.ptsPill}>
-                    <Text style={styles.ptsPillLabel}>Attended</Text>
-                    <Text style={[styles.ptsPillValue, { color: '#9A3412' }]}>+10 PTS</Text>
+                  <View style={[styles.ptsPill, { backgroundColor: isNightMode ? themeColors.surface : '#fff' }]}>
+                    <Text style={[styles.ptsPillLabel, { color: themeColors.textMuted }]}>Attended</Text>
+                    <Text style={[styles.ptsPillValue, { color: isNightMode ? '#FB923C' : '#9A3412' }]}>+10 PTS</Text>
                   </View>
-                  <View style={styles.ptsPill}>
-                    <Text style={styles.ptsPillLabel}>Per Hour</Text>
-                    <Text style={[styles.ptsPillValue, { color: '#9A3412' }]}>+5 PTS/hr</Text>
+                  <View style={[styles.ptsPill, { backgroundColor: isNightMode ? themeColors.surface : '#fff' }]}>
+                    <Text style={[styles.ptsPillLabel, { color: themeColors.textMuted }]}>Per Hour</Text>
+                    <Text style={[styles.ptsPillValue, { color: isNightMode ? '#FB923C' : '#9A3412' }]}>+5 PTS/hr</Text>
                   </View>
                 </View>
               </View>

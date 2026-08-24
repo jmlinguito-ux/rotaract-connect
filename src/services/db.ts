@@ -2,7 +2,7 @@ import { supabase } from './supabase';
 import {
   AppUser, Club, RotaractEvent, EventParticipant, EventInvitation, EventImpact,
   VerificationApplication, AuditLog, AppNotification, Conversation, DirectMessage, ReadCursor,
-  ConversationState, MessageReaction,
+  ConversationState, MessageReaction, EventClubAllocation, EventCohost,
 } from '../types';
 
 /**
@@ -35,6 +35,10 @@ export interface LoadedData {
   conversationStates: ConversationState[];
   /** Emoji reactions left on messages. */
   reactions: MessageReaction[];
+  /** Per-club reserved participant slots (migration 0041). */
+  clubAllocations: EventClubAllocation[];
+  /** Cohosting requests + their payment state (migration 0043). */
+  cohosts: EventCohost[];
 }
 
 /**
@@ -50,6 +54,7 @@ export async function loadAll(signal?: AbortSignal): Promise<LoadedData> {
   const [
     profilesRes, clubsRes, eventsRes, epcRes, partsRes, invRes, impRes,
     appsRes, auditRes, notifRes, convRes, msgRes, readsRes, delsRes, convStatesRes, reactionsRes,
+    allocRes, cohostsRes,
   ] = await Promise.all([
     withSignal(supabase.from('profiles').select('*')),
     withSignal(supabase.from('clubs').select('*')),
@@ -85,6 +90,10 @@ export async function loadAll(signal?: AbortSignal): Promise<LoadedData> {
     withSignal(supabase.from('conversation_states').select('*')),
     // message_reactions may not exist until migration 0029 — tolerate that.
     withSignal(supabase.from('message_reactions').select('*')),
+    // event_club_allocations may not exist until migration 0041 — tolerate that.
+    withSignal(supabase.from('event_club_allocations').select('*')),
+    // event_cohosts may not exist until migration 0043 — tolerate that.
+    withSignal(supabase.from('event_cohosts').select('*')),
   ]);
 
   const profiles = profilesRes.data ?? [];
@@ -168,6 +177,49 @@ export async function loadAll(signal?: AbortSignal): Promise<LoadedData> {
     lock_leave_cutoff_hours: e.lock_leave_cutoff_hours ?? 24,
     approved_by_club_ids: e.approved_by_club_ids ?? [],
     cancellation_reason: e.cancellation_reason ?? undefined,
+    allocation_mode: e.allocation_mode ?? 'NONE',
+    default_club_allocation: e.default_club_allocation ?? undefined,
+    allocation_release_at: e.allocation_release_at ?? undefined,
+    allocation_released_at: e.allocation_released_at ?? undefined,
+    cohosting_enabled: e.cohosting_enabled ?? false,
+    cohosting_fee_centavos: e.cohosting_fee_centavos ?? 0,
+    cohosting_max_clubs: e.cohosting_max_clubs ?? undefined,
+    cohosting_application_deadline: e.cohosting_application_deadline ?? undefined,
+    cohosting_requires_approval: e.cohosting_requires_approval ?? true,
+    cohosting_benefits: e.cohosting_benefits ?? undefined,
+  }));
+
+  const clubAllocations: EventClubAllocation[] = (allocRes.data ?? []).map((a: any) => ({
+    id: a.id,
+    event_id: a.event_id,
+    club_id: a.club_id,
+    allocated_slots: a.allocated_slots ?? 0,
+    initial_slots: a.initial_slots ?? 0,
+    created_at: a.created_at ?? undefined,
+    updated_at: a.updated_at ?? undefined,
+  }));
+
+  const cohosts: EventCohost[] = (cohostsRes.data ?? []).map((c: any) => ({
+    id: c.id,
+    event_id: c.event_id,
+    club_id: c.club_id,
+    requested_by_user_id: c.requested_by_user_id ?? undefined,
+    status: c.status,
+    expected_participants: c.expected_participants ?? 0,
+    agreed_fee_centavos: c.agreed_fee_centavos ?? 0,
+    message: c.message ?? undefined,
+    requested_at: c.requested_at,
+    reviewed_at: c.reviewed_at ?? undefined,
+    reviewed_by_user_id: c.reviewed_by_user_id ?? undefined,
+    review_notes: c.review_notes ?? undefined,
+    payment_status: c.payment_status ?? 'NONE',
+    payment_method: c.payment_method ?? undefined,
+    payment_reference: c.payment_reference ?? undefined,
+    payment_receipt_path: c.payment_receipt_path ?? undefined,
+    payment_submitted_at: c.payment_submitted_at ?? undefined,
+    payment_verified_at: c.payment_verified_at ?? undefined,
+    payment_verified_by_user_id: c.payment_verified_by_user_id ?? undefined,
+    payment_review_notes: c.payment_review_notes ?? undefined,
   }));
 
   const participants: EventParticipant[] = (partsRes.data ?? []).map((p: any) => ({
@@ -314,7 +366,7 @@ export async function loadAll(signal?: AbortSignal): Promise<LoadedData> {
   return {
     users, clubs: mappedClubs, events: mappedEvents, participants, invitations,
     impacts, applications, auditLogs, notifications, conversations, messages, readCursors,
-    deletedMessageIds, conversationStates, reactions,
+    deletedMessageIds, conversationStates, reactions, clubAllocations, cohosts,
   };
 }
 
@@ -411,8 +463,87 @@ export const db = {
     reportError('approveEvent', error);
     return !error;
   },
-  insertParticipant: async (p: EventParticipant) => {
-    reportError('insertParticipant', (await supabase.from('event_participants').upsert(p, { onConflict: 'event_id,user_id' })).error);
+  /**
+   * Returns the allocation rejection instead of reporting it as a write error:
+   * migration 0041's trigger raises `club_allocation_exceeded` when a club is
+   * out of slots, which is an expected outcome to show the user, not a fault to
+   * surface in the write-failure banner.
+   */
+  insertParticipant: async (p: EventParticipant): Promise<{ ok: boolean; allocationError?: string }> => {
+    const { error } = await supabase
+      .from('event_participants')
+      .upsert(p, { onConflict: 'event_id,user_id' });
+    if (error?.message?.includes('club_allocation_exceeded')) {
+      return { ok: false, allocationError: error.message.split('club_allocation_exceeded:').pop()?.trim() };
+    }
+    reportError('insertParticipant', error);
+    return { ok: !error };
+  },
+  setClubAllocation: async (eventId: string, clubId: string, slots: number) => {
+    const { data, error } = await supabase.rpc('set_club_allocation', {
+      p_event_id: eventId, p_club_id: clubId, p_slots: slots,
+    });
+    reportError('setClubAllocation', error);
+    return error ? null : (data as EventClubAllocation | null);
+  },
+  releaseClubAllocations: async (eventId: string) => {
+    const { error } = await supabase.rpc('release_club_allocations', { p_event_id: eventId });
+    reportError('releaseClubAllocations', error);
+    return !error;
+  },
+
+  // ---- Cohosting (migration 0043) --------------------------------------
+  // The RPCs raise on domain problems (deadline passed, cohost cap hit,
+  // wrong club role, etc.). We surface those errors back to the caller as
+  // {ok:false, error} rather than reporting them to the write-failure banner,
+  // because they are expected outcomes the UI needs to explain.
+  requestCohost: async (
+    eventId: string, expectedParticipants: number, message?: string,
+  ): Promise<{ ok: boolean; row?: EventCohost; error?: string }> => {
+    const { data, error } = await supabase.rpc('request_cohost', {
+      p_event_id: eventId,
+      p_expected_participants: expectedParticipants,
+      p_message: message ?? null,
+    });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, row: data as EventCohost };
+  },
+  reviewCohost: async (
+    cohostId: string, action: 'APPROVE' | 'REJECT', notes?: string,
+  ): Promise<{ ok: boolean; row?: EventCohost; error?: string }> => {
+    const { data, error } = await supabase.rpc('review_cohost', {
+      p_cohost_id: cohostId, p_action: action, p_notes: notes ?? null,
+    });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, row: data as EventCohost };
+  },
+  submitCohostPayment: async (
+    cohostId: string, method: string, reference?: string, receiptPath?: string,
+  ): Promise<{ ok: boolean; row?: EventCohost; error?: string }> => {
+    const { data, error } = await supabase.rpc('submit_cohost_payment', {
+      p_cohost_id: cohostId, p_method: method,
+      p_reference: reference ?? null, p_receipt_path: receiptPath ?? null,
+    });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, row: data as EventCohost };
+  },
+  verifyCohostPayment: async (
+    cohostId: string, action: 'VERIFY' | 'REJECT', notes?: string,
+  ): Promise<{ ok: boolean; row?: EventCohost; error?: string }> => {
+    const { data, error } = await supabase.rpc('verify_cohost_payment', {
+      p_cohost_id: cohostId, p_action: action, p_notes: notes ?? null,
+    });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, row: data as EventCohost };
+  },
+  cancelCohost: async (
+    cohostId: string, reason?: string,
+  ): Promise<{ ok: boolean; row?: EventCohost; error?: string }> => {
+    const { data, error } = await supabase.rpc('cancel_cohost', {
+      p_cohost_id: cohostId, p_reason: reason ?? null,
+    });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, row: data as EventCohost };
   },
   updateParticipant: async (id: string, updates: Partial<EventParticipant>): Promise<boolean> => {
     // Try direct table update first

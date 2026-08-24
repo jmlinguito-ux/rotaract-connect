@@ -10,6 +10,7 @@ import {
   StyleSheet,
   ViewStyle,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../context/ThemeContext';
 import { useKeyboardOffset } from './keyboard/useKeyboardOffset';
 
@@ -33,6 +34,7 @@ const SCREEN_HEIGHT = Dimensions.get('window').height;
  */
 export function BottomSheet({ visible, onClose, children, cardStyle }: BottomSheetProps) {
   const { colors: themeColors } = useTheme();
+  const insets = useSafeAreaInsets();
   const [mounted, setMounted] = useState(visible);
   const [sheetHeight, setSheetHeight] = useState(SCREEN_HEIGHT * 0.5);
   const progress = useRef(new Animated.Value(0)).current;
@@ -84,7 +86,13 @@ export function BottomSheet({ visible, onClose, children, cardStyle }: BottomShe
         >
           <Pressable style={styles.backdropPress} onPress={onClose} />
           <Animated.View
-            style={[styles.card, { backgroundColor: themeColors.cardBg }, cardStyle, { transform: [{ translateY }] }]}
+            style={[
+              styles.card,
+              { backgroundColor: themeColors.cardBg },
+              cardStyle,
+              { paddingBottom: Math.max(insets.bottom, 16) + 8 },
+              { transform: [{ translateY }] },
+            ]}
             onLayout={e => setSheetHeight(e.nativeEvent.layout.height)}
           >
             {children}

@@ -66,6 +66,18 @@ export default function SettingsScreen({ navigation }: Props) {
   const [legalModalVisible, setLegalModalVisible] = useState(false);
   const [legalModalTab, setLegalModalTab] = useState<'terms' | 'privacy'>('terms');
 
+  // Pronoun / Gender modal state
+  const [pronounModalVisible, setPronounModalVisible] = useState(false);
+  const [pronounSaving, setPronounSaving] = useState(false);
+
+  const getPronounLabel = (g?: string | null) => {
+    const upper = g?.toUpperCase()?.trim();
+    if (upper === 'FEMALE' || upper === 'SHE' || upper === 'F') return 'She / Her (her)';
+    if (upper === 'MALE' || upper === 'HE' || upper === 'M') return 'He / Him (his)';
+    if (upper === 'OTHER' || upper === 'THEY') return 'They / Them (their)';
+    return 'Not specified (their)';
+  };
+
   // Change-password modal state
   const [pwModalVisible, setPwModalVisible] = useState(false);
   // Email change: request a code to the NEW address, then confirm it. Two steps so
@@ -291,6 +303,19 @@ export default function SettingsScreen({ navigation }: Props) {
               <View style={{ flex: 1 }}>
                 <Text style={titleStyle}>Email Address</Text>
                 <Text style={subStyle}>{user.email}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={themeColors.textMuted} />
+            </TouchableOpacity>
+
+            <View style={dividerStyle} />
+
+            <TouchableOpacity style={styles.row} onPress={() => setPronounModalVisible(true)}>
+              <View style={[styles.rowIconWrap, { backgroundColor: themeColors.primary + '1A' }]}>
+                <Ionicons name="person-circle-outline" size={18} color={themeColors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={titleStyle}>Pronouns / Certificate Salutation</Text>
+                <Text style={subStyle}>{getPronounLabel(user?.gender)}</Text>
               </View>
               <Ionicons name="chevron-forward" size={16} color={themeColors.textMuted} />
             </TouchableOpacity>
@@ -973,6 +998,83 @@ export default function SettingsScreen({ navigation }: Props) {
             </ScrollView>
           </View>
         </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ⚧ PRONOUNS / GENDER SELECTION MODAL */}
+      <Modal visible={pronounModalVisible} transparent animationType="fade" onRequestClose={() => setPronounModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: themeColors.text }]}>Pronouns & Salutation</Text>
+              <TouchableOpacity onPress={() => setPronounModalVisible(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Ionicons name="close" size={22} color={themeColors.textMuted} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={[styles.pwHint, { color: themeColors.textMuted, marginBottom: 14 }]}>
+              Select your pronouns to format official District 3800 volunteer certificates and service transcripts:
+            </Text>
+
+            <View style={{ gap: 8 }}>
+              {[
+                { id: 'FEMALE', label: 'She / Her', desc: 'Certificate phrasing: "...in verification of her participation..."' },
+                { id: 'MALE', label: 'He / Him', desc: 'Certificate phrasing: "...in verification of his participation..."' },
+                { id: 'OTHER', label: 'They / Them', desc: 'Certificate phrasing: "...in verification of their participation..."' },
+                { id: null, label: 'Prefer Not to Say / Gender-Neutral', desc: 'Certificate phrasing: "...in verification of their participation..."' },
+              ].map((opt) => {
+                const isSelected = (opt.id === null && !user?.gender) || user?.gender?.toUpperCase() === opt.id;
+                return (
+                  <TouchableOpacity
+                    key={opt.id ?? 'none'}
+                    style={[
+                      styles.row,
+                      {
+                        padding: 12,
+                        borderRadius: 12,
+                        borderWidth: 1.5,
+                        borderColor: isSelected ? themeColors.primary : themeColors.border,
+                        backgroundColor: isSelected ? themeColors.primary + '14' : themeColors.surface,
+                      },
+                    ]}
+                    disabled={pronounSaving}
+                    onPress={async () => {
+                      setPronounSaving(true);
+                      try {
+                        await updateProfile({ gender: opt.id as any });
+                        showToast({
+                          type: 'success',
+                          title: 'Pronouns Updated',
+                          message: `Your pronouns have been set to ${opt.label}.`,
+                        });
+                        setPronounModalVisible(false);
+                      } catch (e) {
+                        showToast({
+                          type: 'error',
+                          title: 'Update Failed',
+                          message: 'Unable to save pronouns. Please try again.',
+                        });
+                      } finally {
+                        setPronounSaving(false);
+                      }
+                    }}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={[titleStyle, isSelected && { color: themeColors.primary, fontWeight: '700' }]}>
+                        {opt.label}
+                      </Text>
+                      <Text style={[subStyle, { fontSize: 11, marginTop: 2 }]}>{opt.desc}</Text>
+                    </View>
+                    {isSelected ? (
+                      <Ionicons name="checkmark-circle" size={20} color={themeColors.primary} />
+                    ) : (
+                      <Ionicons name="ellipse-outline" size={18} color={themeColors.textMuted} />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        </View>
       </Modal>
 
       {/* 📜 TERMS & PRIVACY MODAL */}

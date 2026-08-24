@@ -209,27 +209,31 @@ export default function EmergencySosButton({ variant = 'icon', style }: Props) {
               <Text style={[styles.inputLabel, { color: themeColors.textMuted }]}>
                 Optional Emergency Message / Note:
               </Text>
-              <TextInput
-                style={[
-                  styles.textInput,
-                  {
-                    backgroundColor: themeColors.bg,
-                    color: themeColors.text,
-                    borderColor: isInputFocused ? '#EF4444' : themeColors.border,
-                  },
-                  isInputFocused && { borderWidth: 1.5 },
-                ]}
-                placeholder="e.g. Medical emergency, road assistance needed..."
-                placeholderTextColor={themeColors.textMuted}
-                value={customMsg}
-                onChangeText={setCustomMsg}
-                onFocus={() => setIsInputFocused(true)}
-                onBlur={() => setIsInputFocused(false)}
-                maxLength={120}
-                multiline
-                numberOfLines={3}
-                textAlignVertical="top"
-              />
+              <View style={[
+                styles.textInputWrapper,
+                {
+                  backgroundColor: themeColors.bg,
+                  borderColor: isInputFocused ? '#EF4444' : themeColors.border,
+                }
+              ]}>
+                <TextInput
+                  style={[
+                    styles.textInput,
+                    { color: themeColors.text },
+                  ]}
+                  placeholder="e.g. Medical emergency, road assistance needed..."
+                  placeholderTextColor={themeColors.textMuted}
+                  value={customMsg}
+                  onChangeText={setCustomMsg}
+                  onFocus={() => setIsInputFocused(true)}
+                  onBlur={() => setIsInputFocused(false)}
+                  maxLength={120}
+                  multiline
+                  numberOfLines={3}
+                  textAlignVertical="top"
+                  importantForAutofill="no"
+                />
+              </View>
             </View>
 
             <View style={styles.modalActions}>
@@ -356,13 +360,16 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: 6,
   },
-  textInput: {
-    borderWidth: 1,
+  textInputWrapper: {
+    borderWidth: 1.5,
     borderRadius: 12,
+    minHeight: 64,
+  },
+  textInput: {
+    flex: 1,
     paddingHorizontal: 14,
     paddingVertical: 10,
     fontSize: 14,
-    minHeight: 64,
     lineHeight: 20,
   },
   modalActions: {

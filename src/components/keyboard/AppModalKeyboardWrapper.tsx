@@ -54,7 +54,12 @@ export default function AppModalKeyboardWrapper({
           contentContainerStyle={[
             styles.defaultContentContainer,
             contentContainerStyle,
-            isKeyboardVisible && styles.keyboardOpenContentContainer,
+            // Only shift alignment to top on iOS. On Android, the system handles
+            // resizing via adjustResize; forcing flex-start here causes a "jump".
+            Platform.OS === 'ios' && isKeyboardVisible && styles.keyboardOpenContentContainer,
+            // On Android, we add padding equal to the keyboard offset to allow the
+            // content to be scrolled or pushed above the keyboard without
+            // changing the flex alignment (which causes a jittery "jump").
             Platform.OS === 'android' && isKeyboardVisible
               ? { paddingBottom: keyboardOffset + 20 }
               : null,

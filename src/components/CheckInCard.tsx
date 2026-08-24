@@ -33,8 +33,8 @@ export function CheckInCard({ event, participant }: { event: RotaractEvent; part
     const at = new Date(participant.checked_in_at);
     const { onTime, lateByMinutes } = punctuality(event, at);
     return (
-      <View style={[styles.card, styles.cardDone, { backgroundColor: isNightMode ? themeColors.cardBg : colors.success + '14', borderColor: colors.success + '44' }]}>
-        <Ionicons name="checkmark-circle" size={22} color={colors.success} />
+      <View style={[styles.card, styles.cardDone, { backgroundColor: isNightMode ? themeColors.cardBg : themeColors.success + '14', borderColor: themeColors.success + '44' }]}>
+        <Ionicons name="checkmark-circle" size={22} color={themeColors.success} />
         <View style={{ flex: 1 }}>
           <Text style={[styles.doneTitle, { color: themeColors.text }]}>Checked in at {timeText(at)}</Text>
           <Text style={[styles.doneSub, { color: themeColors.textMuted }]}>

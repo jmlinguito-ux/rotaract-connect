@@ -157,18 +157,16 @@ export function CalendarGridModal({ visible, selectedDate, onSelectDate, onClose
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
   },
   calendarCard: {
     width: 290,
-    backgroundColor: '#fff',
-    borderRadius: 8,
+    borderRadius: 14,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
@@ -189,7 +187,6 @@ const styles = StyleSheet.create({
   monthYearText: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#0F172A',
   },
   navArrows: {
     flexDirection: 'row',
@@ -208,7 +205,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: 13,
     fontWeight: '600',
-    color: '#64748B',
   },
   grid: {
     flexDirection: 'row',
@@ -224,16 +220,14 @@ const styles = StyleSheet.create({
     marginVertical: 1,
   },
   dayCellSelected: {
-    backgroundColor: '#007AFF',
     borderRadius: 6,
   },
   dayText: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#0F172A',
   },
   dayTextOtherMonth: {
-    color: '#CBD5E1',
+    opacity: 0.4,
   },
   dayTextSelected: {
     color: '#FFFFFF',
@@ -248,6 +242,5 @@ const styles = StyleSheet.create({
   footerLinkText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#007AFF',
   },
 });

@@ -17,7 +17,7 @@ const RESEND_COOLDOWN = 60; // seconds; client guard on top of Supabase's rate l
 
 export default function EmailVerificationScreen({ navigation, route }: Props) {
   const { confirmEmailVerification, resendVerificationEmail } = useAuth();
-  const { colors: themeColors } = useTheme();
+  const { colors: themeColors, isNightMode } = useTheme();
   const email = route.params.email;
 
   const [code, setCode] = useState('');
@@ -64,35 +64,35 @@ export default function EmailVerificationScreen({ navigation, route }: Props) {
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.bg }]}>
       <KeyboardAwareScrollView ref={kavRef} contentContainerStyle={styles.container}>
           <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-            <Ionicons name="chevron-back" size={22} color={colors.text} />
-            <Text style={styles.backText}>Back</Text>
+            <Ionicons name="chevron-back" size={22} color={themeColors.text} />
+            <Text style={[styles.backText, { color: themeColors.text }]}>Back</Text>
           </TouchableOpacity>
 
-          <View style={styles.iconWrap}>
-            <Ionicons name="mail-open-outline" size={48} color={colors.primary} />
+          <View style={[styles.iconWrap, { backgroundColor: isNightMode ? themeColors.surface : '#FDF2F7' }]}>
+            <Ionicons name="mail-open-outline" size={48} color={themeColors.primary} />
           </View>
-          <Text style={styles.title}>Verify your email</Text>
-          <Text style={styles.subtitle}>
+          <Text style={[styles.title, { color: themeColors.text }]}>Verify your email</Text>
+          <Text style={[styles.subtitle, { color: themeColors.textMuted }]}>
             We sent a 6-digit code to{'\n'}
-            <Text style={styles.email}>{email}</Text>
+            <Text style={[styles.email, { color: themeColors.primary }]}>{email}</Text>
           </Text>
-          <Text style={styles.hint}>
+          <Text style={[styles.hint, { color: themeColors.textMuted }]}>
             Enter it below to activate your account. Verification is required before you can use Rotaract Connect.
           </Text>
 
           {error ? (
-            <View style={styles.banner}>
-              <Ionicons name="alert-circle" size={16} color={colors.danger} />
-              <Text style={styles.bannerText}>{error}</Text>
+            <View style={[styles.banner, { backgroundColor: isNightMode ? themeColors.cardBg : '#FEF2F2', borderColor: themeColors.danger, borderWidth: isNightMode ? 1 : 0 }]}>
+              <Ionicons name="alert-circle" size={16} color={themeColors.danger} />
+              <Text style={[styles.bannerText, { color: themeColors.danger }]}>{error}</Text>
             </View>
           ) : null}
           {notice ? (
-            <View style={[styles.banner, styles.noticeBanner]}>
-              <Ionicons name="checkmark-circle" size={16} color={colors.success} />
-              <Text style={[styles.bannerText, { color: colors.success }]}>{notice}</Text>
+            <View style={[styles.banner, { backgroundColor: isNightMode ? themeColors.cardBg : '#ECFDF5', borderColor: themeColors.success, borderWidth: isNightMode ? 1 : 0 }]}>
+              <Ionicons name="checkmark-circle" size={16} color={themeColors.success} />
+              <Text style={[styles.bannerText, { color: themeColors.success }]}>{notice}</Text>
             </View>
           ) : null}
 
@@ -118,7 +118,12 @@ export default function EmailVerificationScreen({ navigation, route }: Props) {
             onSubmitEditing={verify}
           />
 
-          <TouchableOpacity style={[styles.primaryBtn, loading && styles.btnDisabled]} onPress={verify} activeOpacity={0.85} disabled={loading}>
+          <TouchableOpacity
+            style={[styles.primaryBtn, { backgroundColor: themeColors.primary }, loading && styles.btnDisabled]}
+            onPress={verify}
+            activeOpacity={0.85}
+            disabled={loading}
+          >
             {loading ? <ActivityIndicator color="#fff" /> : (
               <>
                 <Ionicons name="shield-checkmark" size={18} color="#fff" />
@@ -128,7 +133,7 @@ export default function EmailVerificationScreen({ navigation, route }: Props) {
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.resendBtn} onPress={resend} disabled={cooldown > 0 || loading}>
-            <Text style={[styles.resendText, (cooldown > 0 || loading) && { color: colors.textMuted }]}>
+            <Text style={[styles.resendText, { color: themeColors.primary }, (cooldown > 0 || loading) && { color: themeColors.textMuted }]}>
               {cooldown > 0 ? `Resend code in ${cooldown}s` : 'Didn\'t get it? Resend code'}
             </Text>
           </TouchableOpacity>
@@ -138,23 +143,23 @@ export default function EmailVerificationScreen({ navigation, route }: Props) {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg },
+  safe: { flex: 1 },
   container: { padding: 20, paddingBottom: 40 },
   backBtn: { flexDirection: 'row', alignItems: 'center', gap: 2, marginBottom: 8, alignSelf: 'flex-start' },
-  backText: { fontSize: 15, color: colors.text, fontWeight: '600' },
-  iconWrap: { alignSelf: 'center', width: 88, height: 88, borderRadius: 44, backgroundColor: '#FDF2F7', alignItems: 'center', justifyContent: 'center', marginTop: 8, marginBottom: 16 },
-  title: { fontSize: 22, fontWeight: '800', color: colors.text, textAlign: 'center' },
-  subtitle: { fontSize: 14, color: colors.textMuted, marginTop: 8, textAlign: 'center', lineHeight: 20 },
-  email: { color: colors.primary, fontWeight: '700' },
-  hint: { fontSize: 12.5, color: colors.textMuted, marginTop: 10, textAlign: 'center', lineHeight: 18, paddingHorizontal: 8 },
-  banner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#FEF2F2', padding: 12, borderRadius: 10, marginTop: 16 },
-  noticeBanner: { backgroundColor: '#ECFDF5' },
-  bannerText: { flex: 1, fontSize: 13, color: colors.danger, fontWeight: '600' },
-  fieldLabel: { fontSize: 12, fontWeight: '800', color: colors.primary, letterSpacing: 0.5, marginBottom: 8, marginTop: 20 },
-  input: { borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 14, fontSize: 18, letterSpacing: 2, backgroundColor: colors.surface, color: colors.text, textAlign: 'center' },
-  primaryBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: colors.primary, paddingVertical: 14, borderRadius: 14, marginTop: 24 },
+  backText: { fontSize: 15, fontWeight: '600' },
+  iconWrap: { alignSelf: 'center', width: 88, height: 88, borderRadius: 44, alignItems: 'center', justifyContent: 'center', marginTop: 8, marginBottom: 16 },
+  title: { fontSize: 22, fontWeight: '800', textAlign: 'center' },
+  subtitle: { fontSize: 14, marginTop: 8, textAlign: 'center', lineHeight: 20 },
+  email: { fontWeight: '700' },
+  hint: { fontSize: 12.5, marginTop: 10, textAlign: 'center', lineHeight: 18, paddingHorizontal: 8 },
+  banner: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, borderRadius: 10, marginTop: 16 },
+  noticeBanner: {},
+  bannerText: { flex: 1, fontSize: 13, fontWeight: '600' },
+  fieldLabel: { fontSize: 12, fontWeight: '800', letterSpacing: 0.5, marginBottom: 8, marginTop: 20 },
+  input: { borderWidth: 1, borderRadius: 12, padding: 14, fontSize: 18, letterSpacing: 2, textAlign: 'center' },
+  primaryBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 14, marginTop: 24 },
   primaryBtnText: { color: '#fff', fontSize: 15, fontWeight: '800' },
   btnDisabled: { opacity: 0.7 },
   resendBtn: { marginTop: 18, alignItems: 'center' },
-  resendText: { color: colors.primary, fontSize: 14, fontWeight: '700' },
+  resendText: { fontSize: 14, fontWeight: '700' },
 });

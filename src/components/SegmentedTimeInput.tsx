@@ -241,7 +241,7 @@ export function SegmentedTimeInput({ label, value, baseDate, onChangeTime, onOpe
         </TouchableOpacity>
       </View>
 
-      {error ? <Text style={styles.errorText}>{error}</Text> : null}
+      {error ? <Text style={[styles.errorText, { color: themeColors.danger }]}>{error}</Text> : null}
     </View>
   );
 }
@@ -253,7 +253,6 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 13,
     fontWeight: '600',
-    color: colors.text,
     marginTop: 12,
     marginBottom: 4,
   },
@@ -263,14 +262,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: colors.border,
     paddingHorizontal: 14,
-    backgroundColor: colors.surface,
     height: 48,
     position: 'relative',
   },
   inputCardFocused: {
-    borderColor: colors.primary,
   },
   hiddenInput: {
     position: 'absolute',
@@ -300,12 +296,10 @@ const styles = StyleSheet.create({
   segmentText: {
     fontSize: 15,
     fontWeight: '500',
-    color: colors.text,
   },
   colonText: {
     fontSize: 15,
     fontWeight: '500',
-    color: colors.text,
     marginHorizontal: 1,
   },
   spaceText: {
@@ -319,7 +313,6 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 11,
     fontWeight: '600',
-    color: colors.danger,
     marginTop: 4,
   },
 });

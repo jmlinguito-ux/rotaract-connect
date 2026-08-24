@@ -103,7 +103,7 @@ export function PlaceSearchField({
 
   return (
     <>
-      <Text style={styles.label}>Venue</Text>
+      <Text style={[styles.label, { color: themeColors.text }]}>Venue</Text>
 
       <View style={styles.searchRow}>
         <TextInput
@@ -135,28 +135,28 @@ export function PlaceSearchField({
       </View>
 
       {results.length > 0 && (
-        <View style={styles.suggestions}>
+        <View style={[styles.suggestions, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}>
           {results.map((place, i) => (
             <TouchableOpacity
               key={place.id}
-              style={[styles.suggestion, i > 0 && styles.suggestionDivider]}
+              style={[styles.suggestion, i > 0 && [styles.suggestionDivider, { borderTopColor: themeColors.border }]]}
               onPress={() => choose(place)}
               accessibilityRole="button"
               accessibilityLabel={place.label}
             >
-              <Ionicons name="location-outline" size={16} color={colors.primary} />
+              <Ionicons name="location-outline" size={16} color={themeColors.primary} />
               <View style={{ flex: 1 }}>
                 <View style={localStyles.suggestionHeaderRow}>
-                  <Text style={styles.suggestionTitle} numberOfLines={1}>
+                  <Text style={[styles.suggestionTitle, { color: themeColors.text }]} numberOfLines={1}>
                     {place.address}
                   </Text>
                   {place.city ? (
-                    <View style={localStyles.cityBadge}>
-                      <Text style={localStyles.cityBadgeText}>{place.city}</Text>
+                    <View style={[localStyles.cityBadge, { backgroundColor: themeColors.primary + '14' }]}>
+                      <Text style={[localStyles.cityBadgeText, { color: themeColors.primary }]}>{place.city}</Text>
                     </View>
                   ) : null}
                 </View>
-                <Text style={styles.suggestionSub} numberOfLines={1}>
+                <Text style={[styles.suggestionSub, { color: themeColors.textMuted }]} numberOfLines={1}>
                   {place.label}
                 </Text>
               </View>
@@ -165,7 +165,7 @@ export function PlaceSearchField({
         </View>
       )}
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? <Text style={[styles.error, { color: themeColors.danger }]}>{error}</Text> : null}
     </>
   );
 }
@@ -178,7 +178,6 @@ const localStyles = StyleSheet.create({
     gap: 6,
   },
   cityBadge: {
-    backgroundColor: colors.primary + '14',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
@@ -186,7 +185,6 @@ const localStyles = StyleSheet.create({
   cityBadgeText: {
     fontSize: 10,
     fontWeight: '700',
-    color: colors.primary,
   },
 });
 

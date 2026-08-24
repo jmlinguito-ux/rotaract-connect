@@ -16,6 +16,7 @@ import { BottomSheet } from '../../components/BottomSheet';
 import UserAvatar from '../../components/UserAvatar';
 import { dispatchLocalAlert } from '../../services/emergencyBroadcast';
 import { stopAlertSound } from '../../services/sound';
+import { handleAppNotificationNavigation } from '../../utils/notificationRouter';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Notifications'>;
 
@@ -130,68 +131,14 @@ export default function NotificationsScreen({ navigation }: Props) {
   };
 
   const handleRowPress = (item: AppNotification) => {
-    if (!item.is_read) {
-      markNotificationsRead(item.id);
-    }
-    if (item.kind === 'EMERGENCY_BROADCAST') {
-      const broadcasterName = item.title.replace(/^🚨\s*(?:EMERGENCY\s*SOS|NEARBY\s*EMERGENCY|SOS):\s*/i, '').trim() || 'Rotaract Member in Distress';
-      const broadcaster = users.find(u => u.id === item.user_id || (u.full_name && u.full_name.toLowerCase() === broadcasterName.toLowerCase()));
-
-      const clubMatch = item.message.match(/\((Rotaract Club of [^)]+|RC [^)]+|District 3800)\)/i);
-      const clubName = clubMatch ? clubMatch[1] : (broadcaster?.club_name || 'District 3800');
-
-      const msgMatch = item.message.match(/"([^"]+)"/);
-      const customNote = msgMatch ? msgMatch[1] : '';
-
-      const coordsMatch = item.message.match(/maps\.google\.com\/\?q=([0-9.-]+),([0-9.-]+)/);
-      const lat = coordsMatch ? parseFloat(coordsMatch[1]) : 14.6948;
-      const lng = coordsMatch ? parseFloat(coordsMatch[2]) : 120.9664;
-
-      const addrMatch = item.message.match(/near\s+(.*?)(?:\.|\"|\s+Map:|\s+Location:|$)/i);
-      const addressHint = addrMatch ? addrMatch[1].trim() : (customNote ? 'Coordinates provided' : item.message);
-
-      dispatchLocalAlert({
-        id: item.id,
-        user_id: broadcaster?.id || item.user_id,
-        full_name: broadcaster?.full_name || broadcasterName,
-        avatar_url: broadcaster?.avatar_url,
-        club_id: broadcaster?.club_id || '',
-        club_name: clubName,
-        contact_number: broadcaster?.contact_number,
-        latitude: lat,
-        longitude: lng,
-        status: 'ACTIVE',
-        map_url: `https://maps.google.com/?q=${lat},${lng}`,
-        address_hint: addressHint,
-        message: customNote || undefined,
-        created_at: item.created_at,
-        playSound: false,
-      });
-      return;
-    }
-    if (item.conversation_id) {
-      const senderName = item.title.replace('Inquiry from ', '');
-      navigation.navigate('Chat', {
-        conversationId: item.conversation_id,
-        eventId: item.event_id,
-        recipientId: item.user_id,
-        recipientName: senderName,
-      });
-    } else if (item.kind === 'JOIN_REQUEST' && item.event_id) {
-      const pendingParts = participantsFor(item.event_id).filter(p => p.status === 'PENDING');
-      if (pendingParts.length > 0) {
-        const p = pendingParts[0];
-        const applicant = users.find(u => u.id === p.user_id);
-        const event = events.find(e => e.id === item.event_id);
-        setReviewModalData({ participant: p, applicant, event });
-      } else {
-        navigation.navigate('EventDetail', { eventId: item.event_id });
-      }
-    } else if (item.event_id) {
-      navigation.navigate('EventDetail', { eventId: item.event_id });
-    } else if (item.application_id) {
-      navigation.navigate('ApplicationReview', { applicationId: item.application_id });
-    }
+    handleAppNotificationNavigation(item, navigation, {
+      user,
+      events,
+      users,
+      conversations,
+      markNotificationRead: markNotificationsRead,
+      dispatchLocalAlert,
+    });
   };
 
   const handlePromptDecline = (participantId: string, applicantName?: string, eventTitle?: string) => {
@@ -339,8 +286,8 @@ export default function NotificationsScreen({ navigation }: Props) {
                   <View style={styles.rowHeader}>
                     <Text style={[styles.title, { color: themeColors.text }]}>{item.title}</Text>
                     {item.kind === 'JOIN_REQUEST' && (
-                      <View style={styles.badgePill}>
-                        <Text style={styles.badgeText}>Review Needed</Text>
+                      <View style={[styles.badgePill, isNightMode && { backgroundColor: '#451A0344', borderColor: '#F59E0B66' }]}>
+                        <Text style={[styles.badgeText, { color: isNightMode ? '#FCD34D' : '#B45309' }]}>Review Needed</Text>
                       </View>
                     )}
                   </View>
@@ -428,11 +375,11 @@ export default function NotificationsScreen({ navigation }: Props) {
       >
         <View style={styles.modalHeader}>
           <View style={styles.modalHeaderLeft}>
-            <Ionicons name="person-add" size={20} color={colors.primary} />
-            <Text style={styles.modalTitle}>Review Join Request</Text>
+            <Ionicons name="person-add" size={20} color={themeColors.primary} />
+            <Text style={[styles.modalTitle, { color: themeColors.text }]}>Review Join Request</Text>
           </View>
           <TouchableOpacity onPress={() => setReviewModalData(null)}>
-            <Ionicons name="close" size={22} color={colors.textMuted} />
+            <Ionicons name="close" size={22} color={themeColors.textMuted} />
           </TouchableOpacity>
         </View>
 
@@ -461,15 +408,15 @@ export default function NotificationsScreen({ navigation }: Props) {
                   Position: {reviewModalData.applicant?.position}
                 </Text>
                 <View style={styles.verifiedBadge}>
-                  <Ionicons name="shield-checkmark" size={12} color={colors.success} />
-                  <Text style={styles.verifiedText}>Verified Rotaractor</Text>
+                  <Ionicons name="shield-checkmark" size={12} color={themeColors.success} />
+                  <Text style={[styles.verifiedText, { color: themeColors.success }]}>Verified Rotaractor</Text>
                 </View>
               </View>
             </View>
 
             <View style={styles.modalActionGroup}>
               <TouchableOpacity
-                style={styles.modalApproveBtn}
+                style={[styles.modalApproveBtn, { backgroundColor: themeColors.success }]}
                 onPress={() => {
                   approveParticipant(reviewModalData.participant.id, user);
                   setReviewModalData(null);
@@ -484,15 +431,15 @@ export default function NotificationsScreen({ navigation }: Props) {
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.modalDeclineBtn}
+                style={[styles.modalDeclineBtn, { borderColor: themeColors.danger }]}
                 onPress={() => handlePromptDecline(
                   reviewModalData.participant.id,
                   reviewModalData.applicant?.full_name,
                   reviewModalData.event?.title,
                 )}
               >
-                <Ionicons name="close-circle" size={18} color={colors.danger} />
-                <Text style={styles.modalDeclineText}>Decline Request...</Text>
+                <Ionicons name="close-circle" size={18} color={themeColors.danger} />
+                <Text style={[styles.modalDeclineText, { color: themeColors.danger }]}>Decline Request...</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -503,8 +450,8 @@ export default function NotificationsScreen({ navigation }: Props) {
                   if (eid) navigation.navigate('Participants', { eventId: eid });
                 }}
               >
-                <Ionicons name="people-outline" size={16} color={colors.primary} />
-                <Text style={styles.modalRosterText}>View Full Participant Roster</Text>
+                <Ionicons name="people-outline" size={16} color={themeColors.primary} />
+                <Text style={[styles.modalRosterText, { color: themeColors.primary }]}>View Full Participant Roster</Text>
               </TouchableOpacity>
             </View>
           </View>

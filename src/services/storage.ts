@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 
-export type StorageBucket = 'avatars' | 'event-covers' | 'verification-proofs' | 'chat-media';
+export type StorageBucket = 'avatars' | 'event-covers' | 'verification-proofs' | 'chat-media' | 'cohost-receipts';
 
 /**
  * The buckets whose objects are world-readable. `getPublicImageUrl` is only valid

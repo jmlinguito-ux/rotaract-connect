@@ -9,7 +9,8 @@ import {
   SafeAreaView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors } from '../theme/colors';
+import { lightColors } from '../theme/colors';
+import { useTheme } from '../context/ThemeContext';
 import RotaryWheel from './RotaryWheel';
 
 interface TermsAndPrivacyModalProps {
@@ -19,12 +20,19 @@ interface TermsAndPrivacyModalProps {
   onAccept?: () => void;
 }
 
+function useLegalStyles() {
+  const { colors: themeColors, isNightMode } = useTheme();
+  const styles = React.useMemo(() => createStyles(themeColors, isNightMode), [themeColors, isNightMode]);
+  return { styles, themeColors, isNightMode };
+}
+
 export default function TermsAndPrivacyModal({
   visible,
   initialTab = 'terms',
   onClose,
   onAccept,
 }: TermsAndPrivacyModalProps) {
+  const { styles, themeColors, isNightMode } = useLegalStyles();
   const [activeTab, setActiveTab] = useState<'terms' | 'privacy'>(initialTab);
 
   React.useEffect(() => {
@@ -48,7 +56,7 @@ export default function TermsAndPrivacyModal({
             {/* Header */}
             <View style={styles.header}>
               <View style={styles.headerTitleRow}>
-                <RotaryWheel size={28} color={colors.primary} />
+                <RotaryWheel size={28} color={themeColors.primary} />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.modalTitle}>Rotaract Connect</Text>
                   <Text style={styles.modalSubtitle}>District 3800 • Legal Terms & Privacy</Text>
@@ -58,7 +66,7 @@ export default function TermsAndPrivacyModal({
                   onPress={onClose}
                   hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                 >
-                  <Ionicons name="close" size={22} color={colors.textMuted} />
+                  <Ionicons name="close" size={22} color={themeColors.textMuted} />
                 </TouchableOpacity>
               </View>
 
@@ -72,7 +80,7 @@ export default function TermsAndPrivacyModal({
                   <Ionicons
                     name="document-text-outline"
                     size={16}
-                    color={activeTab === 'terms' ? colors.primary : colors.textMuted}
+                    color={activeTab === 'terms' ? themeColors.primary : themeColors.textMuted}
                   />
                   <Text
                     style={[
@@ -92,7 +100,7 @@ export default function TermsAndPrivacyModal({
                   <Ionicons
                     name="shield-checkmark-outline"
                     size={16}
-                    color={activeTab === 'privacy' ? colors.primary : colors.textMuted}
+                    color={activeTab === 'privacy' ? themeColors.primary : themeColors.textMuted}
                   />
                   <Text
                     style={[
@@ -161,6 +169,7 @@ export default function TermsAndPrivacyModal({
 }
 
 function TermsContent() {
+  const { styles, themeColors } = useLegalStyles();
   return (
     <View style={styles.tabContent}>
       {/* Document Meta Banner */}
@@ -196,7 +205,7 @@ function TermsContent() {
         you acknowledge that you have read, understood, and agreed to these Terms.
       </Text>
       <View style={styles.alertBox}>
-        <Ionicons name="alert-circle" size={18} color={colors.danger} />
+        <Ionicons name="alert-circle" size={18} color={themeColors.danger} />
         <Text style={styles.alertBoxText}>
           IF YOU DO NOT AGREE TO THESE TERMS, DO NOT CREATE AN ACCOUNT, ACCESS, OR USE THE APP.
         </Text>
@@ -505,7 +514,7 @@ function TermsContent() {
         <Text style={styles.ackText}>
           By selecting “I Agree,” creating an account, or otherwise using Rotaract Connect, you acknowledge that you have read, understood, and agree to comply with these Terms.
         </Text>
-        <Text style={[styles.ackText, { marginTop: 6, fontSize: 11, color: colors.textMuted }]}>
+        <Text style={[styles.ackText, { marginTop: 6, fontSize: 11, color: themeColors.textMuted }]}>
           Version: 1.0.0 • Effective: August 18, 2026
         </Text>
       </View>
@@ -514,6 +523,7 @@ function TermsContent() {
 }
 
 function PrivacyContent() {
+  const { styles, themeColors } = useLegalStyles();
   return (
     <View style={styles.tabContent}>
       {/* Document Meta Banner */}
@@ -773,7 +783,7 @@ function PrivacyContent() {
         <Text style={styles.ackText}>
           By using Rotaract Connect, you acknowledge that you have been provided access to this Privacy Policy and have had a reasonable opportunity to review it.
         </Text>
-        <Text style={[styles.ackText, { marginTop: 6, fontSize: 11, color: colors.textMuted }]}>
+        <Text style={[styles.ackText, { marginTop: 6, fontSize: 11, color: themeColors.textMuted }]}>
           Version: 1.0.0 • Effective Date: August 18, 2026
         </Text>
       </View>
@@ -782,6 +792,7 @@ function PrivacyContent() {
 }
 
 function BulletItem({ text }: { text: string }) {
+  const { styles } = useLegalStyles();
   return (
     <View style={styles.bulletRow}>
       <Text style={styles.bulletText}>{text}</Text>
@@ -789,301 +800,306 @@ function BulletItem({ text }: { text: string }) {
   );
 }
 
-const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 16,
-  },
-  safeContainer: {
-    width: '100%',
-    maxWidth: 580,
-    height: '88%',
-  },
-  modalCard: {
-    flex: 1,
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    elevation: 10,
-  },
-  header: {
-    paddingTop: 18,
-    paddingHorizontal: 20,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    backgroundColor: '#fff',
-  },
-  headerTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 14,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: colors.text,
-  },
-  modalSubtitle: {
-    fontSize: 12,
-    color: colors.textMuted,
-    marginTop: 1,
-  },
-  closeBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tabBar: {
-    flexDirection: 'row',
-    backgroundColor: colors.surface,
-    borderRadius: 10,
-    padding: 4,
-    gap: 4,
-  },
-  tabBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 9,
-    borderRadius: 8,
-  },
-  tabBtnActive: {
-    backgroundColor: '#fff',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  tabText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.textMuted,
-  },
-  tabTextActive: {
-    color: colors.primary,
-    fontWeight: '700',
-  },
-  contentScroll: {
-    flex: 1,
-  },
-  scrollBody: {
-    padding: 20,
-    paddingBottom: 20,
-  },
-  tabContent: {
-    gap: 10,
-  },
-  metaCard: {
-    backgroundColor: '#FDF2F7',
-    borderWidth: 1,
-    borderColor: '#F9D6E5',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 8,
-  },
-  docTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: colors.primary,
-    letterSpacing: 0.5,
-  },
-  docSubtitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.text,
-    marginTop: 2,
-  },
-  metaDivider: {
-    height: 1,
-    backgroundColor: '#F9D6E5',
-    marginVertical: 8,
-  },
-  metaLine: {
-    fontSize: 12,
-    color: colors.text,
-    lineHeight: 18,
-  },
-  sectionHeader: {
-    fontSize: 13.5,
-    fontWeight: '800',
-    color: colors.text,
-    marginTop: 12,
-    letterSpacing: 0.2,
-    textTransform: 'uppercase',
-  },
-  subSectionHeader: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.primary,
-    marginTop: 6,
-  },
-  paragraph: {
-    fontSize: 13,
-    color: '#374151',
-    lineHeight: 19,
-  },
-  bold: {
-    fontWeight: '700',
-    color: colors.text,
-  },
-  bulletRow: {
-    paddingLeft: 4,
-    marginVertical: 1,
-  },
-  bulletText: {
-    fontSize: 12.5,
-    color: '#374151',
-    lineHeight: 18,
-  },
-  alertBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#FEF2F2',
-    padding: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#FEE2E2',
-    marginVertical: 4,
-  },
-  alertBoxText: {
-    flex: 1,
-    fontSize: 12,
-    color: colors.danger,
-    fontWeight: '700',
-    lineHeight: 17,
-  },
-  contactCard: {
-    backgroundColor: colors.surface,
-    padding: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginVertical: 4,
-    gap: 3,
-  },
-  contactText: {
-    fontSize: 12,
-    color: colors.text,
-    lineHeight: 17,
-  },
-  ackBox: {
-    backgroundColor: '#F0FDF4',
-    borderWidth: 1,
-    borderColor: '#DCFCE7',
-    borderRadius: 12,
-    padding: 14,
-    marginTop: 16,
-    marginBottom: 4,
-  },
-  ackTitle: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#15803D',
-    letterSpacing: 0.5,
-    marginBottom: 4,
-  },
-  ackText: {
-    fontSize: 12,
-    color: '#166534',
-    lineHeight: 17,
-  },
-  tableCard: {
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-    overflow: 'hidden',
-    marginVertical: 6,
-  },
-  tableRowHeader: {
-    flexDirection: 'row',
-    backgroundColor: colors.surface,
-    padding: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  tableRow: {
-    flexDirection: 'row',
-    padding: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-    backgroundColor: '#fff',
-  },
-  tableCol1: {
-    flex: 1.2,
-    fontSize: 11.5,
-    color: colors.text,
-  },
-  tableCol2: {
-    flex: 1.8,
-    fontSize: 11.5,
-    color: '#4B5563',
-  },
-  footer: {
-    padding: 16,
-    paddingHorizontal: 20,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    backgroundColor: '#fff',
-  },
-  acceptRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  declineBtn: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surface,
-  },
-  declineBtnText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.textMuted,
-  },
-  acceptBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    backgroundColor: colors.primary,
-    paddingVertical: 12,
-    borderRadius: 12,
-  },
-  acceptBtnText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  fullCloseBtn: {
-    backgroundColor: colors.surface,
-    paddingVertical: 12,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  fullCloseBtnText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.text,
-  },
-});
+function createStyles(themeColors: typeof lightColors, isNightMode: boolean) {
+  return StyleSheet.create({
+    overlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.6)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: 16,
+    },
+    safeContainer: {
+      width: '100%',
+      maxWidth: 580,
+      height: '88%',
+    },
+    modalCard: {
+      flex: 1,
+      backgroundColor: themeColors.cardBg,
+      borderRadius: 20,
+      overflow: 'hidden',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 10 },
+      shadowOpacity: 0.25,
+      shadowRadius: 20,
+      elevation: 10,
+      borderWidth: isNightMode ? 1 : 0,
+      borderColor: themeColors.border,
+    },
+    header: {
+      paddingTop: 18,
+      paddingHorizontal: 20,
+      paddingBottom: 12,
+      borderBottomWidth: 1,
+      borderBottomColor: themeColors.border,
+      backgroundColor: themeColors.cardBg,
+    },
+    headerTitleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      marginBottom: 14,
+    },
+    modalTitle: {
+      fontSize: 18,
+      fontWeight: '800',
+      color: themeColors.text,
+    },
+    modalSubtitle: {
+      fontSize: 12,
+      color: themeColors.textMuted,
+      marginTop: 1,
+    },
+    closeBtn: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      backgroundColor: themeColors.surface,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    tabBar: {
+      flexDirection: 'row',
+      backgroundColor: themeColors.surface,
+      borderRadius: 10,
+      padding: 4,
+      gap: 4,
+    },
+    tabBtn: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      paddingVertical: 9,
+      borderRadius: 8,
+    },
+    tabBtnActive: {
+      backgroundColor: isNightMode ? themeColors.cardBg : '#fff',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.08,
+      shadowRadius: 2,
+      elevation: 2,
+    },
+    tabText: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: themeColors.textMuted,
+    },
+    tabTextActive: {
+      color: themeColors.primary,
+      fontWeight: '700',
+    },
+    contentScroll: {
+      flex: 1,
+      backgroundColor: themeColors.bg,
+    },
+    scrollBody: {
+      padding: 20,
+      paddingBottom: 20,
+    },
+    tabContent: {
+      gap: 10,
+    },
+    metaCard: {
+      backgroundColor: isNightMode ? themeColors.surface : '#FDF2F7',
+      borderWidth: 1,
+      borderColor: isNightMode ? themeColors.border : '#F9D6E5',
+      borderRadius: 12,
+      padding: 14,
+      marginBottom: 8,
+    },
+    docTitle: {
+      fontSize: 16,
+      fontWeight: '800',
+      color: themeColors.primary,
+      letterSpacing: 0.5,
+    },
+    docSubtitle: {
+      fontSize: 12,
+      fontWeight: '700',
+      color: themeColors.text,
+      marginTop: 2,
+    },
+    metaDivider: {
+      height: 1,
+      backgroundColor: isNightMode ? themeColors.border : '#F9D6E5',
+      marginVertical: 8,
+    },
+    metaLine: {
+      fontSize: 12,
+      color: themeColors.text,
+      lineHeight: 18,
+    },
+    sectionHeader: {
+      fontSize: 13.5,
+      fontWeight: '800',
+      color: themeColors.text,
+      marginTop: 12,
+      letterSpacing: 0.2,
+      textTransform: 'uppercase',
+    },
+    subSectionHeader: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: themeColors.primary,
+      marginTop: 6,
+    },
+    paragraph: {
+      fontSize: 13,
+      color: isNightMode ? '#D1D5DB' : '#374151',
+      lineHeight: 19,
+    },
+    bold: {
+      fontWeight: '700',
+      color: themeColors.text,
+    },
+    bulletRow: {
+      paddingLeft: 4,
+      marginVertical: 1,
+    },
+    bulletText: {
+      fontSize: 12.5,
+      color: isNightMode ? '#D1D5DB' : '#374151',
+      lineHeight: 18,
+    },
+    alertBox: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      backgroundColor: isNightMode ? '#7F1D1D26' : '#FEF2F2',
+      padding: 12,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: isNightMode ? '#DC262644' : '#FEE2E2',
+      marginVertical: 4,
+    },
+    alertBoxText: {
+      flex: 1,
+      fontSize: 12,
+      color: themeColors.danger,
+      fontWeight: '700',
+      lineHeight: 17,
+    },
+    contactCard: {
+      backgroundColor: themeColors.surface,
+      padding: 12,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: themeColors.border,
+      marginVertical: 4,
+      gap: 3,
+    },
+    contactText: {
+      fontSize: 12,
+      color: themeColors.text,
+      lineHeight: 17,
+    },
+    ackBox: {
+      backgroundColor: isNightMode ? '#064E3B26' : '#F0FDF4',
+      borderWidth: 1,
+      borderColor: isNightMode ? '#05966944' : '#DCFCE7',
+      borderRadius: 12,
+      padding: 14,
+      marginTop: 16,
+      marginBottom: 4,
+    },
+    ackTitle: {
+      fontSize: 12,
+      fontWeight: '800',
+      color: isNightMode ? '#34D399' : '#15803D',
+      letterSpacing: 0.5,
+      marginBottom: 4,
+    },
+    ackText: {
+      fontSize: 12,
+      color: isNightMode ? '#A7F3D0' : '#166534',
+      lineHeight: 17,
+    },
+    tableCard: {
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: themeColors.border,
+      overflow: 'hidden',
+      marginVertical: 6,
+    },
+    tableRowHeader: {
+      flexDirection: 'row',
+      backgroundColor: themeColors.surface,
+      padding: 10,
+      borderBottomWidth: 1,
+      borderBottomColor: themeColors.border,
+    },
+    tableRow: {
+      flexDirection: 'row',
+      padding: 10,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: themeColors.border,
+      backgroundColor: themeColors.cardBg,
+    },
+    tableCol1: {
+      flex: 1.2,
+      fontSize: 11.5,
+      color: themeColors.text,
+    },
+    tableCol2: {
+      flex: 1.8,
+      fontSize: 11.5,
+      color: isNightMode ? '#9CA3AF' : '#4B5563',
+    },
+    footer: {
+      padding: 16,
+      paddingHorizontal: 20,
+      borderTopWidth: 1,
+      borderTopColor: themeColors.border,
+      backgroundColor: themeColors.cardBg,
+    },
+    acceptRow: {
+      flexDirection: 'row',
+      gap: 12,
+    },
+    declineBtn: {
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: themeColors.border,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: themeColors.surface,
+    },
+    declineBtnText: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: themeColors.textMuted,
+    },
+    acceptBtn: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      backgroundColor: themeColors.primary,
+      paddingVertical: 12,
+      borderRadius: 12,
+    },
+    acceptBtnText: {
+      color: '#fff',
+      fontSize: 14,
+      fontWeight: '700',
+    },
+    fullCloseBtn: {
+      backgroundColor: themeColors.surface,
+      paddingVertical: 12,
+      borderRadius: 12,
+      alignItems: 'center',
+    },
+    fullCloseBtnText: {
+      fontSize: 14,
+      fontWeight: '700',
+      color: themeColors.text,
+    },
+  });
+}

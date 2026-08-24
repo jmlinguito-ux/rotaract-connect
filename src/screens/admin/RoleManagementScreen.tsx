@@ -13,6 +13,7 @@ import { AppUser, UserRole } from '../../types';
 import {
   isAppAdmin,
   isDistrictAdmin,
+  isDistrictAreaAdmin,
   isClubPresident,
   canGovernClub,
   getSystemRole,
@@ -32,12 +33,13 @@ import { VerifiedName } from '../../components/VerifiedCheck';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RoleManagement'>;
 
-type Filter = 'ALL' | 'APP_ADMIN' | 'DISTRICT_ADMIN' | 'CLUB_PRESIDENT' | 'MEMBER';
+type Filter = 'ALL' | 'APP_ADMIN' | 'DISTRICT_ADMIN' | 'DISTRICT_AREA_ADMIN' | 'CLUB_PRESIDENT' | 'MEMBER';
 
 const FILTERS: { key: Filter; label: string }[] = [
   { key: 'ALL', label: 'All Users' },
   { key: 'APP_ADMIN', label: 'App Admins' },
   { key: 'DISTRICT_ADMIN', label: 'District Admins' },
+  { key: 'DISTRICT_AREA_ADMIN', label: 'Area Admins' },
   { key: 'CLUB_PRESIDENT', label: 'Presidents' },
   { key: 'MEMBER', label: 'Members' },
 ];
@@ -60,6 +62,7 @@ export default function RoleManagementScreen({ navigation }: Props) {
   const counts = useMemo(() => ({
     APP_ADMIN: users.filter(u => isAppAdmin(u)).length,
     DISTRICT_ADMIN: users.filter(u => isDistrictAdmin(u)).length,
+    DISTRICT_AREA_ADMIN: users.filter(u => isDistrictAreaAdmin(u)).length,
     CLUB_PRESIDENT: users.filter(u => isClubPresident(u)).length,
     MEMBER: users.filter(u => getClubRole(u) === 'MEMBER').length,
   }), [users]);
@@ -74,6 +77,7 @@ export default function RoleManagementScreen({ navigation }: Props) {
         if (filter === 'ALL') return true;
         if (filter === 'APP_ADMIN') return isAppAdmin(u);
         if (filter === 'DISTRICT_ADMIN') return isDistrictAdmin(u);
+        if (filter === 'DISTRICT_AREA_ADMIN') return isDistrictAreaAdmin(u);
         if (filter === 'CLUB_PRESIDENT') return isClubPresident(u);
         if (filter === 'MEMBER') return getClubRole(u) === 'MEMBER';
         return true;
@@ -81,8 +85,8 @@ export default function RoleManagementScreen({ navigation }: Props) {
       .filter(u => !q || [u.full_name, u.username, u.email, u.club_name, u.position]
         .some(field => field?.toLowerCase().includes(q)))
       .sort((a, b) => {
-        // App Admins > District Admins > Presidents > Members
-        const score = (u: AppUser) => (isAppAdmin(u) ? 4 : isDistrictAdmin(u) ? 3 : isClubPresident(u) ? 2 : 1);
+        // App Admins > District Admins > Area Admins > Presidents > Members
+        const score = (u: AppUser) => (isAppAdmin(u) ? 5 : isDistrictAdmin(u) ? 4 : isDistrictAreaAdmin(u) ? 3 : isClubPresident(u) ? 2 : 1);
         return score(b) - score(a) || a.full_name.localeCompare(b.full_name);
       });
   }, [users, query, filter, user, clubs]);

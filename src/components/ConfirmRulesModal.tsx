@@ -44,10 +44,10 @@ export function ConfirmRulesModal({
           keyboardShouldPersistTaps="handled"
           bounces={false}
         >
-          <View style={[styles.card, { backgroundColor: themeColors.cardBg }]}>
+          <View style={[styles.card, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border, borderWidth: isNightMode ? 1 : 0 }]}>
             <View style={styles.header}>
-              <View style={styles.iconCircle}>
-                <Ionicons name="lock-closed" size={20} color={colors.warning} />
+              <View style={[styles.iconCircle, { backgroundColor: isNightMode ? '#78350F44' : '#FEF3C7' }]}>
+                <Ionicons name="lock-closed" size={20} color={themeColors.warning} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.title, { color: themeColors.text }]}>{title}</Text>

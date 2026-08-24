@@ -2,9 +2,11 @@ import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, StyleSheet, Animated, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../context/ThemeContext';
 import { getQueuedCheckInsCount, drainOfflineCheckIns } from '../services/offlineQueue';
 
 export function SyncStatusBanner() {
+  const { colors: themeColors, isNightMode } = useTheme();
   const insets = useSafeAreaInsets();
   const [queueCount, setQueueCount] = useState(0);
   const [justSynced, setJustSynced] = useState(false);
@@ -67,18 +69,20 @@ export function SyncStatusBanner() {
       <View
         style={[
           styles.pill,
-          justSynced ? styles.pillSuccess : styles.pillWarning,
+          justSynced
+            ? [styles.pillSuccess, isNightMode && { backgroundColor: '#064E3B', borderColor: '#10B981' }]
+            : [styles.pillWarning, isNightMode && { backgroundColor: '#78350F', borderColor: '#F59E0B' }],
         ]}
       >
         <Ionicons
           name={justSynced ? 'checkmark-circle' : 'cloud-offline'}
           size={16}
-          color={justSynced ? '#065F46' : '#92400E'}
+          color={justSynced ? (isNightMode ? '#6EE7B7' : '#065F46') : (isNightMode ? '#FDE68A' : '#92400E')}
         />
         <Text
           style={[
             styles.pillText,
-            { color: justSynced ? '#065F46' : '#92400E' },
+            { color: justSynced ? (isNightMode ? '#6EE7B7' : '#065F46') : (isNightMode ? '#FDE68A' : '#92400E') },
           ]}
         >
           {justSynced

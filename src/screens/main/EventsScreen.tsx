@@ -10,7 +10,7 @@ import {
   Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useIsFocused } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { EventCard } from './MapScreen';
@@ -69,6 +69,7 @@ const ALL_AREAS: AreaOfFocus[] = [
 
 export default function EventsScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const isFocused = useIsFocused();
   const { events, participants, invitations, userStats, users, clubs } = useData();
   const { user } = useAuth();
   const { colors: themeColors } = useTheme();
@@ -92,6 +93,8 @@ export default function EventsScreen() {
   const [isGpsEnabled, setIsGpsEnabled] = useState(true);
 
   React.useEffect(() => {
+    if (!isFocused) return;
+
     (async () => {
       try {
         const { status } = await Location.getForegroundPermissionsAsync();
@@ -101,7 +104,7 @@ export default function EventsScreen() {
         setIsGpsEnabled(false);
       }
     })();
-  }, []);
+  }, [isFocused]);
 
   const hasActiveEventToday = useMemo(() => {
     if (!user) return false;

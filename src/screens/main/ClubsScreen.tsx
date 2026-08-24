@@ -10,7 +10,7 @@ import {
   Modal,
   Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
@@ -31,6 +31,8 @@ import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { callNumber, sendEmail } from '../../utils/contactLinks';
 import { openNavigationApp } from '../../utils/navigationLauncher';
 import { useToast } from '../../context/ToastContext';
+import { LocationPicker } from '../../components/LocationPicker';
+import { DEFAULT_LOCATION, LocationValue } from '../../components/location/shared';
 
 type SearchTab = 'CLUBS' | 'MEMBERS' | 'REQUESTS';
 
@@ -70,6 +72,7 @@ const CITIES_BY_PROVINCE: Record<string, string[]> = {
 
 export default function ClubsScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const { clubs, users, getOrCreateConversation, addClub, applicationsForRole, removeUser } = useData();
   const { colors: themeColors, isNightMode } = useTheme();
@@ -92,11 +95,11 @@ export default function ClubsScreen() {
   const [newClubIdInput, setNewClubIdInput] = useState('');
   const [newClubName, setNewClubName] = useState('');
   const [newClubEmail, setNewClubEmail] = useState('');
-  const [newClubMeetingAddress, setNewClubMeetingAddress] = useState('');
+  const [newClubLocation, setNewClubLocation] = useState<LocationValue>(DEFAULT_LOCATION);
   const [newClubCity, setNewClubCity] = useState('');
   const [newClubProvince, setNewClubProvince] = useState('');
   const [newClubZoneId, setNewClubZoneId] = useState('z1');
-  const [newClubPresident, setNewClubPresident] = useState('');
+  const [newClubType, setNewClubType] = useState<'COMMUNITY_BASED' | 'INSTITUTION_BASED'>('COMMUNITY_BASED');
   const [isProvinceDropdownOpen, setIsProvinceDropdownOpen] = useState(false);
   const [isCityDropdownOpen, setIsCityDropdownOpen] = useState(false);
   const [isZoneDropdownOpen, setIsZoneDropdownOpen] = useState(false);
@@ -183,11 +186,14 @@ export default function ClubsScreen() {
       club_code: newClubIdInput.trim(),
       club_name: newClubName.trim(),
       email: newClubEmail.trim() || undefined,
-      meeting_address: newClubMeetingAddress.trim() || undefined,
+      meeting_address: newClubLocation.address.trim() || undefined,
+      latitude: newClubLocation.latitude,
+      longitude: newClubLocation.longitude,
       city: newClubCity.trim(),
       province: newClubProvince.trim(),
       zone_id: newClubZoneId,
-      president_name: newClubPresident.trim() || 'Pending Election',
+      club_type: newClubType,
+      president_name: 'Pending Election',
     });
 
     Alert.alert('Club Created', `"${newClubName.trim()}" (ID: ${newClubIdInput.trim()}) has been successfully added to District 3800.`);
@@ -195,10 +201,9 @@ export default function ClubsScreen() {
     setNewClubIdInput('');
     setNewClubName('');
     setNewClubEmail('');
-    setNewClubMeetingAddress('');
+    setNewClubLocation(DEFAULT_LOCATION);
     setNewClubCity('');
     setNewClubProvince('');
-    setNewClubPresident('');
     setActiveTab('CLUBS');
   };
 
@@ -389,28 +394,6 @@ export default function ClubsScreen() {
                 <View style={{ flex: 1 }}>
                   <View style={styles.clubTitleRow}>
                     <Text style={[styles.name, { color: themeColors.text, flexShrink: 1 }]}>{item.club_name}</Text>
-                    <View
-                      style={[
-                        styles.typeBadge,
-                        item.club_type === 'INSTITUTION_BASED'
-                          ? { backgroundColor: '#EDE9FE', borderColor: '#8B5CF6' }
-                          : { backgroundColor: '#E0F2FE', borderColor: '#0284C7' },
-                      ]}
-                    >
-                      <Ionicons
-                        name={item.club_type === 'INSTITUTION_BASED' ? 'school' : 'business'}
-                        size={10}
-                        color={item.club_type === 'INSTITUTION_BASED' ? '#6D28D9' : '#0369A1'}
-                      />
-                      <Text
-                        style={[
-                          styles.typeBadgeText,
-                          { color: item.club_type === 'INSTITUTION_BASED' ? '#6D28D9' : '#0369A1' },
-                        ]}
-                      >
-                        {item.club_type === 'INSTITUTION_BASED' ? 'University' : 'Community'}
-                      </Text>
-                    </View>
                   </View>
 
                   <Text style={[styles.meta, { color: themeColors.textMuted }]}>
@@ -431,8 +414,31 @@ export default function ClubsScreen() {
                     {memberCount} members • Pres: {item.president_name}
                   </Text>
 
-                  {/* Quick Actions Row: Email Club & Meeting Venue */}
+                  {/* Quick Actions Row: Type Badge, Email Club & Meeting Venue */}
                   <View style={styles.quickActionRow}>
+                    <View
+                      style={[
+                        styles.quickActionBadge,
+                        item.club_type === 'INSTITUTION_BASED'
+                          ? { backgroundColor: '#EDE9FE', borderColor: '#8B5CF6' }
+                          : { backgroundColor: '#E0F2FE', borderColor: '#0284C7' },
+                      ]}
+                    >
+                      <Ionicons
+                        name={item.club_type === 'INSTITUTION_BASED' ? 'school' : 'business'}
+                        size={12}
+                        color={item.club_type === 'INSTITUTION_BASED' ? '#6D28D9' : '#0369A1'}
+                      />
+                      <Text
+                        style={[
+                          styles.quickActionText,
+                          { color: item.club_type === 'INSTITUTION_BASED' ? '#6D28D9' : '#0369A1' },
+                        ]}
+                      >
+                        {item.club_type === 'INSTITUTION_BASED' ? 'University' : 'Community'}
+                      </Text>
+                    </View>
+
                     <TouchableOpacity
                       style={[styles.quickActionBtn, { backgroundColor: themeColors.surface, borderColor: themeColors.border }]}
                       onPress={(e) => {
@@ -687,8 +693,9 @@ export default function ClubsScreen() {
 
         <KeyboardAwareScrollView
           style={styles.modalBody}
-          contentContainerStyle={{ paddingBottom: 24 }}
+          contentContainerStyle={{ paddingBottom: 12 }}
           keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
           {/* 1. Club Name */}
           <Text style={[styles.inputLabel, { color: themeColors.text }]}>Club Name *</Text>
@@ -741,37 +748,52 @@ export default function ClubsScreen() {
             onBlur={() => setFocusedAddClubField(null)}
           />
 
-          {/* 4. Meeting Place Address */}
-          <Text style={[styles.inputLabel, { color: themeColors.text }]}>Meeting Place Address / Venue Pin</Text>
-          <TextInput
-            style={[
-              styles.modalInput,
-              { backgroundColor: themeColors.bg, color: themeColors.text, borderColor: themeColors.border },
-              focusedAddClubField === 'address' && { borderColor: themeColors.primary, borderWidth: 1.5 },
-            ]}
-            placeholder="e.g. Pasig City Hall Activity Center, Caruncho Ave"
-            placeholderTextColor={themeColors.textMuted}
-            value={newClubMeetingAddress}
-            onChangeText={setNewClubMeetingAddress}
-            onFocus={() => setFocusedAddClubField('address')}
-            onBlur={() => setFocusedAddClubField(null)}
-          />
+          {/* 4. Club Type */}
+          <Text style={[styles.inputLabel, { color: themeColors.text }]}>Club Type *</Text>
+          <View style={styles.typeRow}>
+            <TouchableOpacity
+              style={[
+                styles.typeCard,
+                { backgroundColor: themeColors.bg, borderColor: themeColors.border },
+                newClubType === 'COMMUNITY_BASED' && { backgroundColor: themeColors.primary + '1A', borderColor: themeColors.primary, borderWidth: 1.5 }
+              ]}
+              onPress={() => setNewClubType('COMMUNITY_BASED')}
+            >
+              <Ionicons name="business" size={18} color={newClubType === 'COMMUNITY_BASED' ? themeColors.primary : themeColors.textMuted} />
+              <Text style={[styles.typeText, { color: newClubType === 'COMMUNITY_BASED' ? themeColors.primary : themeColors.text }]}>Community</Text>
+            </TouchableOpacity>
 
-          {/* 5. President Name */}
-          <Text style={[styles.inputLabel, { color: themeColors.text }]}>President Name</Text>
-          <TextInput
-            style={[
-              styles.modalInput,
-              { backgroundColor: themeColors.bg, color: themeColors.text, borderColor: themeColors.border },
-              focusedAddClubField === 'president' && { borderColor: themeColors.primary, borderWidth: 1.5 },
-            ]}
-            placeholder="e.g. Juan Dela Cruz"
-            placeholderTextColor={themeColors.textMuted}
-            value={newClubPresident}
-            onChangeText={setNewClubPresident}
-            onFocus={() => setFocusedAddClubField('president')}
-            onBlur={() => setFocusedAddClubField(null)}
-          />
+            <TouchableOpacity
+              style={[
+                styles.typeCard,
+                { backgroundColor: themeColors.bg, borderColor: themeColors.border },
+                newClubType === 'INSTITUTION_BASED' && { backgroundColor: themeColors.primary + '1A', borderColor: themeColors.primary, borderWidth: 1.5 }
+              ]}
+              onPress={() => setNewClubType('INSTITUTION_BASED')}
+            >
+              <Ionicons name="school" size={18} color={newClubType === 'INSTITUTION_BASED' ? themeColors.primary : themeColors.textMuted} />
+              <Text style={[styles.typeText, { color: newClubType === 'INSTITUTION_BASED' ? themeColors.primary : themeColors.text }]}>University</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* 5. Meeting Place Address & Map Picker */}
+          <View style={{ marginTop: 10 }}>
+            <LocationPicker
+              value={newClubLocation}
+              onChange={(val) => {
+                setNewClubLocation(val);
+                if (val.city) {
+                  // Attempt to auto-fill city if it matches our list
+                  const matchedCity = Object.values(CITIES_BY_PROVINCE).flat().find(c => c.toLowerCase() === val.city.toLowerCase());
+                  if (matchedCity) {
+                    setNewClubCity(matchedCity);
+                    const province = Object.entries(CITIES_BY_PROVINCE).find(([_, cities]) => cities.includes(matchedCity))?.[0];
+                    if (province) setNewClubProvince(province);
+                  }
+                }
+              }}
+            />
+          </View>
 
           {/* 6. Province / Region Selector */}
           <View style={{ marginBottom: 12 }}>
@@ -935,22 +957,23 @@ export default function ClubsScreen() {
               </View>
             )}
           </View>
-        </KeyboardAwareScrollView>
 
-        <View style={styles.modalFooter}>
-          <TouchableOpacity
-            style={[styles.modalCancelBtn, { borderColor: themeColors.border }]}
-            onPress={() => setIsAddClubModalOpen(false)}
-          >
-            <Text style={[styles.modalCancelBtnText, { color: themeColors.text }]}>Cancel</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.modalSubmitBtn, { backgroundColor: themeColors.primary }]}
-            onPress={handleCreateClub}
-          >
-            <Text style={styles.modalSubmitBtnText}>Create Club</Text>
-          </TouchableOpacity>
-        </View>
+          {/* 9. Action Buttons */}
+          <View style={styles.modalFooter}>
+            <TouchableOpacity
+              style={[styles.modalCancelBtn, { borderColor: themeColors.border }]}
+              onPress={() => setIsAddClubModalOpen(false)}
+            >
+              <Text style={[styles.modalCancelBtnText, { color: themeColors.text }]}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.modalSubmitBtn, { backgroundColor: themeColors.primary }]}
+              onPress={handleCreateClub}
+            >
+              <Text style={styles.modalSubmitBtnText}>Create Club</Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAwareScrollView>
       </BottomSheet>
 
       <ConfirmDialog
@@ -1071,6 +1094,7 @@ const styles = StyleSheet.create({
   clubTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
   typeBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, borderWidth: 1 },
   typeBadgeText: { fontSize: 10, fontWeight: '700' },
+  quickActionBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, borderWidth: 1 },
   name: { fontSize: 15, fontWeight: '700' },
   meta: { fontSize: 12, marginTop: 1 },
   addressMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 2 },
@@ -1102,10 +1126,11 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalCard: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     borderWidth: 1,
-    padding: 20,
+    paddingTop: 20,
+    paddingHorizontal: 20,
     maxHeight: '85%',
   },
   modalHeader: {
@@ -1115,40 +1140,43 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   modalTitle: { fontSize: 20, fontWeight: '800' },
-  modalBody: { marginBottom: 8 },
+  modalBody: { },
   inputLabel: { fontSize: 13, fontWeight: '700', marginBottom: 6, marginTop: 10 },
   modalInput: {
     borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    height: 52,
+    fontSize: 15,
   },
   modalFooter: {
     flexDirection: 'row',
     gap: 12,
-    marginTop: 8,
+    marginTop: 24,
+    marginBottom: 8,
   },
   modalCancelBtn: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 15,
     borderRadius: 12,
     borderWidth: 1,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  modalCancelBtnText: { fontSize: 14, fontWeight: '700' },
+  modalCancelBtnText: { fontSize: 16, fontWeight: '700' },
   modalSubmitBtn: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 15,
     borderRadius: 12,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  modalSubmitBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  modalSubmitBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   modalSelector: {
     borderWidth: 1,
     borderRadius: 12,
     paddingHorizontal: 14,
-    paddingVertical: 13,
+    height: 52,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -1211,4 +1239,7 @@ const styles = StyleSheet.create({
   overlayDropdownText: {
     fontSize: 15,
   },
+  typeRow: { flexDirection: 'row', gap: 10, marginTop: 4 },
+  typeCard: { flex: 1, alignItems: 'center', padding: 12, borderRadius: 12, borderWidth: 1, flexDirection: 'row', justifyContent: 'center', gap: 8 },
+  typeText: { fontSize: 13, fontWeight: '700' },
 });

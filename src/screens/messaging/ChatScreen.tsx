@@ -68,11 +68,23 @@ export default function ChatScreen({ route, navigation }: Props) {
   const keyboardOffset = useKeyboardOffset();
   const isKeyboardVisible = keyboardOffset > 0;
 
+  // Stability Refinement: Use a memoized padding for the input bar to prevent
+  // jitter during layout transitions on Android.
+  const inputBarPadding = useMemo(() => {
+    // Increased buffer on Android to ensure input is never blocked by system overlays.
+    return Platform.OS === 'ios'
+      ? (isKeyboardVisible ? keyboardOffset + 8 : Math.max(insets.bottom, 10))
+      : (isKeyboardVisible ? keyboardOffset + 12 : Math.max(insets.bottom, 10));
+  }, [isKeyboardVisible, keyboardOffset, insets.bottom]);
+
   useEffect(() => {
     const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const showSub = Keyboard.addListener(showEvt, () => {
       if (atBottom.current) {
-        listRef.current?.scrollToOffset({ offset: 0, animated: true });
+        // Use non-animated scroll for Android to reduce flickering.
+        // Animated scroll on Android fires AFTER the keyboard has finished animating,
+        // making the content feel disconnected.
+        listRef.current?.scrollToOffset({ offset: 0, animated: Platform.OS === 'ios' });
       }
     });
     return () => {
@@ -542,6 +554,7 @@ export default function ChatScreen({ route, navigation }: Props) {
         <TouchableOpacity
           style={[styles.headerActionBtn, { backgroundColor: isSearchOpen ? themeColors.primary + '20' : themeColors.surface }]}
           onPress={() => {
+            Keyboard.dismiss();
             setIsSearchOpen(prev => {
               if (prev) {
                 setSearchQuery('');
@@ -727,13 +740,13 @@ export default function ChatScreen({ route, navigation }: Props) {
               styles.announcementBanner,
               isUrgent
                 ? { backgroundColor: isNightMode ? '#3B1212' : '#FEF2F2', borderColor: '#EF4444' }
-                : { backgroundColor: isNightMode ? themeColors.cardBg : '#FFFBEB', borderColor: '#F59E0B' },
+                : { backgroundColor: isNightMode ? '#451A0344' : '#FFFBEB', borderColor: isNightMode ? '#F59E0B66' : '#F59E0B' },
             ]}
           >
             <View style={styles.announcementTopRow}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
-                <Ionicons name={isUrgent ? 'warning' : 'megaphone'} size={14} color={isUrgent ? '#EF4444' : '#D97706'} />
-                <Text style={[styles.announcementTag, { color: isUrgent ? '#EF4444' : '#D97706' }]}>
+                <Ionicons name={isUrgent ? 'warning' : 'megaphone'} size={14} color={isUrgent ? '#EF4444' : (isNightMode ? '#FBBF24' : '#D97706')} />
+                <Text style={[styles.announcementTag, { color: isUrgent ? '#EF4444' : (isNightMode ? '#FCD34D' : '#D97706') }]}>
                   {isUrgent ? 'URGENT ANNOUNCEMENT' : 'ORGANIZER ANNOUNCEMENT'}
                 </Text>
               </View>
@@ -743,13 +756,13 @@ export default function ChatScreen({ route, navigation }: Props) {
             </View>
             <TouchableOpacity onPress={() => setAnnouncementExpanded(prev => !prev)} activeOpacity={0.8}>
               <Text
-                style={[styles.announcementText, { color: themeColors.text }]}
+                style={[styles.announcementText, { color: isNightMode ? '#FDE68A' : themeColors.text }]}
                 numberOfLines={announcementExpanded ? undefined : 2}
               >
                 {latestAnnouncement.text.replace(/^(📢|🚨)\s*(\[(URGENT\s+)?ANNOUNCEMENT\])?\s*/i, '')}
               </Text>
               <View style={styles.announcementMetaRow}>
-                <Text style={[styles.announcementAuthor, { color: themeColors.textMuted }]}>
+                <Text style={[styles.announcementAuthor, { color: isNightMode ? '#FDE68A99' : themeColors.textMuted }]}>
                   Pinned by {latestAnnouncement.sender_name} • {formatTime(latestAnnouncement.created_at)}
                 </Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
@@ -816,6 +829,7 @@ export default function ChatScreen({ route, navigation }: Props) {
             contentContainerStyle={styles.messageList}
             onScroll={handleScroll}
             scrollEventThrottle={16}
+            keyboardShouldPersistTaps="handled"
             onScrollToIndexFailed={(info) => {
               listRef.current?.scrollToOffset({ offset: info.highestMeasuredFrameIndex * 50, animated: true });
             }}
@@ -865,7 +879,7 @@ export default function ChatScreen({ route, navigation }: Props) {
                       isUrgent
                         ? [styles.announcementBubble, { backgroundColor: isNightMode ? '#3B1212' : '#FEF2F2', borderColor: '#EF4444' }]
                         : isAnnouncement
-                        ? [styles.announcementBubble, { backgroundColor: isNightMode ? '#2B1E05' : '#FFFBEB', borderColor: '#F59E0B' }]
+                        ? [styles.announcementBubble, { backgroundColor: isNightMode ? '#451A0344' : '#FFFBEB', borderColor: isNightMode ? '#F59E0B66' : '#F59E0B' }]
                         : isMe
                         ? [styles.myBubble, { backgroundColor: themeColors.primary }]
                         : [styles.theirBubble, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }],
@@ -1095,13 +1109,13 @@ export default function ChatScreen({ route, navigation }: Props) {
         ) : null}
 
         {isArchived ? (
-          <View style={[styles.archivedComposer, { backgroundColor: themeColors.cardBg, borderTopColor: themeColors.border }]}>
+          <View style={[styles.archivedComposer, { backgroundColor: themeColors.cardBg, borderTopColor: themeColors.border, paddingBottom: Math.max(insets.bottom + 6, 16) }]}>
             <Ionicons name="lock-closed" size={14} color={themeColors.textMuted} />
             <Text style={[styles.archivedComposerText, { color: themeColors.textMuted }]}>Messaging is closed for this archived conversation</Text>
           </View>
         ) : cannotMessage ? (
           <TouchableOpacity
-            style={[styles.archivedComposer, { backgroundColor: themeColors.cardBg, borderTopColor: themeColors.border }]}
+            style={[styles.archivedComposer, { backgroundColor: themeColors.cardBg, borderTopColor: themeColors.border, paddingBottom: Math.max(insets.bottom + 6, 16) }]}
             onPress={() => setReasonVisible(true)}
             activeOpacity={0.7}
           >
@@ -1192,18 +1206,18 @@ export default function ChatScreen({ route, navigation }: Props) {
                   styles.priorityBanner,
                   broadcastPriority === 'HIGH'
                     ? { backgroundColor: isNightMode ? '#3B1212' : '#FEF2F2', borderColor: '#EF4444' }
-                    : { backgroundColor: isNightMode ? '#2B1E05' : '#FFFBEB', borderColor: '#F59E0B' },
+                    : { backgroundColor: isNightMode ? '#451A0344' : '#FFFBEB', borderColor: isNightMode ? '#F59E0B66' : '#F59E0B' },
                 ]}
               >
                 <Ionicons
                   name={broadcastPriority === 'HIGH' ? 'warning' : 'megaphone'}
                   size={14}
-                  color={broadcastPriority === 'HIGH' ? '#EF4444' : '#D97706'}
+                  color={broadcastPriority === 'HIGH' ? '#EF4444' : (isNightMode ? '#FBBF24' : '#D97706')}
                 />
                 <Text
                   style={[
                     styles.priorityBannerText,
-                    { color: broadcastPriority === 'HIGH' ? '#EF4444' : '#D97706' },
+                    { color: broadcastPriority === 'HIGH' ? '#EF4444' : (isNightMode ? '#FCD34D' : '#D97706') },
                   ]}
                 >
                   {broadcastPriority === 'HIGH'
@@ -1214,7 +1228,7 @@ export default function ChatScreen({ route, navigation }: Props) {
                   <Ionicons
                     name="close-circle"
                     size={16}
-                    color={broadcastPriority === 'HIGH' ? '#EF4444' : '#D97706'}
+                    color={broadcastPriority === 'HIGH' ? '#EF4444' : (isNightMode ? '#FBBF24' : '#D97706')}
                   />
                 </TouchableOpacity>
               </View>
@@ -1226,9 +1240,7 @@ export default function ChatScreen({ route, navigation }: Props) {
                 {
                   backgroundColor: themeColors.cardBg,
                   borderTopColor: themeColors.border,
-                  paddingBottom: isKeyboardVisible
-                    ? keyboardOffset + 8
-                    : Math.max(insets.bottom, 10),
+                  paddingBottom: inputBarPadding,
                 },
               ]}
             >
@@ -1259,35 +1271,32 @@ export default function ChatScreen({ route, navigation }: Props) {
                 />
               </TouchableOpacity>
             )}
-            <TextInput
-              style={[
-                styles.textInput,
-                {
-                  backgroundColor: themeColors.surface,
-                  borderColor:
-                    broadcastPriority === 'HIGH'
-                      ? '#EF4444'
-                      : broadcastPriority === 'ALERT'
-                      ? '#F59E0B'
-                      : themeColors.border,
-                  color: themeColors.text,
-                },
-              ]}
-              placeholder={
-                broadcastPriority === 'HIGH'
-                  ? 'Broadcast urgent alert (Alarm)...'
-                  : broadcastPriority === 'ALERT'
-                  ? 'Broadcast announcement (Alert)...'
-                  : isGroupChat
-                  ? 'Message group chat...'
-                  : 'Type a message...'
+            <View style={[
+              styles.textInputWrapper,
+              {
+                borderColor:
+                  broadcastPriority === 'HIGH'
+                    ? '#EF4444'
+                    : broadcastPriority === 'ALERT'
+                    ? '#F59E0B'
+                    : themeColors.border,
+                backgroundColor: themeColors.surface,
               }
-              placeholderTextColor={themeColors.textMuted}
-              value={text}
-              onChangeText={handleTextChange}
-              onBlur={() => sendTyping(false)}
-              multiline
-            />
+            ]}>
+              <TextInput
+                style={[
+                  styles.textInput,
+                  { color: themeColors.text },
+                ]}
+                placeholder={isGroupChat ? 'Message group chat...' : 'Type a message...'}
+                placeholderTextColor={themeColors.textMuted}
+                value={text}
+                onChangeText={handleTextChange}
+                onBlur={() => sendTyping(false)}
+                multiline
+                importantForAutofill="no"
+              />
+            </View>
             <TouchableOpacity
               style={[
                 styles.sendBtn,
@@ -1646,7 +1655,8 @@ const styles = StyleSheet.create({
   attachBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   // minHeight matches the 40dp action buttons so the row is optically aligned;
   // maxHeight ~5 lines before the field scrolls internally (Messenger caps similarly).
-  textInput: { flex: 1, borderRadius: 20, borderWidth: 1, paddingHorizontal: 16, paddingVertical: 10, minHeight: 40, maxHeight: 120, fontSize: 15 },
+  textInputWrapper: { flex: 1, borderRadius: 20, borderWidth: 1, flexDirection: 'row', alignItems: 'center' },
+  textInput: { flex: 1, paddingHorizontal: 16, paddingVertical: 10, minHeight: 40, maxHeight: 120, fontSize: 15 },
   sendBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   sendBtnDisabled: { opacity: 0.5 },
   archivedComposer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 16, borderTopWidth: 1 },

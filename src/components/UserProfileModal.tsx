@@ -136,10 +136,10 @@ export function UserProfileModal({
                       {callerIsAppAdmin && (
                         <View style={styles.roleSectionBox}>
                           <Text style={[styles.roleSectionTitle, { color: colors.textMuted }]}>
-                            🔑 SYSTEM & DISTRICT ACCESS
+                            🔑 SYSTEM & DISTRICT ACCESS (HIERARCHY)
                           </Text>
                           <View style={styles.roleOptionsGrid}>
-                            {(['NONE', 'DISTRICT_ADMIN', 'APP_ADMIN'] as SystemRole[]).map(sys => {
+                            {(['APP_ADMIN', 'DISTRICT_ADMIN', 'DISTRICT_AREA_ADMIN', 'NONE'] as SystemRole[]).map(sys => {
                               const isSelected = currentSysRole === sys;
                               return (
                                 <TouchableOpacity
@@ -157,6 +157,8 @@ export function UserProfileModal({
                                     <Ionicons name="key" size={12} color={isSelected ? colors.primary : colors.textMuted} />
                                   ) : sys === 'DISTRICT_ADMIN' ? (
                                     <Ionicons name="settings" size={12} color={isSelected ? colors.primary : colors.textMuted} />
+                                  ) : sys === 'DISTRICT_AREA_ADMIN' ? (
+                                    <Ionicons name="shield-half" size={12} color={isSelected ? colors.primary : colors.textMuted} />
                                   ) : (
                                     <Ionicons name="person" size={12} color={isSelected ? colors.primary : colors.textMuted} />
                                   )}
@@ -179,9 +181,9 @@ export function UserProfileModal({
                       )}
 
                       {/* SECTION 2: Club Role & Leadership Position */}
-                      <View style={[styles.roleSectionBox, { marginTop: callerIsAppAdmin ? 8 : 0 }]}>
+                      <View style={[styles.roleSectionBox, { marginTop: callerIsAppAdmin ? 10 : 0 }]}>
                         <Text style={[styles.roleSectionTitle, { color: colors.textMuted }]}>
-                          ⭐ CLUB LEADERSHIP & POSITION
+                          ⭐ CLUB LEADERSHIP
                         </Text>
                         <View style={styles.roleOptionsGrid}>
                           {(['MEMBER', 'OFFICER', 'CLUB_PRESIDENT'] as ClubRole[]).map(cRole => {
@@ -221,43 +223,126 @@ export function UserProfileModal({
                           })}
                         </View>
 
-                        {/* Presets for Officers & Positions */}
-                        <Text style={[styles.roleSectionTitle, { color: colors.textMuted, marginTop: 4 }]}>
-                          Quick Position Presets:
-                        </Text>
-                        <View style={styles.positionPresetsRow}>
-                          {ROTARACT_POSITIONS.map(pName => {
-                            const isCurrent = currentPos.toLowerCase() === pName.toLowerCase();
-                            return (
-                              <TouchableOpacity
-                                key={pName}
+                        {/* Officer Specific Position Customizer */}
+                        {currentClubRole === 'OFFICER' && (
+                          <View style={styles.officerConfigBox}>
+                            {/* Executive Board */}
+                            <Text style={[styles.roleSubSectionTitle, { color: colors.textMuted }]}>
+                              EXECUTIVE BOARD
+                            </Text>
+                            <View style={styles.positionPresetsRow}>
+                              {['Vice President', 'Secretary', 'Treasurer', 'Auditor'].map(pName => {
+                                const isCurrent = currentPos.toLowerCase() === pName.toLowerCase();
+                                return (
+                                  <TouchableOpacity
+                                    key={pName}
+                                    style={[
+                                      styles.presetPill,
+                                      {
+                                        borderColor: isCurrent ? colors.primary : colors.border,
+                                        backgroundColor: isCurrent ? colors.primary + '1A' : 'transparent',
+                                      },
+                                    ]}
+                                    onPress={() => handleUpdateClubRole('OFFICER', pName)}
+                                  >
+                                    <Text
+                                      style={[
+                                        styles.presetText,
+                                        {
+                                          color: isCurrent ? colors.primary : colors.textMuted,
+                                          fontWeight: isCurrent ? '800' : '500',
+                                        },
+                                      ]}
+                                    >
+                                      {pName}
+                                    </Text>
+                                  </TouchableOpacity>
+                                );
+                              })}
+                            </View>
+
+                            {/* Avenue Directors */}
+                            <Text style={[styles.roleSubSectionTitle, { color: colors.textMuted, marginTop: 6 }]}>
+                              AVENUE DIRECTORS
+                            </Text>
+                            <View style={styles.positionPresetsRow}>
+                              {[
+                                'Club Service Director',
+                                'Community Service Director',
+                                'International Service Director',
+                                'Professional Development Director',
+                                'Public Image Director',
+                                'Youth Service Director',
+                              ].map(pName => {
+                                const isCurrent = currentPos.toLowerCase() === pName.toLowerCase();
+                                const shortLabel = pName.replace(' Director', '');
+                                return (
+                                  <TouchableOpacity
+                                    key={pName}
+                                    style={[
+                                      styles.presetPill,
+                                      {
+                                        borderColor: isCurrent ? colors.primary : colors.border,
+                                        backgroundColor: isCurrent ? colors.primary + '1A' : 'transparent',
+                                      },
+                                    ]}
+                                    onPress={() => handleUpdateClubRole('OFFICER', pName)}
+                                  >
+                                    <Text
+                                      style={[
+                                        styles.presetText,
+                                        {
+                                          color: isCurrent ? colors.primary : colors.textMuted,
+                                          fontWeight: isCurrent ? '800' : '500',
+                                        },
+                                      ]}
+                                    >
+                                      {shortLabel}
+                                    </Text>
+                                  </TouchableOpacity>
+                                );
+                              })}
+                            </View>
+
+                            {/* Custom Title Input */}
+                            <Text style={[styles.roleSubSectionTitle, { color: colors.textMuted, marginTop: 6 }]}>
+                              CUSTOM TITLE
+                            </Text>
+                            <View style={styles.customPositionRow}>
+                              <TextInput
                                 style={[
-                                  styles.presetPill,
+                                  styles.customPosInput,
                                   {
-                                    borderColor: isCurrent ? colors.primary : colors.border,
-                                    backgroundColor: isCurrent ? colors.primary + '1A' : 'transparent',
+                                    color: colors.text,
+                                    borderColor: colors.border,
+                                    backgroundColor: colors.cardBg,
                                   },
                                 ]}
+                                placeholder={currentPos !== 'Officer' ? currentPos : 'e.g. Protocol Officer'}
+                                placeholderTextColor={colors.textMuted}
+                                value={editingPosition}
+                                onChangeText={setEditingPosition}
+                              />
+                              <TouchableOpacity
+                                style={[
+                                  styles.applyPosBtn,
+                                  {
+                                    backgroundColor: editingPosition.trim() ? colors.primary : colors.border,
+                                  },
+                                ]}
+                                disabled={!editingPosition.trim()}
                                 onPress={() => {
-                                  const targetClubRole: ClubRole = getPositionClubRole(pName);
-                                  handleUpdateClubRole(targetClubRole, pName);
+                                  if (editingPosition.trim()) {
+                                    handleUpdateClubRole('OFFICER', editingPosition.trim());
+                                    setEditingPosition('');
+                                  }
                                 }}
                               >
-                                <Text
-                                  style={[
-                                    styles.presetText,
-                                    {
-                                      color: isCurrent ? colors.primary : colors.textMuted,
-                                      fontWeight: isCurrent ? '800' : '500',
-                                    },
-                                  ]}
-                                >
-                                  {pName}
-                                </Text>
+                                <Text style={styles.applyPosBtnText}>Set</Text>
                               </TouchableOpacity>
-                            );
-                          })}
-                        </View>
+                            </View>
+                          </View>
+                        )}
                       </View>
 
                       {/* Feedback notice */}
@@ -425,11 +510,45 @@ const styles = StyleSheet.create({
   },
   roleSectionBox: { width: '100%', gap: 8 },
   roleSectionTitle: { fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
+  roleSubSectionTitle: { fontSize: 9, fontWeight: '700', letterSpacing: 0.5, marginTop: 2 },
   roleOptionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   rolePillBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1 },
   rolePillText: { fontSize: 12 },
   positionPresetsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 },
-  presetPill: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1 },
+  presetPill: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, borderWidth: 1 },
   presetText: { fontSize: 11, fontWeight: '600' },
+  officerConfigBox: {
+    marginTop: 6,
+    paddingTop: 6,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#E2E8F033',
+    gap: 6,
+  },
+  customPositionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 4,
+  },
+  customPosInput: {
+    flex: 1,
+    height: 36,
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    fontSize: 12,
+  },
+  applyPosBtn: {
+    height: 36,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  applyPosBtnText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
   roleNotice: { fontSize: 11, fontWeight: '700', color: '#10B981', marginTop: 6, textAlign: 'center' },
 });

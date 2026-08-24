@@ -52,7 +52,7 @@ export const NotificationPermissionModal: React.FC<NotificationPermissionModalPr
           ]}
         >
           {/* Header Icon Circle */}
-          <View style={styles.iconCircle}>
+          <View style={[styles.iconCircle, { backgroundColor: themeColors.primary }]}>
             <Ionicons name="notifications" size={32} color="#fff" />
           </View>
 
@@ -67,8 +67,8 @@ export const NotificationPermissionModal: React.FC<NotificationPermissionModalPr
           {/* Value Props List */}
           <View style={styles.featureList}>
             <View style={styles.featureRow}>
-              <View style={[styles.featureIconWrap, { backgroundColor: '#FDF2F8' }]}>
-                <Ionicons name="calendar" size={18} color={colors.primary} />
+              <View style={[styles.featureIconWrap, { backgroundColor: isNightMode ? themeColors.surface : '#FDF2F8' }]}>
+                <Ionicons name="calendar" size={18} color={themeColors.primary} />
               </View>
               <View style={styles.featureContent}>
                 <Text style={[styles.featureTitle, { color: themeColors.text }]}>
@@ -81,8 +81,8 @@ export const NotificationPermissionModal: React.FC<NotificationPermissionModalPr
             </View>
 
             <View style={styles.featureRow}>
-              <View style={[styles.featureIconWrap, { backgroundColor: '#ECFDF5' }]}>
-                <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+              <View style={[styles.featureIconWrap, { backgroundColor: isNightMode ? '#064E3B33' : '#ECFDF5' }]}>
+                <Ionicons name="checkmark-circle" size={18} color={themeColors.success} />
               </View>
               <View style={styles.featureContent}>
                 <Text style={[styles.featureTitle, { color: themeColors.text }]}>
@@ -95,8 +95,8 @@ export const NotificationPermissionModal: React.FC<NotificationPermissionModalPr
             </View>
 
             <View style={styles.featureRow}>
-              <View style={[styles.featureIconWrap, { backgroundColor: '#FEF2F2' }]}>
-                <Ionicons name="shield-checkmark" size={18} color="#EF4444" />
+              <View style={[styles.featureIconWrap, { backgroundColor: isNightMode ? '#7F1D1D33' : '#FEF2F2' }]}>
+                <Ionicons name="shield-checkmark" size={18} color={themeColors.danger} />
               </View>
               <View style={styles.featureContent}>
                 <Text style={[styles.featureTitle, { color: themeColors.text }]}>

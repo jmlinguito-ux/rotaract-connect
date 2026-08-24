@@ -1,12 +1,47 @@
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { File, Paths } from 'expo-file-system';
-import { Alert } from 'react-native';
+import { StorageAccessFramework } from 'expo-file-system/legacy';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import ReactNativeBlobUtil from 'react-native-blob-util';
+import { Alert, Platform } from 'react-native';
+
+const SAF_DIR_KEY = '@rotaract:cert-save-dir';
 import QRCode from 'qrcode';
 import { PDFDocument } from 'pdf-lib';
 import { AppUser, RotaractEvent, EventParticipant, EventImpact } from '../types';
 import { calculateParticipantHours } from './hoursCalculation';
 import { ROTARACT_HEADER_LOGO_BASE64 } from './logoBase64';
+import {
+  CERT_SERIF_REGULAR_BASE64,
+  CERT_SERIF_ITALIC_BASE64,
+} from './fontsBase64';
+import {
+  EMOJI_DATA_URI,
+} from './certAssetsBase64';
+
+/**
+ * Shared print CSS utilities (emoji sizing, etc.).
+ * Standard serif (Georgia, Times New Roman) and sans-serif (system/Roboto) fonts
+ * are used to ensure 100% consistent rendering across Android WebView and Chrome.
+ */
+const EMBEDDED_FONT_CSS = `
+  .emoji {
+    height: 1em;
+    width: auto;
+    vertical-align: -0.15em;
+    display: inline-block;
+  }
+`;
+
+/**
+ * Renders an emoji as an inline Twemoji <img> when we have an embedded asset,
+ * so it looks identical on every device; falls back to the raw glyph otherwise.
+ */
+function emojiImg(glyph: string): string {
+  const uri = EMOJI_DATA_URI[glyph];
+  return uri ? `<img class="emoji" src="${uri}" alt="" />` : glyph;
+}
 
 export interface ExportCertificateParams {
   user: AppUser;
@@ -42,6 +77,16 @@ function getDistinctionBadge(hours: number): { title: string; color: string; ico
   if (hours >= 25) return { title: 'Silver Champion', color: '#4B5563', icon: '🥈' };
   if (hours >= 10) return { title: 'Bronze Volunteer', color: '#B45309', icon: '🥉' };
   return { title: 'Active Volunteer', color: '#D91B5C', icon: '🌟' };
+}
+
+/**
+ * Resolves the grammatical possessive pronoun based on user gender ('his', 'her', or gender-neutral 'their').
+ */
+function getPossessivePronoun(gender?: string | null): string {
+  const g = gender?.toUpperCase()?.trim();
+  if (g === 'MALE' || g === 'HE' || g === 'M') return 'his';
+  if (g === 'FEMALE' || g === 'SHE' || g === 'F') return 'her';
+  return 'their';
 }
 
 /**
@@ -88,6 +133,13 @@ export async function generateCertificateLandscapeHTML({
     },
   });
 
+  const isRecipientClubPresident =
+    user.club_role === 'CLUB_PRESIDENT' ||
+    user.role === 'CLUB_PRESIDENT' ||
+    user.position?.toLowerCase().includes('president');
+
+  const showClubPresidentSignatory = !isRecipientClubPresident && Boolean(clubPresidentName);
+
   const presidentLabel = clubPresidentName || 'Club President';
   const presidentRoleLabel = clubPresidentRole || `President, ${user.club_name || 'Rotaract Club'}`;
   const drrLabel = drrName || 'District Rotaract Representative';
@@ -105,10 +157,12 @@ export async function generateCertificateLandscapeHTML({
     <html>
       <head>
         <meta charset="utf-8" />
+        <meta name="viewport" content="width=842, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
         <title>Rotaract District 3800 - Certificate of Volunteer Service</title>
         <style>
+          ${EMBEDDED_FONT_CSS}
           @page {
-            size: 842pt 595pt;
+            size: 842pt 595pt; /* A4 Landscape */
             margin: 0;
           }
           * {
@@ -122,11 +176,11 @@ export async function generateCertificateLandscapeHTML({
             width: 842pt;
             height: 595pt;
             background-color: #FFFFFF;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            font-family: Georgia, 'Times New Roman', serif;
+            -webkit-text-size-adjust: 100%;
             overflow: hidden;
           }
 
-          /* Exact A4 Landscape Page Container */
           .sheet-page {
             width: 842pt;
             height: 595pt;
@@ -139,19 +193,14 @@ export async function generateCertificateLandscapeHTML({
             position: relative;
             background-color: #FFFFFF;
             overflow: hidden;
-            page-break-inside: avoid;
-            break-inside: avoid;
-            page-break-after: avoid;
-            break-after: auto;
           }
 
-          /* Ornate Double Border Frame */
           .cert-frame {
             width: 100%;
             height: 100%;
-            border: 4px solid #D91B5C;
-            border-radius: 10px;
-            padding: 4px;
+            border: 4pt solid #D91B5C;
+            border-radius: 8pt;
+            padding: 4pt;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
@@ -160,14 +209,15 @@ export async function generateCertificateLandscapeHTML({
           .cert-inner-frame {
             width: 100%;
             height: 100%;
-            border: 1.5px solid #D97706;
-            border-radius: 6px;
-            padding: 10px 24px 8px 24px;
+            border: 1.5pt solid #D97706;
+            border-radius: 5pt;
+            padding: 8pt 20pt 6pt 20pt;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
             text-align: center;
-            background: radial-gradient(circle at center, #FFFFFF 55%, #FFF7F9 100%);
+            background-color: #FFF7F9;
+            background-image: radial-gradient(circle at center, #FFFFFF 55%, #FFF1F5 100%);
             box-sizing: border-box;
           }
 
@@ -176,72 +226,76 @@ export async function generateCertificateLandscapeHTML({
             text-align: center;
           }
           .logo-img {
-            height: 84px;
-            max-width: 520px;
+            height: 80pt;
+            max-width: 400pt;
             width: auto;
             object-fit: contain;
-            margin-bottom: 14px;
+            margin-bottom: 4pt;
           }
           .district-title {
-            font-size: 13.5px;
+            font-family: -apple-system, Roboto, Helvetica, Arial, sans-serif;
+            font-size: 13pt;
             font-weight: 900;
             color: #475569;
-            letter-spacing: 4px;
+            letter-spacing: 2.5pt;
             text-transform: uppercase;
-            margin-bottom: 2px;
+            margin-bottom: 2pt;
+            line-height: 1.15;
           }
           .cert-main-title {
-            font-size: 30px;
+            font-size: 28pt;
             font-weight: 900;
             color: #D91B5C;
-            letter-spacing: 2px;
+            letter-spacing: 1.2pt;
             text-transform: uppercase;
-            font-family: Georgia, 'Times New Roman', serif;
-            margin: 1px 0;
+            margin: 0 0 2pt 0;
+            line-height: 1.1;
           }
           .cert-sub-title {
-            font-size: 12px;
+            font-family: -apple-system, Roboto, Helvetica, Arial, sans-serif;
+            font-size: 11pt;
             font-weight: 700;
             color: #0F172A;
-            letter-spacing: 1.5px;
+            letter-spacing: 1pt;
             text-transform: uppercase;
+            line-height: 1.2;
+            margin-bottom: 2pt;
           }
 
           /* Recipient & Statement */
           .cert-center-body {
             text-align: center;
-            margin: 2px 0;
+            margin: 8pt 0 2pt 0;
           }
           .present-to {
-            font-size: 16.5px;
+            font-size: 13pt;
             font-style: italic;
             color: #64748B;
-            font-family: Georgia, serif;
-            margin-bottom: 16px;
+            margin-bottom: 3pt;
           }
           .recipient-name {
-            font-size: 40px;
-            font-weight: 900;
+            font-size: 30pt;
+            font-weight: 700;
             color: #0F172A;
-            font-family: Georgia, 'Times New Roman', serif;
-            letter-spacing: 0.5px;
-            border-bottom: 3px solid #D91B5C;
+            letter-spacing: 0.5pt;
+            border-bottom: 2.5pt solid #D91B5C;
             display: inline-block;
-            padding: 0 40px 4px 40px;
-            margin-bottom: 4px;
+            padding: 0 35pt 2pt 35pt;
+            margin-bottom: 2pt;
           }
           .recipient-meta {
-            font-size: 16px;
+            font-family: -apple-system, Roboto, Helvetica, Arial, sans-serif;
+            font-size: 12.5pt;
             font-weight: 800;
             color: #D91B5C;
-            letter-spacing: 0.5px;
-            margin-bottom: 18px;
+            letter-spacing: 0.5pt;
+            margin-bottom: 12pt;
           }
           .cert-statement {
-            font-size: 16px;
-            line-height: 1.65;
+            font-size: 14pt;
+            line-height: 1.45;
             color: #334155;
-            max-width: 940px;
+            max-width: 720pt;
             margin: 0 auto;
             text-align: center;
           }
@@ -250,155 +304,150 @@ export async function generateCertificateLandscapeHTML({
           .metric-row {
             display: flex;
             justify-content: center;
-            gap: 20px;
-            margin: 2px 0 4px 0;
+            gap: 15pt;
+            margin: 5pt 0;
           }
           .metric-chip {
             background: #FFFFFF;
-            border: 1.5px solid #F1D4DF;
-            border-radius: 8px;
-            padding: 5px 18px;
-            text-align: center;
-            min-width: 148px;
-            box-shadow: 0 2px 4px rgba(217, 27, 92, 0.05);
+            border: 1pt solid #F1D4DF;
+            border-radius: 6pt;
+            padding: 4pt 15pt;
+            min-width: 110pt;
+            box-shadow: 0 1.5pt 3pt rgba(217, 27, 92, 0.05);
           }
           .metric-val {
-            font-size: 16px;
+            font-size: 13pt;
             font-weight: 900;
             color: #0F172A;
+            font-family: -apple-system, Roboto, sans-serif;
           }
           .metric-lbl {
-            font-size: 9.5px;
+            font-size: 7.5pt;
             font-weight: 800;
             color: #64748B;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-top: 1px;
+            letter-spacing: 0.4pt;
+            font-family: -apple-system, Roboto, sans-serif;
+            margin-top: 1pt;
           }
 
-          /* Signatory Container with Centered Certified By Header */
+          /* Signatories */
           .signatories-container {
-            margin: 10px auto 0 auto;
+            margin: 4pt auto 0 auto;
             display: flex;
             flex-direction: column;
             align-items: center;
           }
           .certified-by-label {
-            font-size: 16.5px;
+            font-size: 14pt;
             font-style: italic;
             color: #64748B;
-            font-family: Georgia, serif;
-            margin-bottom: 54px;
+            margin-bottom: 24pt;
             text-align: center;
           }
           .signatures-section {
             display: flex;
             align-items: flex-end;
             justify-content: center;
-            gap: 76px;
-            transform: translateY(10px);
+            gap: 50pt;
           }
           .sign-col {
-            width: 250px;
+            width: 220pt;
             text-align: center;
             position: relative;
           }
           .sign-img-wrapper {
-            height: 46px;
+            height: 38pt;
             display: flex;
             align-items: flex-end;
             justify-content: center;
-            margin-bottom: -4px;
+            margin-bottom: -3pt;
             pointer-events: none;
           }
           .sign-img {
-            max-height: 46px;
-            max-width: 200px;
+            max-height: 38pt;
+            max-width: 160pt;
             object-fit: contain;
           }
           .sign-line {
-            border-top: 2px solid #0F172A;
-            padding-top: 5px;
+            border-top: none;
+            padding-top: 0;
           }
           .sign-name {
-            font-size: 15px;
+            font-size: 14pt;
             font-weight: 900;
             color: #0F172A;
-            letter-spacing: 0.3px;
+            letter-spacing: 0.2pt;
           }
           .sign-role {
-            font-size: 11px;
+            font-family: -apple-system, Roboto, sans-serif;
+            font-size: 10pt;
             font-weight: 700;
             color: #64748B;
-            margin-top: 1px;
+            margin-top: 1pt;
           }
 
-          /* Dedicated Bottom Bar */
+          /* Footer Bottom Row */
           .cert-footer-bottom-row {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            border-top: 1.5px solid #F1D4DF;
-            padding-top: 8px;
+            border-top: 1pt solid #F1D4DF;
+            padding-top: 5pt;
             width: 100%;
           }
-
-          /* Bottom-Left QR Authenticity Badge */
           .bottom-left-qr-wrap {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 8pt;
             text-align: left;
           }
           .qr-box {
-            width: 68px;
-            height: 68px;
-            border: 1.5px solid #CBD5E1;
-            border-radius: 6px;
-            overflow: hidden;
+            width: 36pt;
+            height: 36pt;
+            padding: 2pt;
+            background: #FFFFFF;
+            border: 1pt solid #E2E8F0;
+            border-radius: 4pt;
             display: flex;
             align-items: center;
             justify-content: center;
-            background: #FFFFFF;
-            padding: 2px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.06);
           }
           .qr-box svg {
-            width: 100% !important;
-            height: 100% !important;
-            display: block;
-            shape-rendering: crispEdges;
+            width: 100%;
+            height: 100%;
           }
           .qr-meta {
             display: flex;
             flex-direction: column;
-            gap: 2px;
+            font-family: -apple-system, Roboto, sans-serif;
+            gap: 0.5pt;
           }
           .qr-id {
             font-family: monospace;
-            font-size: 10px;
-            font-weight: 900;
+            font-size: 8pt;
+            font-weight: 800;
             color: #0F172A;
-            letter-spacing: 0.5px;
           }
           .qr-badge {
-            font-size: 8.5px;
-            font-weight: 800;
+            font-size: 7pt;
+            font-weight: 700;
             color: #D91B5C;
-            letter-spacing: 0.5px;
-            text-transform: uppercase;
+            letter-spacing: 0.2pt;
           }
           .qr-hint {
-            font-size: 8px;
+            font-size: 6.5pt;
             color: #64748B;
           }
+
           .footer-district-meta {
-            font-size: 9.5px;
-            font-weight: 700;
+            font-family: -apple-system, Roboto, sans-serif;
+            font-size: 7pt;
+            font-weight: 800;
             color: #94A3B8;
+            letter-spacing: 0.6pt;
             text-align: right;
-            letter-spacing: 0.5px;
-            line-height: 1.4;
+            line-height: 1.3;
           }
         </style>
       </head>
@@ -419,20 +468,21 @@ export async function generateCertificateLandscapeHTML({
 
               <!-- Center Recipient -->
               <div class="cert-center-body">
-                <div class="present-to">This certificate of distinction is proudly presented to</div>
+                <div class="present-to">This certificate is issued to</div>
                 <div class="recipient-name">${user.full_name}</div>
                 <div class="recipient-meta">${user.position} • ${user.club_name || 'Rotaract Club'}</div>
                 <div class="cert-statement">
-                  In grateful recognition of steadfast dedication, active humanitarian leadership, and rendering<br/>
-                  <strong>${stats.hours} verified hours</strong> of volunteer service in good standing with <strong>Rotary International District 3800</strong>,<br/>
-                  exemplifying the Rotary ideal of <em>Service Above Self</em>.
+                  in verification of ${getPossessivePronoun(user.gender)} participation and completion of <strong>${stats.hours} verified ${stats.hours === 1 ? 'hour' : 'hours'}</strong> of volunteer service<br/>
+                  rendered in good standing with <strong>Rotary International District 3800</strong>. This document is<br/>
+                  issued as <strong>official verification</strong> of the volunteer service rendered through the organization<br/>
+                  and serves as a record of the individual's participation and service.
                 </div>
               </div>
 
               <!-- Summary Metric Chips -->
               <div class="metric-row">
                 <div class="metric-chip">
-                  <div class="metric-val" style="color: ${distinction.color};">${distinction.icon} ${distinction.title}</div>
+                  <div class="metric-val" style="color: ${distinction.color};">${emojiImg(distinction.icon)} ${distinction.title}</div>
                   <div class="metric-lbl">Distinction Tier</div>
                 </div>
                 <div class="metric-chip">
@@ -453,6 +503,9 @@ export async function generateCertificateLandscapeHTML({
               <div class="signatories-container">
                 <div class="certified-by-label">Certified by:</div>
                 <div class="signatures-section">
+                  ${
+                    showClubPresidentSignatory
+                      ? `
                   <!-- Col 1: Club President -->
                   <div class="sign-col">
                     ${presidentSigHtml}
@@ -461,8 +514,11 @@ export async function generateCertificateLandscapeHTML({
                       <div class="sign-role">${presidentRoleLabel}</div>
                     </div>
                   </div>
+                  `
+                      : ''
+                  }
 
-                  <!-- Col 2: District Rotaract Representative -->
+                  <!-- District Rotaract Representative -->
                   <div class="sign-col">
                     ${drrSigHtml}
                     <div class="sign-line">
@@ -553,8 +609,10 @@ export async function generateTranscriptPortraitHTML({
     <html>
       <head>
         <meta charset="utf-8" />
+        <meta name="viewport" content="width=595, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
         <title>Rotaract District 3800 - Activity Transcript</title>
         <style>
+          ${EMBEDDED_FONT_CSS}
           @page {
             size: 595pt 842pt;
             margin: 0;
@@ -570,121 +628,123 @@ export async function generateTranscriptPortraitHTML({
             width: 595pt;
             height: 842pt;
             background-color: #FFFFFF;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            font-family: -apple-system, Roboto, Helvetica, Arial, sans-serif;
+            -webkit-text-size-adjust: 100%;
             overflow: hidden;
           }
+          /* Container in pt to match the pt-sized PDF page */
           .sheet-portrait {
             width: 595pt;
             height: 842pt;
             max-height: 842pt;
             box-sizing: border-box;
-            padding: 24pt 28pt;
+            padding: 20pt 24pt;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
             position: relative;
             background-color: #FFFFFF;
             overflow: hidden;
-            page-break-inside: avoid;
-            break-inside: avoid;
           }
           .p-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            border-bottom: 3px solid #D91B5C;
-            padding-bottom: 12px;
-            margin-bottom: 16px;
+            border-bottom: 2.5pt solid #D91B5C;
+            padding-bottom: 10pt;
+            margin-bottom: 14pt;
           }
           .p-header-left {
             display: flex;
             align-items: center;
-            gap: 14px;
+            gap: 12pt;
           }
           .p-title {
-            font-size: 18px;
+            font-size: 16pt;
             font-weight: 900;
             color: #D91B5C;
             text-transform: uppercase;
-            letter-spacing: 1px;
-            font-family: Georgia, serif;
+            letter-spacing: 0.8pt;
+            font-family: Georgia, 'Times New Roman', serif;
           }
           .p-subtitle {
-            font-size: 11px;
+            font-size: 9.5pt;
             color: #64748B;
             font-weight: 700;
-            margin-top: 2px;
+            margin-top: 2pt;
           }
           .p-cert-badge-box {
             text-align: right;
           }
           .p-cert-id {
             font-family: monospace;
-            font-size: 11px;
+            font-size: 9.5pt;
             font-weight: 900;
             color: #0F172A;
           }
           .p-badge-verified {
             display: inline-block;
-            margin-top: 4px;
-            padding: 3px 8px;
+            margin-top: 3pt;
+            padding: 3pt 8pt;
             background: #FFF1F4;
-            border: 1px solid #F1D4DF;
-            border-radius: 4px;
-            font-size: 9px;
+            border: 1pt solid #F1D4DF;
+            border-radius: 3pt;
+            font-size: 7.5pt;
             font-weight: 800;
             color: #D91B5C;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
+            letter-spacing: 0.4pt;
           }
           .p-member-hud {
             background: #FFF5F7;
-            border: 1.5px solid #F1D4DF;
-            border-radius: 10px;
-            padding: 12px 18px;
+            border: 1pt solid #F1D4DF;
+            border-radius: 8pt;
+            padding: 10pt 16pt;
             display: grid;
             grid-template-columns: repeat(2, 1fr);
-            gap: 10px;
-            font-size: 11.5px;
+            gap: 9pt;
+            font-size: 10pt;
             color: #334155;
-            margin-bottom: 18px;
+            margin-bottom: 15pt;
           }
           .p-table {
             width: 100%;
             border-collapse: collapse;
-            font-size: 10.5px;
-            margin-bottom: 16px;
+            font-size: 9pt;
+            margin-bottom: 14pt;
           }
           .p-table th {
             background: #D91B5C;
             color: #FFFFFF;
-            padding: 8px 10px;
+            padding: 7.5pt 9pt;
             text-align: left;
             font-weight: 800;
-            font-size: 10px;
+            font-size: 8.5pt;
             text-transform: uppercase;
-            letter-spacing: 0.5px;
+            letter-spacing: 0.4pt;
           }
           .p-table td {
-            padding: 7px 10px;
-            border-bottom: 1px solid #F1D4DF;
+            padding: 7pt 9pt;
+            border-bottom: 1pt solid #F1D4DF;
             color: #334155;
           }
           .p-table-total-row {
             background: #FFF5F7;
-            border-top: 2.5px solid #D91B5C;
+            border-top: 2pt solid #D91B5C;
             font-weight: 900;
             color: #0F172A;
+            font-size: 10pt;
           }
           .p-footer {
-            border-top: 1.5px solid #E2E8F0;
-            padding-top: 12px;
-            font-size: 9.5px;
+            border-top: 1pt solid #E2E8F0;
+            padding-top: 10pt;
+            font-size: 8pt;
             color: #64748B;
-            line-height: 1.5;
+            line-height: 1.4;
           }
           .p-four-way-test {
             font-style: italic;
+            font-family: 'CertSerif', Georgia, serif;
             margin-top: 4px;
             color: #475569;
           }
@@ -714,7 +774,7 @@ export async function generateTranscriptPortraitHTML({
               <div><strong>Rotary Year:</strong> 2025–2026</div>
               <div><strong>Club:</strong> ${user.club_name || 'Rotaract Club'}</div>
               <div><strong>Position:</strong> ${user.position}</div>
-              <div><strong>Distinction:</strong> ${distinction.icon} ${distinction.title}</div>
+              <div><strong>Distinction:</strong> ${emojiImg(distinction.icon)} ${distinction.title}</div>
               <div><strong>Total Service:</strong> <span style="color: #D91B5C; font-weight: 900;">${stats.hours} Verified Hours</span></div>
             </div>
 
@@ -773,19 +833,22 @@ export async function exportVolunteerCertificatePDF(params: ExportCertificatePar
     const certHtml = await generateCertificateLandscapeHTML(params);
     const transcriptHtml = await generateTranscriptPortraitHTML(params);
 
-    // 1. Generate Landscape Certificate Page (842pt x 595pt)
+    // Pass exact A4 Landscape (842pt x 595pt) and A4 Portrait (595pt x 842pt)
+    // with 0 margins so Android PrintDocumentAdapter does not default to Letter (612x792)
+    // or inject arbitrary device spooler margins.
     const certResult = await Print.printToFileAsync({
       html: certHtml,
       width: 842,
       height: 595,
+      margins: { top: 0, bottom: 0, left: 0, right: 0 },
       base64: true,
     });
 
-    // 2. Generate Portrait Transcript Page (595pt x 842pt)
     const transcriptResult = await Print.printToFileAsync({
       html: transcriptHtml,
       width: 595,
       height: 842,
+      margins: { top: 0, bottom: 0, left: 0, right: 0 },
       base64: true,
     });
 
@@ -802,20 +865,99 @@ export async function exportVolunteerCertificatePDF(params: ExportCertificatePar
 
     const mergedBytes = await mergedDoc.save();
     const cleanName = (params.user.full_name || 'Member').replace(/[^a-zA-Z0-9]/g, '_');
-    const outputFile = new File(Paths.cache, `Rotaract_Certificate_Transcript_${cleanName}.pdf`);
+    const fileName = `Rotaract_Certificate_Transcript_${cleanName}.pdf`;
+    const outputFile = new File(Paths.cache, fileName);
     outputFile.write(mergedBytes);
     const finalUri = outputFile.uri;
 
-    const isAvailable = await Sharing.isAvailableAsync();
-    if (isAvailable) {
-      await Sharing.shareAsync(finalUri, {
-        UTI: '.pdf',
-        mimeType: 'application/pdf',
-        dialogTitle: `Rotaract Volunteer Certificate & Transcript - ${params.user.full_name}`,
-      });
-    } else {
-      await Print.printAsync({ uri: finalUri });
+    const shareIt = async () => {
+      const isAvailable = await Sharing.isAvailableAsync();
+      if (isAvailable) {
+        await Sharing.shareAsync(finalUri, {
+          UTI: '.pdf',
+          mimeType: 'application/pdf',
+          dialogTitle: `Rotaract Volunteer Certificate & Transcript - ${params.user.full_name}`,
+        });
+      } else {
+        await Print.printAsync({ uri: finalUri });
+      }
+    };
+
+    // On Android, present a chooser: Share OR Save to Downloads.
+    // "Save to Downloads" uses MediaStore (Android 10+) for a silent write to
+    // the public Downloads folder — no picker, no permission prompt. Falls
+    // back to SAF (folder picker, remembered after first grant) on older
+    // devices or if MediaStore fails.
+    if (Platform.OS === 'android') {
+      const saveToDownloads = async () => {
+        // Strip the file:// prefix — MediaCollection expects a plain path.
+        const srcPath = finalUri.replace(/^file:\/\//, '');
+
+        try {
+          await ReactNativeBlobUtil.MediaCollection.copyToMediaStore(
+            { name: fileName, parentFolder: '', mimeType: 'application/pdf' },
+            'Download',
+            srcPath,
+          );
+          Alert.alert('Certificate Saved', `Saved to Downloads as ${fileName}.`);
+          return;
+        } catch (mediaErr) {
+          console.warn('[MediaStore save failed, falling back to SAF]', mediaErr);
+        }
+
+        // SAF fallback — first save asks for a folder; remembered after that.
+        try {
+          const mergedBase64 = await mergedDoc.saveAsBase64();
+          let dirUri = await AsyncStorage.getItem(SAF_DIR_KEY);
+
+          const writeInto = async (directoryUri: string) => {
+            const safUri = await StorageAccessFramework.createFileAsync(
+              directoryUri,
+              fileName,
+              'application/pdf',
+            );
+            await StorageAccessFramework.writeAsStringAsync(safUri, mergedBase64, {
+              encoding: 'base64',
+            });
+          };
+
+          if (dirUri) {
+            try {
+              await writeInto(dirUri);
+              Alert.alert('Certificate Saved', `Saved as ${fileName}.`);
+              return;
+            } catch {
+              await AsyncStorage.removeItem(SAF_DIR_KEY);
+              dirUri = null;
+            }
+          }
+
+          const permission = await StorageAccessFramework.requestDirectoryPermissionsAsync();
+          if (!permission.granted) return;
+          await AsyncStorage.setItem(SAF_DIR_KEY, permission.directoryUri);
+          await writeInto(permission.directoryUri);
+          Alert.alert('Certificate Saved', `Saved as ${fileName} to the folder you chose.`);
+        } catch (err: any) {
+          console.warn('[Save to Downloads failed]', err);
+          Alert.alert('Save Failed', err?.message || 'Could not save the certificate.');
+        }
+      };
+
+      Alert.alert(
+        'Certificate Ready',
+        'Choose how to export your certificate.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Share', onPress: () => { shareIt().catch(() => {}); } },
+          { text: 'Save to Downloads', onPress: () => { saveToDownloads().catch(() => {}); } },
+        ],
+        { cancelable: true },
+      );
+      return;
     }
+
+    // iOS (and anything else): share sheet — includes "Save to Files".
+    await shareIt();
   } catch (err: any) {
     console.error('[exportVolunteerCertificatePDF Error]:', err);
     if (err?.message !== 'User did not share' && !err?.message?.includes('cancelled')) {

@@ -38,6 +38,62 @@ export type AreaOfFocus =
   | 'COMMUNITY_DEVELOPMENT'
   | 'ENVIRONMENT';
 
+/**
+ * How participant capacity is divided between clubs.
+ * - NONE: first-come, first-served across the whole event.
+ * - SOFT: each club holds slots; whatever is unused at the release deadline
+ *   returns to the general pool for any club to take.
+ * - HARD: a club may never exceed its allocation.
+ */
+export type AllocationMode = 'NONE' | 'SOFT' | 'HARD';
+
+/** A club's reserved share of an event's participant capacity. */
+export interface EventClubAllocation {
+  id: string;
+  event_id: string;
+  club_id: string;
+  /** Current ceiling — organizers can raise this at any time. */
+  allocated_slots: number;
+  /** What was granted originally, so a later bump reads as a change. */
+  initial_slots: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/** Lifecycle of a cohosting request. */
+export type CohostStatus = 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+/** Lifecycle of a cohost fee payment. */
+export type CohostPaymentStatus = 'NONE' | 'PENDING_VERIFICATION' | 'VERIFIED' | 'REJECTED';
+
+/**
+ * A cohosting arrangement between one club and an event. Amounts are stored in
+ * centavos to sidestep floating-point rounding — divide by 100 for display.
+ */
+export interface EventCohost {
+  id: string;
+  event_id: string;
+  club_id: string;
+  requested_by_user_id?: string;
+  status: CohostStatus;
+  expected_participants: number;
+  /** Fee snapshot at time of request — protects the club if the organizer later changes the event's fee. */
+  agreed_fee_centavos: number;
+  message?: string;
+  requested_at: string;
+  reviewed_at?: string;
+  reviewed_by_user_id?: string;
+  review_notes?: string;
+  payment_status: CohostPaymentStatus;
+  payment_method?: string;
+  payment_reference?: string;
+  /** Object path in the private `cohost-receipts` bucket. Use `getSignedImageUrl` to view. */
+  payment_receipt_path?: string;
+  payment_submitted_at?: string;
+  payment_verified_at?: string;
+  payment_verified_by_user_id?: string;
+  payment_review_notes?: string;
+}
+
 export type ParticipationStatus = 'PENDING' | 'JOINED' | 'CANCELLED';
 export type AttendanceStatus = 'NOT_MARKED' | 'ATTENDED' | 'ABSENT';
 export type InvitationStatus = 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'EXPIRED';
@@ -128,6 +184,25 @@ export interface RotaractEvent {
   cancellation_reason?: string;
   /** Custom geofence perimeter radius in meters for automatic check-in. Default: 300. */
   geofence_radius_meters?: number;
+  /** How capacity is split between clubs. Defaults to 'NONE' (first-come). */
+  allocation_mode?: AllocationMode;
+  /** Slots each club gets when no explicit per-club row exists. */
+  default_club_allocation?: number;
+  /** When unused SOFT slots return to the general pool. Absent = never. */
+  allocation_release_at?: string;
+  /** Set only when the organizer released early, ahead of the deadline. */
+  allocation_released_at?: string;
+  /** Organizer has opened this event to cohosting clubs. */
+  cohosting_enabled?: boolean;
+  /** Cohost fee in centavos (PHP). 0 = free cohosting. */
+  cohosting_fee_centavos?: number;
+  /** Cap on approved+pending cohosts. Absent = unlimited. */
+  cohosting_max_clubs?: number;
+  cohosting_application_deadline?: string;
+  /** When false, requests auto-approve on submission. */
+  cohosting_requires_approval?: boolean;
+  /** Free-text description of what the cohost gets for their fee. */
+  cohosting_benefits?: string;
 }
 
 export interface AppUser {
@@ -146,6 +221,8 @@ export interface AppUser {
   signature_url?: string;
   contact_number?: string;
   proof_url?: string;
+  /** Optional gender for certificates and formal document generation ('MALE', 'FEMALE', etc.) */
+  gender?: 'MALE' | 'FEMALE' | string;
   /**
    * When false, only same-club members may START a new conversation with this
    * user. Lives on the profile rather than in local preferences because it governs

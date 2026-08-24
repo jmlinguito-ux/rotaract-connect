@@ -1,13 +1,14 @@
 // ============================================================================
 // send-push — Expo push fan-out, mirroring the in-app notification banner
 // ============================================================================
-// Wired as TWO Supabase Database Webhooks, both POSTing here:
+// Wired as THREE Supabase Database Webhooks, all POSTing here:
 //
 //   1. INSERT on public.notifications   — everything the Inbox records: broadcasts,
 //      invitations, approvals, reminders, and 1-on-1 chat messages.
 //   2. INSERT on public.direct_messages — group-chat messages ONLY. These create no
 //      notification row (see migration 0015), so without this webhook a user with
 //      the app closed silently missed every group message.
+//   3. INSERT on public.message_reactions — emoji reactions. Notifies the message author.
 //
 // Both paths produce the same RICH banner the in-app one shows: a large image
 // (the photo that was sent, else the event cover, else the sender's avatar), a
@@ -55,10 +56,18 @@ interface MessageRecord {
   reply_to_text?: string | null;
 }
 
+interface ReactionRecord {
+  id: string;
+  message_id: string;
+  user_id: string;
+  emoji: string;
+  created_at: string;
+}
+
 interface WebhookPayload {
   type: 'INSERT' | 'UPDATE' | 'DELETE';
   table: string;
-  record: NotificationRecord | MessageRecord | null;
+  record: NotificationRecord | MessageRecord | ReactionRecord | null;
 }
 
 /** One fully-built Expo push message, minus the recipient token. */
@@ -106,6 +115,9 @@ Deno.serve(async (req) => {
     if (single) plans = [single];
   } else if (payload.table === 'direct_messages') {
     plans = await plansFromGroupMessage(supabase, payload.record as MessageRecord);
+  } else if (payload.table === 'message_reactions') {
+    const single = await planFromReaction(supabase, payload.record as ReactionRecord);
+    if (single) plans = [single];
   } else {
     return skipped();
   }
@@ -396,26 +408,112 @@ async function plansFromGroupMessage(
 
   if (mentioned.length) {
     const mentionRule = RULES.mention;
-    plans.push({
-      recipients: mentioned,
-      content: {
-        type: 'mention',
-        dedupeKey: `msg:${m.id}:mention`,
-        title,
-        subtitle: `Mentioned by ${senderName}`,
-        body: `@You were mentioned by ${senderName}: "${rawText}"`,
-        data: { ...sharedData, type: 'mention', message_preview: rawText, respects_mute: 'false' },
-        image,
-        channelId: mentionRule.channelId,
-        categoryId: mentionRule.categoryId,
-        sound: mentionRule.sound,
-        collapseKey: `${m.conversation_id}:mention`,
-        highPriority: mentionRule.highPriority,
-      },
-    });
+
+    // Fetch names for all mentioned users to strip mentions cleanly from the preview
+    const { data: mentionedProfiles } = await supabase
+      .from('profiles')
+      .select('id, full_name')
+      .in('id', mentioned);
+    const profilesMap = new Map(mentionedProfiles?.map((p) => [p.id, p.full_name]) || []);
+
+    plans.push(...mentioned.map((userId) => {
+      const recipientFullName = profilesMap.get(userId) || '';
+      let cleanText = rawText;
+
+      if (recipientFullName) {
+        // 1. Try stripping full name mention: "@Patricia Gomez hello" -> "hello"
+        // Flexible whitespace (\s+) to catch double spaces or hidden characters
+        const parts = recipientFullName.split(/\s+/).filter(Boolean);
+        const pattern = `@${parts.map(p => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+')}`;
+        const fullNameRegex = new RegExp(`^${pattern}\\s*`, 'i');
+
+        if (fullNameRegex.test(cleanText)) {
+          cleanText = cleanText.replace(fullNameRegex, '');
+        } else {
+          // 2. Fallback to first name: "@Patricia hello" -> "hello"
+          const firstName = parts[0];
+          if (firstName) {
+            const escapedFirstName = firstName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const firstNameRegex = new RegExp(`^@${escapedFirstName}\\s*`, 'i');
+            cleanText = cleanText.replace(firstNameRegex, '');
+          }
+        }
+      }
+
+      return {
+        recipients: [userId],
+        content: {
+          type: 'mention',
+          dedupeKey: `msg:${m.id}:mention:${userId}`,
+          title,
+          body: `${senderName} mentioned you: "${cleanText}"`,
+          data: {
+            ...sharedData,
+            type: 'mention',
+            // Setting sender_name to this phrase makes Android's MessagingStyle
+            // show exactly "Sender mentioned you: message"
+            sender_name: `${senderName} mentioned you`,
+            message_preview: `"${cleanText}"`,
+            respects_mute: 'false',
+          },
+          image,
+          channelId: mentionRule.channelId,
+          categoryId: mentionRule.categoryId,
+          sound: mentionRule.sound,
+          collapseKey: `${m.conversation_id}:mention`,
+          highPriority: mentionRule.highPriority,
+        },
+      };
+    }));
   }
 
   return plans;
+}
+
+// ---------------------------------------------------------------------------
+// Path 3 — a message reaction.
+// ---------------------------------------------------------------------------
+async function planFromReaction(
+  supabase: SupabaseClient,
+  r: ReactionRecord,
+): Promise<Plan | null> {
+  const { data: msg } = await supabase
+    .from('direct_messages')
+    .select('sender_id, text, conversation_id, event_id')
+    .eq('id', r.message_id)
+    .maybeSingle();
+
+  if (!msg || msg.sender_id === r.user_id) return null;
+
+  const { data: sender } = await supabase
+    .from('profiles')
+    .select('full_name')
+    .eq('id', r.user_id)
+    .maybeSingle();
+
+  const senderName = sender?.full_name ?? 'Someone';
+  const messageSnippet = msg.text ? ` "${msg.text.slice(0, 30)}${msg.text.length > 30 ? '...' : ''}"` : ' your photo';
+  const rule = RULES.general;
+
+  return {
+    recipients: [msg.sender_id],
+    content: {
+      type: 'general',
+      dedupeKey: `react:${r.id}`,
+      title: 'New Reaction',
+      body: `${senderName} reacted ${r.emoji} to your message:${messageSnippet}`,
+      data: {
+        type: 'general',
+        kind: 'MESSAGE_REACTION',
+        conversation_id: msg.conversation_id,
+        event_id: msg.event_id ?? undefined,
+      },
+      channelId: rule.channelId,
+      categoryId: rule.categoryId,
+      sound: rule.sound,
+      highPriority: rule.highPriority,
+    },
+  };
 }
 
 
@@ -626,23 +724,12 @@ async function sendViaFcm(tokens: string[], c: PushContent): Promise<string[]> {
               body: JSON.stringify({
                 message: {
                   token: deviceToken,
-                  notification: {
-                    title: c.title,
-                    body: c.body,
-                  },
+                  // DATA-ONLY: No top-level 'notification' block. This ensures the
+                  // message is handed to RotaractNotificationsService in the
+                  // background/killed state instead of the OS drawing a generic banner.
                   data,
                   android: {
                     priority: 'HIGH',
-                    notification: {
-                      channel_id: c.channelId,
-                      sound: c.sound,
-                      color: '#D41367',
-                      default_sound: true,
-                      default_vibrate_timings: true,
-                      notification_priority: 'PRIORITY_MAX',
-                      visibility: 'PUBLIC',
-                      ...(c.collapseKey ? { tag: c.collapseKey } : {}),
-                    },
                   },
                 },
               }),
@@ -765,23 +852,36 @@ async function deliver(
   }
 
   for (const [, userTokens] of userTokensMap) {
-    for (const t of userTokens) {
-      if (t.token && !seenExpoTokens.has(t.token)) {
-        seenExpoTokens.add(t.token);
-        expoTargets.push({ token: t.token, platform: t.platform });
+    // If a user has an FCM device_token, use it exclusively for Android.
+    const fcmToken = userTokens.find((t) => t.platform === 'android' && t.device_token);
+    if (fcmToken?.device_token) {
+      fcmTokenSet.add(fcmToken.device_token);
+    } else {
+      // Fallback: use Expo tokens for iOS and Android devices without a native token.
+      for (const t of userTokens) {
+        if (t.token && !seenExpoTokens.has(t.token)) {
+          seenExpoTokens.add(t.token);
+          expoTargets.push({ token: t.token, platform: t.platform });
+        }
       }
     }
   }
 
-  const staleExpoTokens = expoTargets.length ? await sendViaExpo(expoTargets, c) : [];
+  const [staleExpo, staleFcm] = await Promise.all([
+    expoTargets.length ? sendViaExpo(expoTargets, c) : Promise.resolve([]),
+    fcmTokenSet.size ? sendViaFcm([...fcmTokenSet], c) : Promise.resolve([]),
+  ]);
 
   // Prune dead tokens so we stop sending to them.
-  if (staleExpoTokens.length) {
-    await supabase.from('push_tokens').delete().in('token', staleExpoTokens);
+  if (staleExpo.length) {
+    await supabase.from('push_tokens').delete().in('token', staleExpo);
+  }
+  if (staleFcm.length) {
+    await supabase.from('push_tokens').delete().in('device_token', staleFcm);
   }
 
-  const pruned = staleExpoTokens.length;
-  return { sent: expoTargets.length - pruned, pruned };
+  const pruned = staleExpo.length + staleFcm.length;
+  return { sent: expoTargets.length + fcmTokenSet.size - pruned, pruned };
 }
 
 /** Expo push service delivery. Returns the Expo tokens Expo says are dead. */

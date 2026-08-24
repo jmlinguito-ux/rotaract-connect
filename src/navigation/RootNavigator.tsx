@@ -21,6 +21,8 @@ import CreateEventScreen from '../screens/events/CreateEventScreen';
 import EditEventScreen from '../screens/events/EditEventScreen';
 import InvitePickerScreen from '../screens/events/InvitePickerScreen';
 import ParticipantsScreen from '../screens/events/ParticipantsScreen';
+import ClubAllocationScreen from '../screens/events/ClubAllocationScreen';
+import CohostingScreen from '../screens/events/CohostingScreen';
 import MarkAttendanceScreen from '../screens/events/MarkAttendanceScreen';
 import CompleteEventScreen from '../screens/events/CompleteEventScreen';
 import NotificationsScreen from '../screens/notifications/NotificationsScreen';
@@ -84,6 +86,8 @@ export default function RootNavigator() {
             <Stack.Screen name="EditEvent" component={EditEventScreen} options={{ title: 'Edit Event' }} />
             <Stack.Screen name="InvitePicker" component={InvitePickerScreen} options={{ title: 'Invite Rotaractors' }} />
             <Stack.Screen name="Participants" component={ParticipantsScreen} options={{ title: 'Participants' }} />
+            <Stack.Screen name="ClubAllocation" component={ClubAllocationScreen} options={{ title: 'Club Allocation' }} />
+            <Stack.Screen name="Cohosting" component={CohostingScreen} options={{ title: 'Cohosting' }} />
             <Stack.Screen name="MarkAttendance" component={MarkAttendanceScreen} options={{ title: 'Check-In Participants' }} />
             <Stack.Screen name="CompleteEvent" component={CompleteEventScreen} options={{ title: 'Record Impact' }} />
             <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ title: 'Notifications' }} />

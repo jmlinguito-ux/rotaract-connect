@@ -25,7 +25,7 @@ export function DeclineReasonModal({
   onConfirm,
   onCancel,
 }: DeclineReasonModalProps) {
-  const { colors: themeColors } = useTheme();
+  const { colors: themeColors, isNightMode } = useTheme();
   const [remarks, setRemarks] = useState<string>('');
   const [focused, setFocused] = useState(false);
 
@@ -42,10 +42,10 @@ export function DeclineReasonModal({
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
       <AppModalKeyboardWrapper>
-        <View style={[styles.card, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}>
+        <View style={[styles.card, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border, borderWidth: isNightMode ? 1 : 0 }]}>
           <View style={styles.header}>
-            <View style={styles.iconCircle}>
-              <Ionicons name="alert-circle" size={22} color={colors.danger} />
+            <View style={[styles.iconCircle, { backgroundColor: isNightMode ? '#7F1D1D33' : '#FEE2E2' }]}>
+              <Ionicons name="alert-circle" size={22} color={themeColors.danger} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.title, { color: themeColors.text }]}>{title ?? 'Decline Join Request'}</Text>

@@ -2,12 +2,14 @@ import React, { createContext, useContext, useState, ReactNode, useCallback, use
 import {
   RotaractEvent, EventParticipant, EventInvitation, EventImpact,
   VerificationApplication, AuditLog, AppNotification,
-  VerificationStatus, AttendanceStatus, AppUser, UserRole, Club,
+  VerificationStatus, AttendanceStatus, AppUser, UserRole, Club, ClubType,
   Conversation, DirectMessage, ReadCursor, NotificationPriority, ConversationState, MessageReaction,
   SystemRole, ClubRole,
+  EventClubAllocation, EventCohost,
 } from '../types';
 import { AppState } from 'react-native';
 import { loadAll, db } from '../services/db';
+import { canClubRegister } from '../utils/clubAllocation';
 import { canMessageUser } from '../utils/messaging';
 import RotaractNotifications from '../../modules/rotaract-notifications';
 import { supabase } from '../services/supabase';
@@ -138,6 +140,20 @@ interface DataContextValue {
   deleteConversationForMe: (conversationId: string, userId: string) => void;
   /** Emoji reactions on chat messages. */
   reactions: MessageReaction[];
+  /** Per-club reserved participant slots, across all events. */
+  clubAllocations: EventClubAllocation[];
+  /** Sets one club's reserved slots for an event. Organizer only. */
+  setClubAllocation: (eventId: string, clubId: string, slots: number) => Promise<boolean>;
+  /** Releases unused club slots to the general pool ahead of the deadline. */
+  releaseClubAllocations: (eventId: string) => Promise<boolean>;
+
+  /** Cohosting arrangements across events (migration 0043). */
+  cohosts: EventCohost[];
+  requestCohost: (eventId: string, expectedParticipants: number, message?: string) => Promise<{ ok: boolean; error?: string }>;
+  reviewCohost: (cohostId: string, action: 'APPROVE' | 'REJECT', notes?: string) => Promise<{ ok: boolean; error?: string }>;
+  submitCohostPayment: (cohostId: string, method: string, reference?: string, receiptPath?: string) => Promise<{ ok: boolean; error?: string }>;
+  verifyCohostPayment: (cohostId: string, action: 'VERIFY' | 'REJECT', notes?: string) => Promise<{ ok: boolean; error?: string }>;
+  cancelCohost: (cohostId: string, reason?: string) => Promise<{ ok: boolean; error?: string }>;
   /** Retrieves all reactions for a specific message. */
   reactionsFor: (messageId: string) => MessageReaction[];
   /** Toggles the user's reaction on a message (replaces different emoji, removes same emoji). */
@@ -204,6 +220,7 @@ interface DataContextValue {
     longitude?: number;
     email?: string;
     meeting_address?: string;
+    club_type?: ClubType;
   }) => Club;
 
   participantsFor: (eventId: string) => EventParticipant[];
@@ -238,6 +255,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [deletedMessageIds, setDeletedMessageIds] = useState<string[]>([]);
   const [conversationStates, setConversationStates] = useState<ConversationState[]>([]);
   const [reactions, setReactions] = useState<MessageReaction[]>([]);
+  const [clubAllocations, setClubAllocations] = useState<EventClubAllocation[]>([]);
+  const [cohosts, setCohosts] = useState<EventCohost[]>([]);
 
   // 1. Immediately hydrate local state from persistent cache on boot (0ms instant startup)
   useEffect(() => {
@@ -258,6 +277,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setDeletedMessageIds(cached.deletedMessageIds ?? []);
         setConversationStates(cached.conversationStates ?? []);
         setReactions(cached.reactions ?? []);
+        setClubAllocations(cached.clubAllocations ?? []);
+        setCohosts(cached.cohosts ?? []);
       }
     });
   }, []);
@@ -300,6 +321,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setDeletedMessageIds(d.deletedMessageIds);
     setConversationStates(d.conversationStates);
     setReactions(d.reactions);
+    setClubAllocations(d.clubAllocations);
+    setCohosts(d.cohosts);
 
     // Save snapshot to local persistent cache for instant future launches
     setCachedData(d);
@@ -401,6 +424,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     longitude?: number;
     email?: string;
     meeting_address?: string;
+    club_type?: ClubType;
   }) => {
     const newClub: Club = {
       id: nextId('c'),
@@ -419,6 +443,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       president_name: c.president_name || 'Pending Election',
       email: c.email?.trim() || undefined,
       meeting_address: c.meeting_address?.trim() || undefined,
+      club_type: c.club_type ?? 'COMMUNITY_BASED',
     };
     setClubs(prev => [...prev, newClub]);
     db.insertClub(newClub);
@@ -943,6 +968,28 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const ev = events.find(e => e.id === eventId);
     if (!ev) return;
     const joiningUser = users.find(u => u.id === userId);
+
+    // Club allocation gate. The DB trigger is the real enforcement; checking
+    // here lets us refuse with the reason instead of writing a row that the
+    // server would reject a moment later. Re-joining an existing seat is exempt
+    // — it consumes no new slot.
+    const alreadySeated = participants.some(
+      p => p.event_id === eventId && p.user_id === userId && p.status !== 'CANCELLED',
+    );
+    if (!alreadySeated && joiningUser?.club_id) {
+      const verdict = canClubRegister(ev, clubAllocations, participants, users, joiningUser.club_id, new Date(), userId);
+      if (!verdict.allowed) {
+        pushNotif({
+          user_id: userId,
+          kind: 'EVENT_UPDATE',
+          title: 'Could not join event',
+          message: verdict.reason ?? 'No slots are available for your club right now.',
+          event_id: ev.id,
+        });
+        return;
+      }
+    }
+
     const isSameClub = joiningUser && joiningUser.club_id === ev.organizing_club_id;
     // Accepting an invitation counts as the organizer's pre-approval, so it bypasses
     // the requires_approval join review.
@@ -965,7 +1012,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (existing) return prev.map(p => (p.id === existing.id ? row : p));
       return [...prev, row];
     });
-    db.insertParticipant(row);
+    // The allocation trigger can still refuse if another club took the last
+    // slot between our check and the write, so undo the optimistic row.
+    db.insertParticipant(row).then(res => {
+      if (res.ok || !res.allocationError) return;
+      setParticipants(prev =>
+        existing ? prev.map(p => (p.id === existing.id ? existing : p)) : prev.filter(p => p.id !== row.id),
+      );
+      pushNotif({
+        user_id: userId,
+        kind: 'EVENT_UPDATE',
+        title: 'Could not join event',
+        message: res.allocationError,
+        event_id: ev.id,
+      });
+    });
 
     if (needsApproval) {
       pushNotif({
@@ -985,7 +1046,199 @@ export function DataProvider({ children }: { children: ReactNode }) {
         event_id: ev.id,
       });
     }
-  }, [events, users, participants, pushNotif]);
+  }, [events, users, participants, clubAllocations, pushNotif]);
+
+  /** Raise or lower one club's reserved slots. Organizer/co-organizer only. */
+  const setClubAllocation = useCallback(async (eventId: string, clubId: string, slots: number) => {
+    const next = Math.max(0, Math.round(slots));
+    const existing = clubAllocations.find(a => a.event_id === eventId && a.club_id === clubId);
+    const optimistic: EventClubAllocation = existing
+      ? { ...existing, allocated_slots: next }
+      : {
+          id: nextId('alloc'),
+          event_id: eventId,
+          club_id: clubId,
+          allocated_slots: next,
+          initial_slots: next,
+        };
+    setClubAllocations(prev =>
+      existing ? prev.map(a => (a.id === existing.id ? optimistic : a)) : [...prev, optimistic],
+    );
+
+    const saved = await db.setClubAllocation(eventId, clubId, next);
+    if (saved) {
+      // Adopt the server row so the id/initial_slots match what persisted.
+      setClubAllocations(prev => prev.map(a => (a.id === optimistic.id ? { ...optimistic, ...saved } : a)));
+      return true;
+    }
+    setClubAllocations(prev =>
+      existing ? prev.map(a => (a.id === existing.id ? existing : a)) : prev.filter(a => a.id !== optimistic.id),
+    );
+    return false;
+  }, [clubAllocations]);
+
+  /**
+   * Release every club's unused slots now instead of waiting for the deadline.
+   * Notifies participating clubs so they know the pool just opened up.
+   */
+  const releaseClubAllocations = useCallback(async (eventId: string) => {
+    const ev = events.find(e => e.id === eventId);
+    if (!ev || ev.allocation_released_at) return false;
+
+    const stamp = now();
+    setEvents(prev => prev.map(e => (e.id === eventId ? { ...e, allocation_released_at: stamp } : e)));
+
+    const ok = await db.releaseClubAllocations(eventId);
+    if (!ok) {
+      setEvents(prev => prev.map(e => (e.id === eventId ? { ...e, allocation_released_at: undefined } : e)));
+      return false;
+    }
+
+    const clubIds = new Set([ev.organizing_club_id, ...ev.participating_club_ids]);
+    users
+      .filter(u => u.club_id && clubIds.has(u.club_id) && u.id !== ev.organizer_user_id)
+      .forEach(u => {
+        pushNotif({
+          user_id: u.id,
+          kind: 'EVENT_UPDATE',
+          title: 'Slots released',
+          message: `Unused club slots for "${ev.title}" are now open to everyone.`,
+          event_id: ev.id,
+        });
+      });
+    return true;
+  }, [events, users, pushNotif]);
+
+  // ---- Cohosting mutations -------------------------------------------------
+  // All five are thin wrappers over the RPCs: the server is authoritative, we
+  // reconcile state from the returned row (or drop it if the RPC refused). No
+  // optimistic writes here because the server enforces membership/role rules
+  // we cannot reliably reproduce client-side.
+
+  const applyCohostRow = useCallback((row: EventCohost) => {
+    setCohosts(prev => {
+      const idx = prev.findIndex(c => c.id === row.id);
+      return idx >= 0 ? prev.map(c => (c.id === row.id ? row : c)) : [...prev, row];
+    });
+  }, []);
+
+  const requestCohost = useCallback(async (eventId: string, expectedParticipants: number, message?: string) => {
+    const res = await db.requestCohost(eventId, expectedParticipants, message);
+    if (res.ok && res.row) {
+      applyCohostRow(res.row);
+      const ev = events.find(e => e.id === eventId);
+      const clubName = users.find(u => u.id === authUser?.id)?.club_name ?? 'A club';
+      // Ping the organizer only when approval is actually required.
+      if (ev && res.row.status === 'REQUESTED' && ev.organizer_user_id) {
+        pushNotif({
+          user_id: ev.organizer_user_id,
+          kind: 'JOIN_REQUEST',
+          title: 'Cohost request',
+          message: `${clubName} requested to cohost "${ev.title}".`,
+          event_id: ev.id,
+        });
+      }
+    }
+    return { ok: res.ok, error: res.error };
+  }, [events, users, authUser, applyCohostRow, pushNotif]);
+
+  const reviewCohost = useCallback(async (cohostId: string, action: 'APPROVE' | 'REJECT', notes?: string) => {
+    const res = await db.reviewCohost(cohostId, action, notes);
+    if (res.ok && res.row) {
+      applyCohostRow(res.row);
+      // If approval provisioned an allocation row, adopt it into local state
+      // so the UI reflects it without waiting for the next refresh.
+      if (action === 'APPROVE' && res.row.expected_participants > 0) {
+        setClubAllocations(prev => {
+          const found = prev.find(a => a.event_id === res.row!.event_id && a.club_id === res.row!.club_id);
+          if (found) {
+            if (found.allocated_slots >= res.row!.expected_participants) return prev;
+            return prev.map(a => a.id === found.id
+              ? { ...a, allocated_slots: res.row!.expected_participants }
+              : a);
+          }
+          const optimistic: EventClubAllocation = {
+            id: nextId('alloc'),
+            event_id: res.row!.event_id,
+            club_id: res.row!.club_id,
+            allocated_slots: res.row!.expected_participants,
+            initial_slots: res.row!.expected_participants,
+          };
+          return [...prev, optimistic];
+        });
+      }
+      // Notify the requesting club's president so they know to pay.
+      const requester = res.row.requested_by_user_id;
+      const ev = events.find(e => e.id === res.row!.event_id);
+      if (requester && ev) {
+        pushNotif({
+          user_id: requester,
+          kind: 'JOIN_APPROVED',
+          title: action === 'APPROVE' ? 'Cohost approved' : 'Cohost rejected',
+          message: action === 'APPROVE'
+            ? `Your club is approved to cohost "${ev.title}". Submit payment when ready.`
+            : `Your cohost request for "${ev.title}" was declined.${notes ? ' ' + notes : ''}`,
+          event_id: ev.id,
+        });
+      }
+    }
+    return { ok: res.ok, error: res.error };
+  }, [events, applyCohostRow, pushNotif]);
+
+  const submitCohostPayment = useCallback(async (
+    cohostId: string, method: string, reference?: string, receiptPath?: string,
+  ) => {
+    const res = await db.submitCohostPayment(cohostId, method, reference, receiptPath);
+    if (res.ok && res.row) {
+      applyCohostRow(res.row);
+      const ev = events.find(e => e.id === res.row!.event_id);
+      if (ev) {
+        pushNotif({
+          user_id: ev.organizer_user_id,
+          kind: 'EVENT_UPDATE',
+          title: 'Cohost payment submitted',
+          message: `A cohosting club submitted a payment for "${ev.title}". Verify it in the cohost dashboard.`,
+          event_id: ev.id,
+        });
+      }
+    }
+    return { ok: res.ok, error: res.error };
+  }, [events, applyCohostRow, pushNotif]);
+
+  const verifyCohostPayment = useCallback(async (
+    cohostId: string, action: 'VERIFY' | 'REJECT', notes?: string,
+  ) => {
+    const res = await db.verifyCohostPayment(cohostId, action, notes);
+    if (res.ok && res.row) {
+      applyCohostRow(res.row);
+      const requester = res.row.requested_by_user_id;
+      const ev = events.find(e => e.id === res.row!.event_id);
+      if (requester && ev) {
+        pushNotif({
+          user_id: requester,
+          kind: 'EVENT_UPDATE',
+          title: action === 'VERIFY' ? 'Payment verified' : 'Payment needs attention',
+          message: action === 'VERIFY'
+            ? `Your cohost payment for "${ev.title}" was verified. You're all set!`
+            : `Your cohost payment for "${ev.title}" was not accepted.${notes ? ' ' + notes : ''}`,
+          event_id: ev.id,
+        });
+      }
+    }
+    return { ok: res.ok, error: res.error };
+  }, [events, applyCohostRow, pushNotif]);
+
+  const cancelCohost = useCallback(async (cohostId: string, reason?: string) => {
+    const res = await db.cancelCohost(cohostId, reason);
+    if (res.ok && res.row) {
+      applyCohostRow(res.row);
+      // The server also removes the allocation row — mirror that here.
+      setClubAllocations(prev => prev.filter(
+        a => !(a.event_id === res.row!.event_id && a.club_id === res.row!.club_id),
+      ));
+    }
+    return { ok: res.ok, error: res.error };
+  }, [applyCohostRow]);
 
   const leaveEvent = useCallback((eventId: string, userId: string, reason?: string) => {
     cancelEventReminder(eventId);
@@ -1758,7 +2011,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // whenever any state or action identity actually changes, so consumers stay
   // correct — this only removes the gratuitous re-renders.
   const value = useMemo<DataContextValue>(() => ({
-      users, events: resolvedEvents, participants, invitations, impacts, applications, auditLogs, notifications, clubs, conversations, messages, readCursors, conversationStates, reactions,
+      users, events: resolvedEvents, participants, invitations, impacts, applications, auditLogs, notifications, clubs, conversations, messages, readCursors, conversationStates, reactions, clubAllocations, setClubAllocation, releaseClubAllocations, cohosts, requestCohost, reviewCohost, submitCohostPayment, verifyCohostPayment, cancelCohost,
       refresh,
       createEvent, updateEvent, updateEventStatus, resetEventApprovals, cancelEvent, approveEvent, rejectEvent, requestDistrictEventReview,
       joinEvent, leaveEvent, approveParticipant, declineParticipant, markAttendance, checkIn, checkOut, addClub,
@@ -1766,7 +2019,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       participantsFor, invitationFor, participationFor, impactFor, notificationsFor, unreadCountForUser, unreadInboxCountForUser, messagesForConversation, auditFor,
       applicationsForRole, userStats,
   }), [
-    users, resolvedEvents, participants, invitations, impacts, applications, auditLogs, notifications, clubs, conversations, messages, readCursors, conversationStates, reactions,
+    users, resolvedEvents, participants, invitations, impacts, applications, auditLogs, notifications, clubs, conversations, messages, readCursors, conversationStates, reactions, clubAllocations, setClubAllocation, releaseClubAllocations, cohosts, requestCohost, reviewCohost, submitCohostPayment, verifyCohostPayment, cancelCohost,
     refresh,
     createEvent, updateEvent, updateEventStatus, resetEventApprovals, cancelEvent, approveEvent, rejectEvent, requestDistrictEventReview,
     joinEvent, leaveEvent, approveParticipant, declineParticipant, markAttendance, checkIn, checkOut, addClub,

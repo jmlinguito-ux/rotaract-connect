@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert, Image, Modal, TextInput, KeyboardAvoidingView, Platform, Keyboard, ActivityIndicator, Vibration } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -29,6 +29,7 @@ import { openNavigationApp } from '../../utils/navigationLauncher';
 import { AppUser } from '../../types';
 import { areaOfFocusIcon, areaOfFocusLabel } from '../../data/areasOfFocus';
 import { formatTime, formatDate } from '../../utils/timeFormat';
+import { allocationState, allocatedSlotsFor, canClubRegister } from '../../utils/clubAllocation';
 import { playAlertSound } from '../../services/sound';
 
 import * as Location from 'expo-location';
@@ -60,7 +61,7 @@ export default function EventDetailScreen({ route, navigation }: Props) {
   // so its buttons clear the Android gesture/nav bar instead of sitting under it.
   const insets = useSafeAreaInsets();
   const keyboardOffset = useKeyboardOffset();
-  const { events, clubs, users, notifications, participantsFor, participationFor, joinEvent, leaveEvent, checkIn, checkOut, impactFor, approveEvent, rejectEvent, cancelEvent, requestDistrictEventReview, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, approveParticipant, declineParticipant, invitationFor, respondInvitation, refresh } = useData();
+  const { events, clubs, users, notifications, participants, clubAllocations, cohosts, participantsFor, participationFor, joinEvent, leaveEvent, checkIn, checkOut, impactFor, approveEvent, rejectEvent, cancelEvent, requestDistrictEventReview, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, approveParticipant, declineParticipant, invitationFor, respondInvitation, refresh } = useData();
 
   const [messageModalVisible, setMessageModalVisible] = useState(false);
   const [messageText, setMessageText] = useState('');
@@ -72,6 +73,9 @@ export default function EventDetailScreen({ route, navigation }: Props) {
   const [selectedUser, setSelectedUser] = useState<AppUser | null>(null);
   // Refusal notice, shown instead of letting the write fail into the sync banner.
   const [blockedName, setBlockedName] = useState<string | null>(null);
+  // Club-allocation refusal. Uses the dialog rather than Alert so it is visible
+  // in the web build too, where Alert.alert is a no-op.
+  const [allocationBlock, setAllocationBlock] = useState<string | null>(null);
   const [approvalConfirmVisible, setApprovalConfirmVisible] = useState(false);
   const [cancelModalVisible, setCancelModalVisible] = useState(false);
   const [rejectModalVisible, setRejectModalVisible] = useState(false);
@@ -173,6 +177,40 @@ export default function EventDetailScreen({ route, navigation }: Props) {
   const end = new Date(event.end_datetime);
 
   const joinedParticipantsCount = allParticipants.filter(p => p.status === 'JOINED').length;
+
+  // How capacity is split between clubs. Members see their own club's remaining
+  // slots; organizers get a link through to manage the split.
+  const allocationInfo = useMemo(() => {
+    if (!event || (event.allocation_mode ?? 'NONE') === 'NONE') return null;
+    const st = allocationState(event, clubAllocations, participants, users);
+    const myClub = user?.club_id;
+    const mine = myClub
+      ? st.perClub.find(r => r.club_id === myClub)
+        ?? { allocated: allocatedSlotsFor(event, clubAllocations, myClub), used: 0, remaining: allocatedSlotsFor(event, clubAllocations, myClub) }
+      : null;
+    const modeLabel = st.mode === 'SOFT' ? 'Soft' : 'Hard';
+    const summary = mine
+      ? `${modeLabel} allocation · your club: ${mine.used}/${mine.allocated} used`
+        + (st.released ? ' · unused slots released' : ` · ${st.reserved} reserved overall`)
+      : `${modeLabel} allocation · ${st.reserved} slots reserved across clubs`;
+    return { summary, state: st, mine };
+  }, [event, clubAllocations, participants, users, user]);
+
+  // Cohosting summary shown in the Participation section. Distinct memo so it
+  // does not recompute every time allocation numbers change.
+  const cohostRows = useMemo(
+    () => (event ? cohosts.filter(c => c.event_id === event.id) : []),
+    [cohosts, event],
+  );
+  const cohostSummary = useMemo(() => {
+    const approved = cohostRows.filter(r => r.status === 'APPROVED');
+    const pending = cohostRows.filter(r => r.status === 'REQUESTED');
+    if (!approved.length && !pending.length) return 'Cohosting open — no requests yet';
+    const parts: string[] = [];
+    if (approved.length) parts.push(`${approved.length} approved cohost${approved.length === 1 ? '' : 's'}`);
+    if (pending.length) parts.push(`${pending.length} pending`);
+    return parts.join(' · ');
+  }, [cohostRows]);
   const pendingParticipants = allParticipants.filter(p => p.status === 'PENDING');
   const userParticipation = user ? participationFor(eventId, user.id) : undefined;
   const impact = impactFor(eventId);
@@ -685,6 +723,16 @@ export default function EventDetailScreen({ route, navigation }: Props) {
         return;
       }
 
+      // 1b. Club allocation: the club may be out of its reserved slots even
+      // though the event as a whole still has room.
+      if (user.club_id) {
+        const verdict = canClubRegister(event, clubAllocations, participants, users, user.club_id, new Date(), user.id);
+        if (!verdict.allowed) {
+          setAllocationBlock(verdict.reason ?? 'No slots are available for your club right now.');
+          return;
+        }
+      }
+
       // 2. Club membership verification needed
       if (
         (event.visibility === 'VERIFIED_ROTARACTORS' || event.visibility === 'CLUB_ONLY') &&
@@ -861,16 +909,16 @@ export default function EventDetailScreen({ route, navigation }: Props) {
               style={[
                 styles.completedPointsBanner,
                 {
-                  backgroundColor: isNightMode ? 'rgba(245, 158, 11, 0.12)' : '#FEF3C7',
-                  borderColor: isNightMode ? 'rgba(245, 158, 11, 0.35)' : '#F59E0B',
+                  backgroundColor: isNightMode ? '#451A0344' : '#FEF3C7',
+                  borderColor: isNightMode ? '#F59E0B66' : '#F59E0B',
                 },
               ]}
             >
               <View style={styles.completedPointsHeader}>
-                <Ionicons name="trophy" size={20} color={isNightMode ? themeColors.warning : '#B45309'} />
-                <Text style={[styles.completedPointsTitle, { color: isNightMode ? themeColors.warning : '#78350F' }]}>Event Completed & Scoreboard Points Released!</Text>
+                <Ionicons name="trophy" size={20} color={isNightMode ? '#FBBF24' : '#B45309'} />
+                <Text style={[styles.completedPointsTitle, { color: isNightMode ? '#FCD34D' : '#78350F' }]}>Event Completed & Scoreboard Points Released!</Text>
               </View>
-              <Text style={[styles.completedPointsSub, { color: isNightMode ? themeColors.textMuted : '#92400E' }]}>
+              <Text style={[styles.completedPointsSub, { color: isNightMode ? '#FDE68A' : '#92400E' }]}>
                 {event.event_type === 'DISTRICT_EVENT'
                   ? '🏆 District Event: +500 PTS awarded to organizers, +200 PTS to attendees (+20 PTS/hr). Event details are locked.'
                   : '🎉 Standard Event: +100 PTS awarded to organizers, +50 PTS to attendees (+10 PTS/hr). Event details are locked.'}
@@ -1051,54 +1099,6 @@ export default function EventDetailScreen({ route, navigation }: Props) {
             </View>
           )}
 
-          {isOrganizer && pendingParticipants.length > 0 && (
-            <View style={[styles.pendingReviewBanner, { backgroundColor: isNightMode ? themeColors.cardBg : '#FFFBEB', borderColor: isNightMode ? themeColors.border : '#FCD34D' }]}>
-              <View style={styles.pendingReviewHeader}>
-                <Ionicons name="person-add" size={20} color={isNightMode ? themeColors.warning : '#B45309'} />
-                <Text style={[styles.pendingReviewTitle, { color: isNightMode ? themeColors.warning : '#B45309' }]}>
-                  {pendingParticipants.length} Pending Join {pendingParticipants.length === 1 ? 'Request' : 'Requests'}
-                </Text>
-              </View>
-              <Text style={[styles.pendingReviewSub, { color: themeColors.textMuted }]}>
-                Review applicant profiles below and approve them for this event.
-              </Text>
-              <View style={styles.pendingCardList}>
-                {pendingParticipants.map(p => {
-                  const u = users.find(x => x.id === p.user_id);
-                  return (
-                    <TouchableOpacity
-                      key={p.id}
-                      style={[styles.pendingUserCard, { backgroundColor: isNightMode ? themeColors.surface : '#fff', borderColor: isNightMode ? themeColors.border : '#FDE68A' }]}
-                      onPress={() => u && setSelectedUser(u)}
-                      activeOpacity={0.8}
-                    >
-                      <View style={[styles.pendingUserAvatar, { backgroundColor: themeColors.primary }]}>
-                        <Text style={styles.pendingAvatarText}>
-                          {u?.full_name.split(' ').map(x => x[0]).slice(0, 2).join('') || '?'}
-                        </Text>
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.pendingUserName, { color: themeColors.text }]}>{u?.full_name || 'Member'}</Text>
-                        <Text style={[styles.pendingUserMeta, { color: themeColors.textMuted }]}>{u?.club_name} • {u?.position}</Text>
-                      </View>
-                      {user && (
-                        <View style={{ flexDirection: 'row', gap: 6 }}>
-                          <TouchableOpacity style={styles.inlineApproveBtn} onPress={() => approveParticipant(p.id, user)}>
-                            <Ionicons name="checkmark-circle" size={14} color="#fff" />
-                            <Text style={styles.inlineApproveText}>Approve</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity style={styles.inlineDeclineBtn} onPress={() => setDeclineTarget({ participantId: p.id, applicantName: u?.full_name })}>
-                            <Ionicons name="close-circle" size={14} color={colors.danger} />
-                          </TouchableOpacity>
-                        </View>
-                      )}
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </View>
-          )}
-
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', flex: 1 }}>
               <StatusBadge status={event.status} />
@@ -1180,96 +1180,256 @@ export default function EventDetailScreen({ route, navigation }: Props) {
 
             {!isGpsEnabled && isJoined && (
               <TouchableOpacity
-                style={[styles.gpsWarningPill, { backgroundColor: isNightMode ? themeColors.cardBg : '#FFFBEB', borderColor: isNightMode ? themeColors.border : '#FCD34D' }]}
+                style={[styles.gpsWarningPill, { backgroundColor: isNightMode ? '#451A0344' : '#FFFBEB', borderColor: isNightMode ? '#F59E0B66' : '#FCD34D' }]}
                 onPress={() => setLocationModalVisible(true)}
               >
-                <Ionicons name="warning" size={16} color="#D97706" />
+                <Ionicons name="warning" size={16} color={isNightMode ? '#FBBF24' : '#D97706'} />
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.gpsWarningTitle, { color: isNightMode ? themeColors.warning : '#92400E' }]}>
+                  <Text style={[styles.gpsWarningTitle, { color: isNightMode ? '#FCD34D' : '#92400E' }]}>
                     Location Services Disabled
                   </Text>
-                  <Text style={[styles.gpsWarningSub, { color: themeColors.textMuted }]}>
+                  <Text style={[styles.gpsWarningSub, { color: isNightMode ? '#FDE68A' : '#92400E' }]}>
                     Enable GPS for 1-tap on-site verified check-in.
                   </Text>
                 </View>
-                <Ionicons name="chevron-forward" size={14} color="#D97706" />
+                <Ionicons name="chevron-forward" size={14} color={isNightMode ? '#FBBF24' : '#D97706'} />
               </TouchableOpacity>
             )}
           </Section>
 
           <Section title="Organizer & Team Members">
-            {teamByClub.map(({ club, role, members }) => (
-              <View key={club.id} style={styles.teamClubBlock}>
-                <TouchableOpacity
-                  style={styles.infoRow}
-                  onPress={() => navigation.navigate('ClubDetail', { clubId: club.id })}
+            <View style={styles.teamCardsContainer}>
+              {teamByClub.map(({ club, role, members }) => (
+                <View
+                  key={club.id}
+                  style={[
+                    styles.teamClubCard,
+                    {
+                      backgroundColor: isNightMode ? themeColors.cardBg : '#fff',
+                      borderColor: themeColors.border,
+                    },
+                  ]}
                 >
-                  <Ionicons name="business-outline" size={16} color={themeColors.textMuted} />
-                  <Text style={[styles.infoText, { color: themeColors.text }]} numberOfLines={1}>
-                    {club.club_name} <Text style={[styles.teamRoleInline, { color: themeColors.textMuted }]}>· {role}</Text>
-                  </Text>
-                </TouchableOpacity>
-
-                {members.map(({ user: member, isCreator }) => (
                   <TouchableOpacity
-                    key={member.id}
-                    style={styles.teamMemberRow}
-                    onPress={() => setSelectedUser(member)}
+                    style={styles.teamClubHeader}
+                    onPress={() => navigation.navigate('ClubDetail', { clubId: club.id })}
+                    activeOpacity={0.7}
                   >
-                    <UserAvatar user={member} size={28} />
-                    <Text style={[styles.teamMemberLine, { color: themeColors.text }]} numberOfLines={1}>
-                      {member.full_name}
-                      <Text style={[styles.teamMemberMeta, { color: themeColors.textMuted }]}> · {member.position}</Text>
-                      {isCreator && <Text style={[styles.teamCreatorInline, { color: themeColors.primary }]}> · Creator</Text>}
+                    <View style={[styles.teamClubIconWrap, { backgroundColor: themeColors.primary + '18' }]}>
+                      <Ionicons name="business" size={14} color={themeColors.primary} />
+                    </View>
+                    <Text style={[styles.teamClubTitle, { color: themeColors.text }]} numberOfLines={1}>
+                      {club.club_name}
                     </Text>
-                    <VerifiedCheck user={member} size={13} />
+                    <View style={[styles.teamRoleBadge, { backgroundColor: isNightMode ? themeColors.surface : '#F1F5F9' }]}>
+                      <Text style={[styles.teamRoleBadgeText, { color: themeColors.textMuted }]}>{role}</Text>
+                    </View>
                   </TouchableOpacity>
-                ))}
-              </View>
-            ))}
+
+                  <View style={styles.teamMembersList}>
+                    {members.map(({ user: member, isCreator }) => (
+                      <TouchableOpacity
+                        key={member.id}
+                        style={styles.teamMemberItem}
+                        onPress={() => setSelectedUser(member)}
+                        activeOpacity={0.7}
+                      >
+                        <UserAvatar user={member} size={34} />
+                        <View style={{ flex: 1 }}>
+                          <View style={styles.teamMemberNameRow}>
+                            <Text style={[styles.teamMemberName, { color: themeColors.text }]} numberOfLines={1}>
+                              {member.full_name}
+                            </Text>
+                            <VerifiedCheck user={member} size={13} />
+                          </View>
+                          <Text style={[styles.teamMemberRoleText, { color: themeColors.textMuted }]} numberOfLines={1}>
+                            {member.position || 'Member'}
+                          </Text>
+                        </View>
+                        {isCreator && (
+                          <View style={[styles.creatorBadge, { backgroundColor: themeColors.primary + '18' }]}>
+                            <Ionicons name="star" size={11} color={themeColors.primary} />
+                            <Text style={[styles.creatorBadgeText, { color: themeColors.primary }]}>Creator</Text>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              ))}
+            </View>
           </Section>
 
           <Section title="Participation">
-            <TouchableOpacity style={styles.partRow} onPress={() => navigation.navigate('Participants', { eventId })}>
-              <View style={{ flex: 1 }}>
-                <InfoRow icon="person-outline" text={`${joinedParticipantsCount} of ${event.max_participants} spots filled`} />
-              </View>
-              <View style={styles.viewLink}>
-                <Text style={[styles.viewLinkText, { color: themeColors.primary }]}>View list</Text>
-                <Ionicons name="chevron-forward" size={14} color={themeColors.primary} />
-              </View>
-            </TouchableOpacity>
-
-            <View style={[styles.progressBar, { backgroundColor: isNightMode ? themeColors.surface : '#E2E8F0' }]}>
-              <View style={[styles.progressFill, { backgroundColor: themeColors.primary, width: `${Math.min(100, (joinedParticipantsCount / event.max_participants) * 100)}%` }]} />
-            </View>
-
-            {/* 🎟️ Digital Event Pass Button for Joined/Attended Members */}
-            {user && (isJoined || userParticipation?.attendance_status === 'ATTENDED') && userParticipation && (
-              <TouchableOpacity
+            <View style={styles.partCardsWrap}>
+              {/* Card 1: Main Capacity & Attendees Overview */}
+              <View
                 style={[
-                  styles.passCardBtn,
+                  styles.partCard,
                   {
-                    backgroundColor: isNightMode ? themeColors.cardBg : '#FDF2F7',
-                    borderColor: isNightMode ? themeColors.border : '#F9D6E5',
+                    backgroundColor: isNightMode ? themeColors.cardBg : '#fff',
+                    borderColor: themeColors.border,
                   },
                 ]}
-                onPress={() => setPassModalVisible(true)}
               >
-                <View style={[styles.passIconWrap, { backgroundColor: themeColors.primary }]}>
-                  <Ionicons name="ticket" size={18} color="#fff" />
+                <TouchableOpacity
+                  style={styles.partCardHeader}
+                  onPress={() => navigation.navigate('Participants', { eventId })}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.partIconWrap, { backgroundColor: themeColors.primary + '18' }]}>
+                    <Ionicons name="people" size={18} color={themeColors.primary} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.partCardTitle, { color: themeColors.text }]}>
+                      {joinedParticipantsCount} of {event.max_participants} spots filled
+                    </Text>
+                    <Text style={[styles.partCardSub, { color: themeColors.textMuted }]}>
+                      {event.max_participants - joinedParticipantsCount > 0
+                        ? `${event.max_participants - joinedParticipantsCount} spots available`
+                        : 'Event reached full capacity'}
+                    </Text>
+                  </View>
+                  <View style={[styles.viewListChip, { backgroundColor: isNightMode ? themeColors.surface : themeColors.primary + '12' }]}>
+                    <Text style={[styles.viewListText, { color: themeColors.primary }]}>View list</Text>
+                    <Ionicons name="chevron-forward" size={13} color={themeColors.primary} />
+                  </View>
+                </TouchableOpacity>
+
+                {/* Capacity Progress Bar */}
+                <View style={[styles.partProgressBar, { backgroundColor: isNightMode ? themeColors.surface : '#E2E8F0' }]}>
+                  <View
+                    style={[
+                      styles.partProgressFill,
+                      {
+                        backgroundColor: themeColors.primary,
+                        width: `${Math.min(100, (joinedParticipantsCount / Math.max(1, event.max_participants)) * 100)}%`,
+                      },
+                    ]}
+                  />
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.passCardTitle, { color: themeColors.text }]}>Digital Event Pass</Text>
-                  <Text style={[styles.passCardSub, { color: themeColors.textMuted }]}>
-                    {userParticipation.attendance_status === 'ATTENDED' || userParticipation.checked_in_at
-                      ? '✓ On-site attendance verified • Tap to view pass'
-                      : '🎟️ Confirmed attendee • Tap to display check-in ticket'}
-                  </Text>
-                </View>
-                <Ionicons name="chevron-forward" size={16} color={themeColors.primary} />
-              </TouchableOpacity>
-            )}
+
+                {/* Sub-block: Club Quota Allocation info if active */}
+                {allocationInfo && (
+                  <View
+                    style={[
+                      styles.allocationInnerBlock,
+                      {
+                        backgroundColor: isNightMode ? themeColors.surface : '#F8FAFC',
+                        borderColor: isNightMode ? themeColors.border : '#E2E8F0',
+                      },
+                    ]}
+                  >
+                    <View style={styles.allocationHeaderRow}>
+                      <View
+                        style={[
+                          styles.allocationBadge,
+                          {
+                            backgroundColor:
+                              allocationInfo.state.mode === 'HARD'
+                                ? isNightMode ? '#78350F44' : '#FEF3C7'
+                                : themeColors.primary + '18',
+                          },
+                        ]}
+                      >
+                        <Ionicons
+                          name="git-branch"
+                          size={12}
+                          color={allocationInfo.state.mode === 'HARD' ? (isNightMode ? '#FDE68A' : '#B45309') : themeColors.primary}
+                        />
+                        <Text
+                          style={[
+                            styles.allocationBadgeText,
+                            {
+                              color:
+                                allocationInfo.state.mode === 'HARD'
+                                  ? isNightMode ? '#FDE68A' : '#B45309'
+                                  : themeColors.primary,
+                            },
+                          ]}
+                        >
+                          {allocationInfo.state.mode === 'SOFT' ? 'Soft Quota Allocation' : 'Hard Quota Allocation'}
+                        </Text>
+                      </View>
+
+                      {isOrganizer && (
+                        <TouchableOpacity
+                          style={styles.manageAllocBtn}
+                          onPress={() => navigation.navigate('ClubAllocation', { eventId })}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={[styles.manageAllocText, { color: themeColors.primary }]}>Manage</Text>
+                          <Ionicons name="chevron-forward" size={13} color={themeColors.primary} />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+
+                    <Text style={[styles.allocationDescText, { color: themeColors.text }]}>
+                      {allocationInfo.mine
+                        ? `Your club: ${allocationInfo.mine.used}/${allocationInfo.mine.allocated} slots used`
+                        : `Reserved across clubs: ${allocationInfo.state.reserved} slots`}
+                      {allocationInfo.state.released
+                        ? ' • Unused slots released'
+                        : ` • ${allocationInfo.state.reserved} reserved overall`}
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              {/* Card 2: Co-Hosting Clubs Card */}
+              {(event.cohosting_enabled || cohostRows.length > 0) && (
+                <TouchableOpacity
+                  style={[
+                    styles.commCard,
+                    {
+                      backgroundColor: isNightMode ? themeColors.cardBg : '#fff',
+                      borderColor: isNightMode ? themeColors.border : '#E2E8F0',
+                    },
+                  ]}
+                  onPress={() => navigation.navigate('Cohosting', { eventId })}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.commIconWrap, { backgroundColor: '#3B82F618' }]}>
+                    <Ionicons name="business" size={18} color="#2563EB" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.commCardTitle, { color: themeColors.text }]}>Co-Hosting Clubs</Text>
+                    <Text style={[styles.commCardSub, { color: themeColors.textMuted }]}>
+                      {cohostSummary}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color={themeColors.textMuted} />
+                </TouchableOpacity>
+              )}
+
+              {/* Card 3: Digital Event Pass Button for Joined/Attended Members */}
+              {user && (isJoined || userParticipation?.attendance_status === 'ATTENDED') && userParticipation && (
+                <TouchableOpacity
+                  style={[
+                    styles.passCardBtn,
+                    {
+                      backgroundColor: isNightMode ? themeColors.cardBg : '#FDF2F7',
+                      borderColor: isNightMode ? themeColors.border : '#F9D6E5',
+                    },
+                  ]}
+                  onPress={() => setPassModalVisible(true)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.passIconWrap, { backgroundColor: themeColors.primary }]}>
+                    <Ionicons name="ticket" size={18} color="#fff" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.passCardTitle, { color: themeColors.text }]}>Digital Event Pass</Text>
+                    <Text style={[styles.passCardSub, { color: themeColors.textMuted }]}>
+                      {userParticipation.attendance_status === 'ATTENDED' || userParticipation.checked_in_at
+                        ? '✓ On-site attendance verified • Tap to view pass'
+                        : '🎟️ Confirmed attendee • Tap to display check-in ticket'}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color={themeColors.primary} />
+                </TouchableOpacity>
+              )}
+            </View>
           </Section>
 
           {/* Unified Communication & Community Section */}
@@ -1871,6 +2031,13 @@ export default function EventDetailScreen({ route, navigation }: Props) {
         onCancel={() => setLateLeaveModalVisible(false)}
       />
       <ConfirmDialog
+        visible={!!allocationBlock}
+        title="No slots available"
+        message={allocationBlock ?? undefined}
+        onClose={() => setAllocationBlock(null)}
+        confirmLabel="OK"
+      />
+      <ConfirmDialog
         visible={!!blockedName}
         title="Messaging unavailable"
         message={blockedName ? inquiryBlockedMessage(blockedName) : undefined}
@@ -2245,12 +2412,21 @@ const styles = StyleSheet.create({
   completedPointsTitle: { fontSize: 14, fontWeight: '800', color: '#78350F' },
   completedPointsSub: { fontSize: 12, color: '#92400E', fontWeight: '600' },
   coOrgDetailRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4, paddingHorizontal: 8, borderRadius: 8, backgroundColor: colors.surface },
-  teamClubBlock: { marginBottom: 6 },
-  teamRoleInline: { color: colors.textMuted, fontWeight: '700' },
-  teamMemberRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
-  teamMemberLine: { flexShrink: 1, fontSize: 13, color: colors.text, fontWeight: '700' },
-  teamMemberMeta: { fontWeight: '400', color: colors.textMuted },
-  teamCreatorInline: { fontWeight: '700', color: colors.primary },
+  teamCardsContainer: { gap: 10, marginTop: 4 },
+  teamClubCard: { padding: 14, borderRadius: 16, borderWidth: 1 },
+  teamClubHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: colors.border + '33' },
+  teamClubIconWrap: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  teamClubTitle: { fontSize: 13, fontWeight: '700', flex: 1 },
+  teamRoleBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  teamRoleBadgeText: { fontSize: 11, fontWeight: '700' },
+  teamMembersList: { gap: 10, paddingTop: 10 },
+  teamMemberItem: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  teamMemberNameRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  teamMemberName: { fontSize: 13, fontWeight: '700' },
+  teamMemberRoleText: { fontSize: 11, marginTop: 1 },
+  creatorBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6 },
+  creatorBadgeText: { fontSize: 10, fontWeight: '800' },
+
   coOrgDetailName: { fontSize: 13, fontWeight: '700', color: colors.text },
   coOrgDetailRole: { fontSize: 11, color: colors.textMuted, flex: 1, textAlign: 'right' },
   impactCard: { backgroundColor: '#FDF2F7', padding: 14, borderRadius: 14, marginTop: 16, borderWidth: 1, borderColor: '#F9D6E5' },
@@ -2265,11 +2441,26 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 12, fontWeight: '800', color: colors.primary, letterSpacing: 1, marginBottom: 8 },
   infoRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },
   infoText: { fontSize: 14, color: colors.text },
-  partRow: { flexDirection: 'row', alignItems: 'center' },
-  viewLink: { flexDirection: 'row', alignItems: 'center', gap: 2 },
-  viewLinkText: { fontSize: 12, fontWeight: '700', color: colors.primary },
-  progressBar: { height: 6, backgroundColor: colors.surface, borderRadius: 3, marginTop: 8, overflow: 'hidden' },
-  progressFill: { height: '100%', backgroundColor: colors.primary },
+
+  // Participation Section MD3 Card Styles
+  partCardsWrap: { gap: 10, marginTop: 4 },
+  partCard: { padding: 14, borderRadius: 16, borderWidth: 1 },
+  partCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  partIconWrap: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  partCardTitle: { fontSize: 13, fontWeight: '800' },
+  partCardSub: { fontSize: 11, marginTop: 2 },
+  viewListChip: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  viewListText: { fontSize: 12, fontWeight: '700' },
+  partProgressBar: { height: 6, borderRadius: 3, marginTop: 12, marginBottom: 4, overflow: 'hidden' },
+  partProgressFill: { height: '100%' },
+  allocationInnerBlock: { marginTop: 10, padding: 10, borderRadius: 12, borderWidth: 1 },
+  allocationHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
+  allocationBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  allocationBadgeText: { fontSize: 10, fontWeight: '800', letterSpacing: 0.2 },
+  manageAllocBtn: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingVertical: 2, paddingHorizontal: 4 },
+  manageAllocText: { fontSize: 11, fontWeight: '700' },
+  allocationDescText: { fontSize: 11, lineHeight: 16, marginTop: 2 },
+
   organizerSection: { marginTop: 24, padding: 14, backgroundColor: '#fff', borderRadius: 14, borderWidth: 1, borderColor: colors.border },
   organizerBtns: { gap: 8, marginTop: 8 },
   orgBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, borderRadius: 10, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },

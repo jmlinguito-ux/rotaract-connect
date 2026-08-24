@@ -13,7 +13,7 @@ import {
 import { SafeAreaProvider, SafeAreaView, initialWindowMetrics } from 'react-native-safe-area-context';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useIsFocused } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AreaOfFocus, RotaractEvent, Club } from '../../types';
 import { RootStackParamList } from '../../navigation/types';
@@ -101,6 +101,7 @@ function isDateInRange(startIso: string, option: DateOption): boolean {
 
 export default function MapScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const isFocused = useIsFocused();
   const { events, clubs, users, participants } = useData();
   const { user } = useAuth();
   const { colors: themeColors } = useTheme();
@@ -120,6 +121,8 @@ export default function MapScreen() {
   const [userCoords, setUserCoords] = useState<{ latitude: number; longitude: number } | null>(null);
 
   useEffect(() => {
+    if (!isFocused) return;
+
     (async () => {
       const userClub = clubs.find(c => c.id === user?.club_id);
       const defaultFallback =
@@ -128,7 +131,10 @@ export default function MapScreen() {
           : { latitude: 14.6500, longitude: 121.0800 };
 
       try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
+        // Stability Refinement: Switch from request (active) to get (passive) check.
+        // requestForegroundPermissionsAsync triggers a background system focus-steal
+        // on some devices even if permission is already granted, killing the keyboard.
+        const { status } = await Location.getForegroundPermissionsAsync();
         if (status === 'granted') {
           // 1. Instantly get last known location from OS cache (0ms)
           const lastLoc = await Location.getLastKnownPositionAsync();
@@ -145,7 +151,7 @@ export default function MapScreen() {
         setUserCoords(defaultFallback);
       }
     })();
-  }, [user?.club_id, clubs]);
+  }, [user?.club_id, clubs, isFocused]);
 
   const activeFilterCount =
     selectedDistances.length + selectedZones.length + selectedOpenness.length + selectedAreas.length + selectedDates.length;

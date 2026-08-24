@@ -92,9 +92,9 @@ export function CoverPhotoPicker({ value, onChange }: CoverPhotoPickerProps) {
               <Text style={styles.changeText}>Reposition / Change</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.removeBtn} onPress={() => onChange(undefined)}>
-              <Ionicons name="trash-outline" size={14} color={colors.danger} />
-              <Text style={styles.removeText}>Remove</Text>
+            <TouchableOpacity style={[styles.removeBtn, { borderColor: themeColors.danger }]} onPress={() => onChange(undefined)}>
+              <Ionicons name="trash-outline" size={14} color={themeColors.danger} />
+              <Text style={[styles.removeText, { color: themeColors.danger }]}>Remove</Text>
             </TouchableOpacity>
           </View>
         </View>

@@ -2,6 +2,7 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../../theme/colors';
+import { useTheme } from '../../context/ThemeContext';
 
 export type LocationValue = {
   latitude: number;
@@ -152,28 +153,32 @@ export function isDistrict3800Region(lat: number, lng: number, city?: string): b
  * filled from that selection rather than typed, so they're shown, not edited.
  */
 export function LocationSummary({ value }: { value: LocationValue }) {
+  const { colors: themeColors, isNightMode } = useTheme();
   if (!value.address && !value.city) return null;
 
   const status = getDistrict3800Status(value);
 
   return (
-    <View style={styles.summary}>
-      <Ionicons name="location" size={14} color={colors.primary} />
+    <View style={[styles.summary, { backgroundColor: themeColors.primary + '10', borderColor: themeColors.primary + '2E' }]}>
+      <Ionicons name="location" size={14} color={themeColors.primary} />
       <View style={{ flex: 1 }}>
-        <Text style={styles.summaryTitle} numberOfLines={2}>
+        <Text style={[styles.summaryTitle, { color: themeColors.text }]} numberOfLines={2}>
           {[value.address, value.city].filter(Boolean).join(', ')}
         </Text>
-        <Text style={styles.coordsText}>
+        <Text style={[styles.coordsText, { color: themeColors.textMuted }]}>
           {value.latitude.toFixed(5)}, {value.longitude.toFixed(5)}
         </Text>
         <View style={styles.territoryRow}>
-          <View style={[styles.territoryBadge, { backgroundColor: status.isD3800 ? '#EBF9F3' : '#FFF4E5' }]}>
+          <View style={[
+            styles.territoryBadge,
+            { backgroundColor: status.isD3800 ? (isNightMode ? '#064E3B' : '#EBF9F3') : (isNightMode ? '#451A03' : '#FFF4E5') }
+          ]}>
             <Ionicons
               name={status.isD3800 ? 'shield-checkmark' : 'alert-circle-outline'}
               size={12}
-              color={status.isD3800 ? '#10B981' : '#F59E0B'}
+              color={status.isD3800 ? themeColors.success : themeColors.warning}
             />
-            <Text style={[styles.territoryBadgeText, { color: status.isD3800 ? '#10B981' : '#B45309' }]}>
+            <Text style={[styles.territoryBadgeText, { color: status.isD3800 ? themeColors.success : (isNightMode ? '#FDE68A' : '#B45309') }]}>
               {status.badgeText}
             </Text>
           </View>
@@ -184,15 +189,12 @@ export function LocationSummary({ value }: { value: LocationValue }) {
 }
 
 export const styles = StyleSheet.create({
-  label: { fontSize: 13, fontWeight: '600', color: colors.text, marginTop: 14, marginBottom: 6 },
+  label: { fontSize: 13, fontWeight: '600', marginTop: 14, marginBottom: 6 },
   input: {
     borderWidth: 1,
-    borderColor: colors.border,
     borderRadius: 12,
     padding: 14,
     fontSize: 15,
-    backgroundColor: colors.surface,
-    color: colors.text,
   },
   summary: {
     flexDirection: 'row',
@@ -202,12 +204,10 @@ export const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 12,
-    backgroundColor: colors.primary + '10',
     borderWidth: 1,
-    borderColor: colors.primary + '2E',
   },
-  summaryTitle: { fontSize: 13, fontWeight: '600', color: colors.text },
-  coordsText: { fontSize: 11, color: colors.textMuted, fontVariant: ['tabular-nums'], marginTop: 2 },
+  summaryTitle: { fontSize: 13, fontWeight: '600' },
+  coordsText: { fontSize: 11, fontVariant: ['tabular-nums'], marginTop: 2 },
   territoryRow: { marginTop: 6, flexDirection: 'row' },
   territoryBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   territoryBadgeText: { fontSize: 10, fontWeight: '700' },
@@ -218,34 +218,31 @@ export const styles = StyleSheet.create({
   suggestions: {
     marginTop: 6,
     borderWidth: 1,
-    borderColor: colors.border,
     borderRadius: 12,
-    backgroundColor: colors.bg,
     overflow: 'hidden',
   },
   suggestion: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 11 },
-  suggestionDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
-  suggestionTitle: { fontSize: 14, fontWeight: '600', color: colors.text },
-  suggestionSub: { fontSize: 11, color: colors.textMuted, marginTop: 1 },
-  hint: { fontSize: 12, color: colors.textMuted, marginTop: 6 },
-  error: { fontSize: 12, color: colors.danger, marginTop: 6 },
+  suggestionDivider: { borderTopWidth: StyleSheet.hairlineWidth },
+  suggestionTitle: { fontSize: 14, fontWeight: '600' },
+  suggestionSub: { fontSize: 11, marginTop: 1 },
+  hint: { fontSize: 12, marginTop: 6 },
+  error: { fontSize: 12, marginTop: 6 },
   mapWrap: {
     height: 220,
     borderRadius: 12,
     overflow: 'hidden',
     marginTop: 10,
     borderWidth: 1,
-    borderColor: colors.border,
     backgroundColor: '#E8EEF5',
   },
   mapHint: {
     position: 'absolute',
     left: 10,
     bottom: 10,
-    backgroundColor: 'rgba(255,255,255,0.94)',
+    backgroundColor: 'rgba(255,255,255,0.92)',
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 10,
   },
-  mapHintText: { fontSize: 11, fontWeight: '600', color: colors.text },
+  mapHintText: { fontSize: 11, fontWeight: '700', color: '#1A1A1A' },
 });

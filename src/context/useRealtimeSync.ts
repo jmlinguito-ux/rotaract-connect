@@ -39,6 +39,10 @@ export function useRealtimeSync({
   const usersRef = useRef<AppUser[]>(users);
   useEffect(() => { usersRef.current = users; }, [users]);
 
+  // Track processed event IDs to prevent double side-effects (sounds/banners)
+  // from race conditions or functional state updates.
+  const processedIdsRef = useRef<Set<string>>(new Set());
+
   useEffect(() => {
     if (!isAuthenticated || !authUser) return;
     const uid = authUser.id;
@@ -99,30 +103,34 @@ export function useRealtimeSync({
       .channel('rt-messages')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'direct_messages' }, payload => {
         const msg = mapMessage(payload.new);
-        setMessages(prev => {
-          if (prev.some(m => m.id === msg.id)) return prev;
+
+        // Side effects (sound/notifications) must happen OUTSIDE of setState.
+        // Track ID to ensure we only play sound once even if functional setState re-runs.
+        if (!processedIdsRef.current.has(msg.id)) {
+          processedIdsRef.current.add(msg.id);
+
           if (authUser?.id && msg.sender_id !== authUser.id) {
             const isTargetRecipient = !msg.receiver_id || msg.receiver_id === authUser.id;
             if (isTargetRecipient) {
               const isCurrentlyInChat = getActiveChatConversation() === msg.conversation_id;
-              if (!isCurrentlyInChat) {
-                if (msg.text?.startsWith('🚨')) {
-                  playAlertSound('HIGH');
-                } else if (msg.is_broadcast || msg.text?.startsWith('📢')) {
-                  playAlertSound('ALERT');
-                } else {
-                  playAlertSound('CHIME');
-                }
-                // Only post an OS banner when the app is not actively in the foreground.
-                // When active, the realtime list update is immediately visible and
-                // expo-audio already played the sound — a banner here is redundant and
-                // causes a second sound via the OS notification channel.
-                if (AppState.currentState !== 'active') {
-                  notifyChatMessage(msg);
-                }
+              if (msg.text?.startsWith('🚨')) {
+                playAlertSound('HIGH');
+              } else if (msg.is_broadcast || msg.text?.startsWith('📢')) {
+                playAlertSound('ALERT');
+              } else {
+                playAlertSound('CHIME');
               }
+
+              // SUPPRESSED: notifyChatMessage(msg) is removed here to avoid
+              // duplication with the server-sent push notification. The server
+              // handles all background/killed notifications more reliably (e.g.
+              // respecting mute states).
             }
           }
+        }
+
+        setMessages(prev => {
+          if (prev.some(m => m.id === msg.id)) return prev;
           return [...prev, msg];
         });
       })
@@ -148,21 +156,31 @@ export function useRealtimeSync({
           conversation_id: n.conversation_id ?? undefined, is_read: n.is_read,
           created_at: n.created_at, priority: n.priority ?? undefined,
         };
+
+        // Sound and banner side effects must be outside of setNotifications.
+        // Skip sound for INQUIRY_RECEIVED because it's already handled by the
+        // rt-messages subscription above to avoid double-chime.
+        if (!processedIdsRef.current.has(notif.id)) {
+          processedIdsRef.current.add(notif.id);
+
+          if (notif.kind !== 'INQUIRY_RECEIVED') {
+            if (notif.kind === 'EMERGENCY_BROADCAST') {
+              playAlertSound('EMERGENCY');
+            } else if (notif.priority === 'ALERT') {
+              playAlertSound('ALERT');
+            } else if (notif.priority === 'HIGH') {
+              playAlertSound('HIGH');
+            } else {
+              playAlertSound('CHIME');
+            }
+          }
+
+          // SUPPRESSED: notifyAppNotification(notif) removed to avoid duplication
+          // with server-sent pushes when backgrounded.
+        }
+
         setNotifications(prev => {
           if (prev.some(x => x.id === notif.id)) return prev;
-          if (notif.kind === 'EMERGENCY_BROADCAST') {
-            playAlertSound('EMERGENCY');
-          } else if (notif.priority === 'ALERT') {
-            playAlertSound('ALERT');
-          } else if (notif.priority === 'HIGH') {
-            playAlertSound('HIGH');
-          } else {
-            playAlertSound('CHIME');
-          }
-          // Same rule as for chat: only post an OS banner when backgrounded.
-          if (AppState.currentState !== 'active') {
-            notifyAppNotification(notif);
-          }
           return [notif, ...prev];
         });
       })

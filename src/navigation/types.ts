@@ -27,6 +27,8 @@ export type RootStackParamList = {
   EditEvent: { eventId: string };
   InvitePicker: { eventId: string };
   Participants: { eventId: string };
+  ClubAllocation: { eventId: string };
+  Cohosting: { eventId: string };
   MarkAttendance: { eventId: string };
   CompleteEvent: { eventId: string };
   Notifications: undefined;

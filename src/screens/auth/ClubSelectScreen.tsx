@@ -72,31 +72,31 @@ export default function ClubSelectScreen({ navigation, route }: Props) {
           const zone = zones.find(z => z.id === item.zone_id);
           return (
             <TouchableOpacity
-              style={styles.row}
+              style={[styles.row, { backgroundColor: themeColors.cardBg }]}
               onPress={() => {
                 route.params?.onSelect?.(item.id);
                 navigation.goBack();
               }}
             >
               <View style={styles.rowMain}>
-                <Text style={styles.name}>{item.club_name}</Text>
-                <Text style={styles.meta}>{zone?.zone_name} • {item.city}, {item.province}</Text>
-                <Text style={styles.metaSmall}>{item.club_code}</Text>
+                <Text style={[styles.name, { color: themeColors.text }]}>{item.club_name}</Text>
+                <Text style={[styles.meta, { color: themeColors.textMuted }]}>{zone?.zone_name} • {item.city}, {item.province}</Text>
+                <Text style={[styles.metaSmall, { color: themeColors.textMuted }]}>{item.club_code}</Text>
               </View>
-              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+              <Ionicons name="chevron-forward" size={18} color={themeColors.textMuted} />
             </TouchableOpacity>
           );
         }}
-        ItemSeparatorComponent={() => <View style={styles.sep} />}
+        ItemSeparatorComponent={() => <View style={[styles.sep, { backgroundColor: themeColors.border }]} />}
         contentContainerStyle={{ paddingBottom: 40 }}
-        ListEmptyComponent={<Text style={styles.empty}>No clubs match your search.</Text>}
+        ListEmptyComponent={<Text style={[styles.empty, { color: themeColors.textMuted }]}>No clubs match your search.</Text>}
       />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg },
+  safe: { flex: 1 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -104,8 +104,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    backgroundColor: colors.surface,
   },
   backBtn: {
     flexDirection: 'row',
@@ -114,23 +112,21 @@ const styles = StyleSheet.create({
     minWidth: 70,
   },
   backBtnText: {
-    color: colors.primary,
     fontSize: 15,
     fontWeight: '700',
   },
   headerTitle: {
     fontSize: 17,
     fontWeight: '800',
-    color: colors.text,
     textAlign: 'center',
   },
-  searchWrap: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border },
-  search: { flex: 1, fontSize: 16, color: colors.text },
+  searchWrap: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderBottomWidth: 1 },
+  search: { flex: 1, fontSize: 16 },
   row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14 },
   rowMain: { flex: 1 },
-  name: { fontSize: 15, fontWeight: '700', color: colors.text },
-  meta: { fontSize: 13, color: colors.textMuted, marginTop: 2 },
-  metaSmall: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
-  sep: { height: 1, backgroundColor: colors.border, marginLeft: 16 },
-  empty: { textAlign: 'center', color: colors.textMuted, marginTop: 40 },
+  name: { fontSize: 15, fontWeight: '700' },
+  meta: { fontSize: 13, marginTop: 2 },
+  metaSmall: { fontSize: 11, marginTop: 2 },
+  sep: { height: 1, marginLeft: 16 },
+  empty: { textAlign: 'center', marginTop: 40 },
 });

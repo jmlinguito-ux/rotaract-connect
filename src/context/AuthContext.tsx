@@ -61,6 +61,7 @@ export interface SignUpDetails {
   club_name: string;
   position: string;
   role?: UserRole;
+  gender?: 'MALE' | 'FEMALE' | string;
   /** Picked profile photo, uploaded to Storage after the account is created. */
   avatar_asset?: PickedImage;
   member_id?: string;
@@ -80,10 +81,12 @@ function profileToAppUser(profile: any, clubName?: string): AppUser {
     club_name: clubName ?? profile.clubs?.club_name ?? profile.club_name ?? '',
     position: profile.position,
     role: profile.role as UserRole,
+    club_role: (profile.club_role ?? (profile.role === 'CLUB_PRESIDENT' ? 'CLUB_PRESIDENT' : undefined)) as any,
     verification_status: profile.verification_status as VerificationStatus,
     avatar_url: profile.avatar_url,
     signature_url: profile.signature_url,
     contact_number: profile.contact_number,
+    gender: profile.gender,
     // Older rows predate the column; absent means "allowed", matching the default.
     allow_direct_inquiries: profile.allow_direct_inquiries ?? true,
   };
@@ -294,6 +297,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       club_id: details.club_id,
       position: details.position,
       role: details.role ?? 'MEMBER',
+      gender: details.gender ?? null,
       verification_status: 'AWAITING_CLUB_VALIDATION' as VerificationStatus,
       avatar_url: avatarUrl,
       contact_number: details.contact_number,
@@ -333,6 +337,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           club_id: details.club_id,
           position: details.position,
           role: details.role ?? 'MEMBER',
+          gender: details.gender ?? null,
           contact_number: details.contact_number ?? null,
           member_id: details.member_id ?? null,
         },
@@ -521,6 +526,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       verification_status: 'AWAITING_CLUB_VALIDATION',
       avatar_url: details?.avatar_url,
       contact_number: details?.contact_number,
+      gender: details?.gender,
     };
     setUser(created);
     return created;
@@ -547,6 +553,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (updates.avatar_url !== undefined) dbUpdates.avatar_url = updates.avatar_url;
     if (updates.signature_url !== undefined) dbUpdates.signature_url = updates.signature_url;
     if (updates.contact_number !== undefined) dbUpdates.contact_number = updates.contact_number;
+    if (updates.gender !== undefined) dbUpdates.gender = updates.gender;
     if (updates.club_id !== undefined) {
       dbUpdates.club_id = updates.club_id;
       if (updates.club_id !== user.club_id && user.verification_status === 'VERIFIED') {

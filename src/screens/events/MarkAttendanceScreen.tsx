@@ -201,9 +201,9 @@ export default function MarkAttendanceScreen({ route }: Props) {
                     <Text style={[styles.checkedOutBadgeText, { color: '#0284C7' }]}>Checked Out</Text>
                   </View>
                 ) : isCheckedIn ? (
-                  <View style={styles.checkedInBadge}>
-                    <Ionicons name="checkmark-circle" size={14} color={colors.success} />
-                    <Text style={styles.checkedInBadgeText}>Checked In</Text>
+                  <View style={[styles.checkedInBadge, { backgroundColor: themeColors.success + '1F' }]}>
+                    <Ionicons name="checkmark-circle" size={14} color={themeColors.success} />
+                    <Text style={[styles.checkedInBadgeText, { color: themeColors.success }]}>Checked In</Text>
                   </View>
                 ) : null}
               </View>
@@ -256,8 +256,8 @@ export default function MarkAttendanceScreen({ route }: Props) {
                       style={styles.undoBtn}
                       onPress={() => handleUndoCheckIn(item.id, u?.full_name || 'Participant')}
                     >
-                      <Ionicons name="refresh-outline" size={14} color={colors.danger} />
-                      <Text style={styles.undoBtnText}>{isCheckedOut ? 'Reset' : 'Undo Check-In'}</Text>
+                      <Ionicons name="refresh-outline" size={14} color={themeColors.danger} />
+                      <Text style={[styles.undoBtnText, { color: themeColors.danger }]}>{isCheckedOut ? 'Reset' : 'Undo Check-In'}</Text>
                     </TouchableOpacity>
                   </View>
                 </View>

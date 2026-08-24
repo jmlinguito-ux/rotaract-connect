@@ -1,4 +1,9 @@
 pluginManagement {
+  repositories {
+    google()
+    mavenCentral()
+    gradlePluginPortal()
+  }
   def localProperties = new Properties()
   def localPropertiesFile = new File(rootDir, "local.properties")
 

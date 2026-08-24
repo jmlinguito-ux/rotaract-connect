@@ -13,7 +13,7 @@ import { formatDistance, punctuality } from '../../utils/checkIn';
 import { formatTime, formatDate } from '../../utils/timeFormat';
 import { EventParticipant } from '../../types';
 import { exportVolunteerCertificatePDF } from '../../utils/pdfCertificate';
-import { isFullDistrictAdmin } from '../../utils/roles';
+import { isFullDistrictAdmin, isDistrictAreaAdmin } from '../../utils/roles';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ActivityPortfolio'>;
 type FilterMode = 'ATTENDED' | 'JOINED' | 'ORGANIZED';
@@ -99,26 +99,41 @@ export default function ActivityPortfolioScreen({ route, navigation }: Props) {
       users.find(
         u =>
           u.club_id === user.club_id &&
-          (u.club_role === 'CLUB_PRESIDENT' || u.role === 'CLUB_PRESIDENT' || u.position?.toLowerCase().includes('president'))
+          (u.club_role === 'CLUB_PRESIDENT' ||
+            u.role === 'CLUB_PRESIDENT' ||
+            u.position?.toLowerCase().includes('president'))
       ) || null
     );
   }, [users, user.club_id]);
 
-  // Whoever signs the District Rotaract Representative line. District AREA Admins
-  // are deliberately excluded: their authority covers one Zone, while this signature
-  // is given on behalf of the whole District. isFullDistrictAdmin encodes that split,
-  // and the position-title fallbacks are filtered through it too — "District Area
-  // Admin" contains "district admin" as a substring and would otherwise match.
+  // Whoever signs the District Rotaract Representative line.
+  // Resolves DRR first by explicit position, then District Admin (System/User role),
+  // then App Admin fallback, ensuring District Area Admins are excluded.
   const drrUser = useMemo(() => {
+    // 1. Explicit DRR position match
+    const drrMatch = users.find(
+      u =>
+        u.position?.toLowerCase().includes('district rotaract representative') ||
+        u.position?.toLowerCase().includes('drr')
+    );
+    if (drrMatch) return drrMatch;
+
+    // 2. District Admin (System Role, User Role, or Position Title) excluding Area Admins
+    const districtAdminMatch = users.find(
+      u =>
+        (u.system_role === 'DISTRICT_ADMIN' ||
+          u.role === 'DISTRICT_ADMIN' ||
+          u.position?.toLowerCase().includes('district admin')) &&
+        !isDistrictAreaAdmin(u)
+    );
+    if (districtAdminMatch) return districtAdminMatch;
+
+    // 3. App Admin / Full District Admin fallback
     return (
       users.find(
         u =>
-          isFullDistrictAdmin(u) &&
-          (u.system_role === 'DISTRICT_ADMIN' ||
-            u.role === 'DISTRICT_ADMIN' ||
-            u.position?.toLowerCase().includes('district admin') ||
-            u.position?.toLowerCase().includes('district rotaract representative') ||
-            u.position?.toLowerCase().includes('drr'))
+          (u.system_role === 'APP_ADMIN' || u.role === 'APP_ADMIN' || isFullDistrictAdmin(u)) &&
+          !isDistrictAreaAdmin(u)
       ) || null
     );
   }, [users]);
@@ -214,16 +229,23 @@ export default function ActivityPortfolioScreen({ route, navigation }: Props) {
               onPress={async () => {
                 setExportingPdf(true);
                 try {
+                  const isRecipientClubPresident =
+                    user.club_role === 'CLUB_PRESIDENT' ||
+                    user.role === 'CLUB_PRESIDENT' ||
+                    user.position?.toLowerCase().includes('president');
+
                   await exportVolunteerCertificatePDF({
                     user,
                     attendedItems: verifiedServiceItems as any,
                     stats,
-                    clubPresidentName: clubPresident?.full_name,
-                    clubPresidentRole: clubPresident
-                      ? `${clubPresident.position || 'Club President'}, ${user.club_name || 'Rotaract Club'}`
-                      : undefined,
-                    clubPresidentSignatureUrl:
-                      user.id === clubPresident?.id ? user.signature_url : clubPresident?.signature_url,
+                    clubPresidentName: isRecipientClubPresident ? undefined : clubPresident?.full_name,
+                    clubPresidentRole:
+                      isRecipientClubPresident || !clubPresident
+                        ? undefined
+                        : `${clubPresident.position || 'Club President'}, ${user.club_name || 'Rotaract Club'}`,
+                    clubPresidentSignatureUrl: isRecipientClubPresident
+                      ? undefined
+                      : (user.id === clubPresident?.id ? user.signature_url : clubPresident?.signature_url),
                     drrName: drrUser?.full_name,
                     drrRole: drrUser
                       ? `${drrUser.position || 'District Rotaract Representative'}, RID 3800`

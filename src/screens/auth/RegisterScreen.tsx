@@ -21,6 +21,7 @@ type Props = NativeStackScreenProps<AuthStackParamList, 'Register'>;
 export default function RegisterScreen({ navigation }: Props) {
   const { signUp } = useAuth();
   const { clubs } = useData();
+  const { colors: themeColors, isNightMode } = useTheme();
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
@@ -31,6 +32,7 @@ export default function RegisterScreen({ navigation }: Props) {
   const [selectedClubId, setSelectedClubId] = useState<string | null>(null);
   const [memberId, setMemberId] = useState('');
   const [contactNumber, setContactNumber] = useState('');
+  const [gender, setGender] = useState<'FEMALE' | 'MALE' | 'OTHER' | null>(null);
   const [position, setPosition] = useState('Member');
   const [isPositionDropdownOpen, setIsPositionDropdownOpen] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
@@ -107,7 +109,7 @@ export default function RegisterScreen({ navigation }: Props) {
   );
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.bg }]}>
       <KeyboardAwareScrollView
         contentContainerStyle={styles.container}
         keyboardDismissMode="on-drag"
@@ -123,17 +125,17 @@ export default function RegisterScreen({ navigation }: Props) {
             style={styles.backBtn}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           >
-            <Ionicons name="chevron-back" size={22} color={colors.primary} />
-            <Text style={styles.backBtnText}>Back to Sign In</Text>
+            <Ionicons name="chevron-back" size={22} color={themeColors.primary} />
+            <Text style={[styles.backBtnText, { color: themeColors.primary }]}>Back to Sign In</Text>
           </TouchableOpacity>
 
-          <Text style={styles.title}>Create Account</Text>
-          <Text style={styles.subtitle}>District 3800 • Rotaractors only</Text>
+          <Text style={[styles.title, { color: themeColors.text }]}>Create Account</Text>
+          <Text style={[styles.subtitle, { color: themeColors.textMuted }]}>District 3800 • Rotaractors only</Text>
 
           {/* Profile photo — reviewers match it against the ID proof below. */}
           <View style={styles.avatarPickerWrap}>
             <TouchableOpacity
-              style={styles.avatarCircle}
+              style={[styles.avatarCircle, { backgroundColor: themeColors.primary }]}
               activeOpacity={0.85}
               onPress={() => (avatarUrl
                 ? setFullImageUri({ uri: avatarUrl, title: 'Profile Photo' })
@@ -146,18 +148,18 @@ export default function RegisterScreen({ navigation }: Props) {
               )}
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.avatarCameraBadge}
+              style={[styles.avatarCameraBadge, { backgroundColor: themeColors.primary, borderColor: themeColors.bg }]}
               onPress={handlePickAvatar}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <Ionicons name="camera" size={13} color="#fff" />
             </TouchableOpacity>
           </View>
-          <Text style={styles.avatarHint}>
+          <Text style={[styles.avatarHint, { color: themeColors.textMuted }]}>
             {avatarUrl ? 'Tap photo to view full resolution' : 'Upload a profile photo (optional)'}
           </Text>
 
-          <Text style={styles.section}>Account</Text>
+          <Text style={[styles.section, { color: themeColors.primary }]}>Account</Text>
           <Field label="Full Name" value={fullName} onChangeText={setFullName} placeholder="Juan Dela Cruz" />
           <Field label="Email" value={email} onChangeText={setEmail} placeholder="you@example.com" keyboardType="email-address" autoCapitalize="none" />
           <Field label="Contact Number" value={contactNumber} onChangeText={handleContactNumberChange} placeholder="0917 123 4567" keyboardType="phone-pad" />
@@ -182,17 +184,57 @@ export default function RegisterScreen({ navigation }: Props) {
             error={passwordMismatch ? 'Passwords do not match' : undefined}
           />
 
-          <Text style={styles.section}>Rotaract Information</Text>
+          <View style={{ marginBottom: 14 }}>
+            <Text style={[styles.label, { color: themeColors.text }]}>Pronouns / Certificate Salutation</Text>
+            <View style={styles.chipRow}>
+              {[
+                { id: 'FEMALE', label: 'She / Her', hint: 'her' },
+                { id: 'MALE', label: 'He / Him', hint: 'his' },
+                { id: 'OTHER', label: 'They / Them', hint: 'their' },
+              ].map((opt) => {
+                const isSelected = gender === opt.id;
+                return (
+                  <TouchableOpacity
+                    key={opt.id}
+                    style={[
+                      styles.chip,
+                      {
+                        backgroundColor: isSelected ? themeColors.primary : themeColors.surface,
+                        borderColor: isSelected ? themeColors.primary : themeColors.border,
+                      },
+                    ]}
+                    activeOpacity={0.8}
+                    onPress={() => setGender(isSelected ? null : opt.id as any)}
+                  >
+                    <Text
+                      style={[
+                        styles.chipText,
+                        { color: isSelected ? '#fff' : themeColors.text },
+                        isSelected && { fontWeight: '700' },
+                      ]}
+                    >
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <Text style={{ fontSize: 11, color: themeColors.textMuted, marginTop: 4 }}>
+              Used to format official Rotary volunteer certificates and service transcripts.
+            </Text>
+          </View>
 
-          <Text style={styles.label}>Rotaract Club</Text>
+          <Text style={[styles.section, { color: themeColors.primary }]}>Rotaract Information</Text>
+
+          <Text style={[styles.label, { color: themeColors.text }]}>Rotaract Club</Text>
           <TouchableOpacity
-            style={styles.selector}
+            style={[styles.selector, { backgroundColor: themeColors.surface, borderColor: themeColors.border }]}
             onPress={() => navigation.navigate('ClubSelect', { onSelect: (id) => setSelectedClubId(id) })}
           >
-            <Text style={selectedClub ? styles.selectorText : styles.selectorPlaceholder}>
+            <Text style={selectedClub ? [styles.selectorText, { color: themeColors.text }] : [styles.selectorPlaceholder, { color: themeColors.textMuted }]}>
               {selectedClub ? selectedClub.club_name : 'Select your Rotaract Club'}
             </Text>
-            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+            <Ionicons name="chevron-forward" size={18} color={themeColors.textMuted} />
           </TouchableOpacity>
 
           <Field
@@ -204,23 +246,26 @@ export default function RegisterScreen({ navigation }: Props) {
             maxLength={8}
           />
           {memberId.length > 0 && memberId.length < 8 ? (
-            <Text style={styles.errorText}>Rotaract Member ID must be 8 digits</Text>
+            <Text style={[styles.errorText, { color: themeColors.danger }]}>Rotaract Member ID must be 8 digits</Text>
           ) : null}
 
           <View style={{ marginBottom: 16 }}>
-            <Text style={styles.label}>Position *</Text>
+            <Text style={[styles.label, { color: themeColors.text }]}>Position *</Text>
             <TouchableOpacity
-              style={[styles.selector, isPositionDropdownOpen && { borderColor: colors.primary }]}
+              style={[
+                styles.selector,
+                { backgroundColor: themeColors.surface, borderColor: isPositionDropdownOpen ? themeColors.primary : themeColors.border },
+              ]}
               onPress={() => setIsPositionDropdownOpen(!isPositionDropdownOpen)}
             >
-              <Text style={position ? styles.selectorText : styles.selectorPlaceholder}>
+              <Text style={position ? [styles.selectorText, { color: themeColors.text }] : [styles.selectorPlaceholder, { color: themeColors.textMuted }]}>
                 {position || 'Select Position'}
               </Text>
-              <Ionicons name={isPositionDropdownOpen ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textMuted} />
+              <Ionicons name={isPositionDropdownOpen ? 'chevron-up' : 'chevron-down'} size={18} color={themeColors.textMuted} />
             </TouchableOpacity>
 
             {isPositionDropdownOpen && (
-              <View style={styles.inlineDropdownMenu}>
+              <View style={[styles.inlineDropdownMenu, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}>
                 <ScrollView
                   nestedScrollEnabled={true}
                   keyboardShouldPersistTaps="handled"
@@ -234,7 +279,14 @@ export default function RegisterScreen({ navigation }: Props) {
                     return (
                       <TouchableOpacity
                         key={p}
-                        style={[styles.overlayDropdownItem, isSelected && { backgroundColor: colors.primary + '14' }]}
+                        style={[
+                          styles.overlayDropdownItem,
+                          {
+                            backgroundColor: isSelected ? themeColors.primary + '1F' : 'transparent',
+                            borderBottomWidth: StyleSheet.hairlineWidth,
+                            borderBottomColor: themeColors.border,
+                          },
+                        ]}
                         onPress={() => {
                           setPosition(p);
                           setIsPositionDropdownOpen(false);
@@ -242,14 +294,14 @@ export default function RegisterScreen({ navigation }: Props) {
                       >
                         <View style={styles.checkmarkWrap}>
                           {isSelected ? (
-                            <Ionicons name="checkmark-circle" size={18} color={colors.primary} />
+                            <Ionicons name="checkmark-circle" size={18} color={themeColors.primary} />
                           ) : (
-                            <Ionicons name="ellipse-outline" size={14} color={colors.textMuted} />
+                            <Ionicons name="ellipse-outline" size={14} color={themeColors.textMuted} />
                           )}
                         </View>
                         <View style={{ flex: 1 }}>
-                          <Text style={[styles.overlayDropdownText, { color: isSelected ? colors.primary : colors.text, fontWeight: isSelected ? '700' : '400' }]}>{p}</Text>
-                          <Text style={{ fontSize: 11, color: isSelected ? colors.primary : colors.textMuted, marginTop: 1 }}>{roleHint}</Text>
+                          <Text style={[styles.overlayDropdownText, { color: isSelected ? themeColors.primary : themeColors.text, fontWeight: isSelected ? '700' : '500' }]}>{p}</Text>
+                          <Text style={{ fontSize: 11, color: isSelected ? themeColors.primary : themeColors.textMuted, marginTop: 1 }}>{roleHint}</Text>
                         </View>
                       </TouchableOpacity>
                     );
@@ -259,12 +311,12 @@ export default function RegisterScreen({ navigation }: Props) {
             )}
           </View>
 
-          <Text style={styles.label}>Rotaract ID / Membership Proof (Optional)</Text>
+          <Text style={[styles.label, { color: themeColors.text }]}>Rotaract ID / Membership Proof (Optional)</Text>
           {proofUrl ? (
             <View style={{ marginBottom: 16 }}>
               <TouchableOpacity
                 activeOpacity={0.9}
-                style={{ borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: colors.primary, height: 140 }}
+                style={{ borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: themeColors.primary, height: 140 }}
                 onPress={() => setFullImageUri({ uri: proofUrl, title: 'Uploaded Rotaract ID Proof' })}
               >
                 <Image source={{ uri: proofUrl }} style={{ width: '100%', height: '100%', resizeMode: 'cover' }} />
@@ -277,25 +329,34 @@ export default function RegisterScreen({ navigation }: Props) {
                 style={{ marginTop: 6, alignSelf: 'flex-start' }}
                 onPress={handlePickProof}
               >
-                <Text style={{ color: colors.primary, fontSize: 12, fontWeight: '700' }}>Change Uploaded Photo</Text>
+                <Text style={{ color: themeColors.primary, fontSize: 12, fontWeight: '700' }}>Change Uploaded Photo</Text>
               </TouchableOpacity>
             </View>
           ) : (
             <TouchableOpacity
-              style={[styles.selector, { marginBottom: 16, borderStyle: 'dashed', borderWidth: 1.5, borderColor: colors.primary }]}
+              style={[
+                styles.selector,
+                {
+                  marginBottom: 16,
+                  borderStyle: 'dashed',
+                  borderWidth: 1.5,
+                  borderColor: themeColors.primary,
+                  backgroundColor: isNightMode ? themeColors.surface : '#FDF2F7',
+                },
+              ]}
               onPress={handlePickProof}
             >
-              <Ionicons name="image-outline" size={20} color={colors.primary} />
-              <Text style={[styles.selectorText, { color: colors.primary, marginLeft: 8, flex: 1 }]}>
+              <Ionicons name="image-outline" size={20} color={themeColors.primary} />
+              <Text style={[styles.selectorText, { color: themeColors.primary, marginLeft: 8, flex: 1 }]}>
                 Upload Rotaract ID or Roster Screenshot
               </Text>
-              <Ionicons name="cloud-upload-outline" size={18} color={colors.primary} />
+              <Ionicons name="cloud-upload-outline" size={18} color={themeColors.primary} />
             </TouchableOpacity>
           )}
 
-          <View style={styles.noteBox}>
-            <Ionicons name="information-circle-outline" size={18} color={colors.info} />
-            <Text style={styles.noteText}>
+          <View style={[styles.noteBox, { backgroundColor: isNightMode ? themeColors.surface : '#EBF5FF', borderColor: isNightMode ? themeColors.border : '#BFDBFE', borderWidth: 1 }]}>
+            <Ionicons name="information-circle-outline" size={18} color={themeColors.info} />
+            <Text style={[styles.noteText, { color: themeColors.text }]}>
               {position === 'President'
                 ? 'Your application will be reviewed by an Administrator.'
                 : 'Your application will be reviewed by the Club President.'}
@@ -303,20 +364,28 @@ export default function RegisterScreen({ navigation }: Props) {
           </View>
 
           {/* User Agreement & Privacy Terms Checkbox Card */}
-          <View style={styles.agreementCard}>
+          <View style={[styles.agreementCard, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}>
             <TouchableOpacity
               style={styles.checkboxRow}
               activeOpacity={0.8}
               onPress={() => setAgreedToTerms(prev => !prev)}
             >
-              <View style={[styles.checkbox, agreedToTerms && styles.checkboxActive]}>
+              <View
+                style={[
+                  styles.checkbox,
+                  {
+                    backgroundColor: agreedToTerms ? themeColors.primary : (isNightMode ? themeColors.surface : '#fff'),
+                    borderColor: agreedToTerms ? themeColors.primary : themeColors.border,
+                  },
+                ]}
+              >
                 {agreedToTerms && <Ionicons name="checkmark" size={14} color="#fff" />}
               </View>
               <View style={styles.agreementTextWrap}>
-                <Text style={styles.agreementText}>
+                <Text style={[styles.agreementText, { color: themeColors.text }]}>
                   I have read and agree to the{' '}
                   <Text
-                    style={styles.legalLink}
+                    style={[styles.legalLink, { color: themeColors.primary }]}
                     onPress={(e) => {
                       e.stopPropagation();
                       setLegalModalTab('terms');
@@ -327,7 +396,7 @@ export default function RegisterScreen({ navigation }: Props) {
                   </Text>{' '}
                   and{' '}
                   <Text
-                    style={styles.legalLink}
+                    style={[styles.legalLink, { color: themeColors.primary }]}
                     onPress={(e) => {
                       e.stopPropagation();
                       setLegalModalTab('privacy');
@@ -341,23 +410,27 @@ export default function RegisterScreen({ navigation }: Props) {
               </View>
             </TouchableOpacity>
 
-            <View style={styles.privacyNoteRow}>
-              <Ionicons name="shield-checkmark-outline" size={13} color={colors.textMuted} />
-              <Text style={styles.privacyNoteText}>
+            <View style={[styles.privacyNoteRow, { borderTopColor: themeColors.border }]}>
+              <Ionicons name="shield-checkmark-outline" size={13} color={themeColors.textMuted} />
+              <Text style={[styles.privacyNoteText, { color: themeColors.textMuted }]}>
                 Your data is protected under the Philippine Data Privacy Act (RA 10173).
               </Text>
             </View>
           </View>
 
           {error ? (
-            <View style={styles.errorBanner}>
-              <Ionicons name="alert-circle" size={16} color={colors.danger} />
-              <Text style={styles.errorBannerText}>{error}</Text>
+            <View style={[styles.errorBanner, { backgroundColor: isNightMode ? themeColors.cardBg : '#FEF2F2', borderColor: themeColors.danger, borderWidth: isNightMode ? 1 : 0 }]}>
+              <Ionicons name="alert-circle" size={16} color={themeColors.danger} />
+              <Text style={[styles.errorBannerText, { color: themeColors.danger }]}>{error}</Text>
             </View>
           ) : null}
 
           <TouchableOpacity
-            style={[styles.primaryBtn, (!canSubmit || loading) && styles.primaryBtnDisabled]}
+            style={[
+              styles.primaryBtn,
+              { backgroundColor: themeColors.primary },
+              (!canSubmit || loading) && { backgroundColor: isNightMode ? '#5A1B38' : '#E4B0C6' },
+            ]}
             disabled={!canSubmit || loading}
             onPress={async () => {
               setLoading(true);
@@ -370,6 +443,7 @@ export default function RegisterScreen({ navigation }: Props) {
                 club_name: selectedClub?.club_name ?? '',
                 position,
                 role: getPositionClubRole(position) === 'CLUB_PRESIDENT' ? 'CLUB_PRESIDENT' : 'MEMBER',
+                gender: gender || undefined,
                 avatar_asset: avatarAsset || undefined,
                 member_id: memberId,
                 proof_asset: proofAsset || undefined,
@@ -404,7 +478,9 @@ export default function RegisterScreen({ navigation }: Props) {
               }
             }}
           >
-            <Text style={styles.linkText}>Already have an account? <Text style={styles.linkTextBold}>Sign In</Text></Text>
+            <Text style={[styles.linkText, { color: themeColors.textMuted }]}>
+              Already have an account? <Text style={[styles.linkTextBold, { color: themeColors.primary }]}>Sign In</Text>
+            </Text>
           </TouchableOpacity>
       </KeyboardAwareScrollView>
 
