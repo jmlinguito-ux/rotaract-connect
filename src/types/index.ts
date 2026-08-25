@@ -323,7 +323,12 @@ export type NotificationKind =
   | 'EVENT_APPROVED'
   | 'MEMBERSHIP_REQUEST'
   | 'INQUIRY_RECEIVED'
-  | 'EMERGENCY_BROADCAST';
+  | 'EMERGENCY_BROADCAST'
+  | 'COHOST_REQUEST'
+  | 'COHOST_APPROVED'
+  | 'COHOST_REJECTED'
+  | 'COHOST_PAYMENT_SUBMITTED'
+  | 'COHOST_PAYMENT_VERIFIED';
 
 /** Organizer banner priority. HIGH triggers sound + vibration where the OS allows. */
 export type NotificationPriority = 'NORMAL' | 'ALERT' | 'HIGH';

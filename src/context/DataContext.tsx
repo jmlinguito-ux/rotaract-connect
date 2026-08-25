@@ -1132,7 +1132,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (ev && res.row.status === 'REQUESTED' && ev.organizer_user_id) {
         pushNotif({
           user_id: ev.organizer_user_id,
-          kind: 'JOIN_REQUEST',
+          kind: 'COHOST_REQUEST',
           title: 'Cohost request',
           message: `${clubName} requested to cohost "${ev.title}".`,
           event_id: ev.id,
@@ -1173,7 +1173,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (requester && ev) {
         pushNotif({
           user_id: requester,
-          kind: 'JOIN_APPROVED',
+          kind: action === 'APPROVE' ? 'COHOST_APPROVED' : 'COHOST_REJECTED',
           title: action === 'APPROVE' ? 'Cohost approved' : 'Cohost rejected',
           message: action === 'APPROVE'
             ? `Your club is approved to cohost "${ev.title}". Submit payment when ready.`
@@ -1195,7 +1195,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (ev) {
         pushNotif({
           user_id: ev.organizer_user_id,
-          kind: 'EVENT_UPDATE',
+          kind: 'COHOST_PAYMENT_SUBMITTED',
           title: 'Cohost payment submitted',
           message: `A cohosting club submitted a payment for "${ev.title}". Verify it in the cohost dashboard.`,
           event_id: ev.id,
@@ -1216,7 +1216,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (requester && ev) {
         pushNotif({
           user_id: requester,
-          kind: 'EVENT_UPDATE',
+          kind: 'COHOST_PAYMENT_VERIFIED',
           title: action === 'VERIFY' ? 'Payment verified' : 'Payment needs attention',
           message: action === 'VERIFY'
             ? `Your cohost payment for "${ev.title}" was verified. You're all set!`

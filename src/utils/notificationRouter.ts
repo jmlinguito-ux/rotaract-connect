@@ -1,7 +1,5 @@
-import { NavigationProp } from '@react-navigation/native';
 import { Alert } from 'react-native';
 import { AppNotification, AppUser, RotaractEvent, Conversation } from '../types';
-import { RootStackParamList } from '../navigation/types';
 
 export interface NotificationRouterContext {
   user: AppUser | null;
@@ -12,28 +10,33 @@ export interface NotificationRouterContext {
   dispatchLocalAlert?: (alert: any) => void;
 }
 
+export type AnyNavigator = {
+  navigate: (...args: any[]) => void;
+};
+
 /**
  * Single source of truth for routing user taps on notifications
  * (in-app notifications list, inbox, and OS push notifications).
  */
 export function handleAppNotificationNavigation(
-  notification: AppNotification | { [key: string]: any },
-  navigation: NavigationProp<RootStackParamList>,
+  notification: AppNotification | Record<string, any>,
+  navigation: AnyNavigator,
   context: NotificationRouterContext,
 ) {
-  const { user, events, users, conversations, markNotificationRead, dispatchLocalAlert } = context;
+  const { events, users, conversations, markNotificationRead, dispatchLocalAlert } = context;
+  const raw = notification as any;
 
   // 1. Mark as read
-  if (notification.id && markNotificationRead && !notification.is_read) {
-    markNotificationRead(notification.id);
+  if (raw.id && markNotificationRead && !raw.is_read) {
+    markNotificationRead(raw.id);
   }
 
-  const kind = notification.kind || notification.type;
-  const eventId = notification.event_id || notification.eventId;
-  const conversationId = notification.conversation_id || notification.conversationId;
-  const applicationId = notification.application_id || notification.applicationId;
-  const rawTitle = (notification.title || '').trim();
-  const rawMessage = (notification.message || notification.body || '').trim();
+  const kind = raw.kind || raw.type || '';
+  const eventId = raw.event_id || raw.eventId;
+  const conversationId = raw.conversation_id || raw.conversationId;
+  const applicationId = raw.application_id || raw.applicationId;
+  const rawTitle = (raw.title || '').trim();
+  const rawMessage = (raw.message || raw.body || '').trim();
 
   // 2. Emergency Broadcast / SOS
   if (kind === 'EMERGENCY_BROADCAST' || kind === 'EMERGENCY_SOS') {
@@ -41,7 +44,7 @@ export function handleAppNotificationNavigation(
       rawTitle.replace(/^🚨\s*(?:EMERGENCY\s*SOS|NEARBY\s*EMERGENCY|SOS):\s*/i, '').trim() ||
       'Rotaract Member in Distress';
     const broadcaster = users.find(
-      u => (notification.user_id && u.id === notification.user_id) ||
+      u => (raw.user_id && u.id === raw.user_id) ||
            (u.full_name && u.full_name.toLowerCase() === broadcasterName.toLowerCase()),
     );
 
@@ -52,11 +55,11 @@ export function handleAppNotificationNavigation(
     const customNote = msgMatch ? msgMatch[1] : '';
 
     const coordsMatch = rawMessage.match(/maps\.google\.com\/\?q=([0-9.-]+),([0-9.-]+)/);
-    const lat = typeof notification.latitude === 'number'
-      ? notification.latitude
+    const lat = typeof raw.latitude === 'number'
+      ? raw.latitude
       : (coordsMatch ? parseFloat(coordsMatch[1]) : 14.6948);
-    const lng = typeof notification.longitude === 'number'
-      ? notification.longitude
+    const lng = typeof raw.longitude === 'number'
+      ? raw.longitude
       : (coordsMatch ? parseFloat(coordsMatch[2]) : 120.9664);
 
     const addrMatch = rawMessage.match(/near\s+(.*?)(?:\.|\"|\s+Map:|\s+Location:|$)/i);
@@ -64,8 +67,8 @@ export function handleAppNotificationNavigation(
 
     if (dispatchLocalAlert) {
       dispatchLocalAlert({
-        id: notification.id || `sos-${Date.now()}`,
-        user_id: broadcaster?.id || notification.user_id,
+        id: raw.id || `sos-${Date.now()}`,
+        user_id: broadcaster?.id || raw.user_id,
         full_name: broadcaster?.full_name || broadcasterName,
         avatar_url: broadcaster?.avatar_url,
         club_id: broadcaster?.club_id || '',
@@ -77,12 +80,12 @@ export function handleAppNotificationNavigation(
         map_url: `https://maps.google.com/?q=${lat},${lng}`,
         address_hint: addressHint,
         message: customNote || undefined,
-        created_at: notification.created_at || new Date().toISOString(),
+        created_at: raw.created_at || new Date().toISOString(),
         playSound: false,
       });
     }
 
-    navigation.navigate('Main', { screen: 'MapTab' } as any);
+    navigation.navigate('Main', { screen: 'MapTab' });
     return;
   }
 
@@ -106,14 +109,45 @@ export function handleAppNotificationNavigation(
     navigation.navigate('Chat', {
       conversationId: conversationId || conv?.id || '',
       eventId: eventId || conv?.event_id,
-      recipientId: notification.sender_id || notification.user_id || '',
+      recipientId: raw.sender_id || raw.user_id || '',
       recipientName: senderName || 'Direct Message',
       eventTitle: targetEvent?.title || conv?.event_title,
     });
     return;
   }
 
-  // 4. Join Request -> Participants Screen directly
+  // 4. Cohosting updates (Request, Approval, Payment, Rejection, Verification)
+  // Evaluated BEFORE standard JOIN_REQUEST or EVENT_UPDATE so all cohost events route to CohostingScreen
+  const isCohostKind =
+    typeof kind === 'string' && (
+      kind.startsWith('COHOST_') ||
+      kind === 'COHOST_REQUEST' ||
+      kind === 'COHOST_APPROVED' ||
+      kind === 'COHOST_REJECTED' ||
+      kind === 'COHOST_PAYMENT' ||
+      kind === 'COHOST_PAYMENT_SUBMITTED' ||
+      kind === 'COHOST_PAYMENT_VERIFIED'
+    );
+
+  const isCohostContent =
+    /co-?host/i.test(rawTitle) ||
+    /co-?host/i.test(rawMessage) ||
+    /cohosting/i.test(rawTitle) ||
+    /cohosting/i.test(rawMessage) ||
+    (/payment\s+(?:verified|needs\s+attention|submitted)/i.test(rawTitle) && /cohost/i.test(rawMessage));
+
+  if ((isCohostKind || isCohostContent) && eventId) {
+    const eventExists = events.some(e => e.id === eventId);
+    if (eventExists) {
+      navigation.navigate('Cohosting', { eventId });
+      return;
+    }
+    Alert.alert('Event Unavailable', 'This event is no longer active or was removed.');
+    navigation.navigate('Main', { screen: 'EventsTab' });
+    return;
+  }
+
+  // 5. Join Request -> Participants Screen directly
   if (kind === 'JOIN_REQUEST') {
     if (eventId) {
       const eventExists = events.some(e => e.id === eventId);
@@ -123,24 +157,8 @@ export function handleAppNotificationNavigation(
       }
     }
     Alert.alert('Event Unavailable', 'This event is no longer active or was removed.');
-    navigation.navigate('Main', { screen: 'EventsTab' } as any);
+    navigation.navigate('Main', { screen: 'EventsTab' });
     return;
-  }
-
-  // 5. Cohosting updates (Request, Approval, Payment, Rejection)
-  const isCohostRelated =
-    kind === 'COHOST_REQUEST' ||
-    kind === 'COHOST_APPROVED' ||
-    kind === 'COHOST_PAYMENT' ||
-    rawTitle.toLowerCase().includes('cohost') ||
-    rawMessage.toLowerCase().includes('cohost');
-
-  if (isCohostRelated && eventId) {
-    const eventExists = events.some(e => e.id === eventId);
-    if (eventExists) {
-      navigation.navigate('Cohosting', { eventId });
-      return;
-    }
   }
 
   // 6. Verification Application / Membership Request
@@ -150,13 +168,13 @@ export function handleAppNotificationNavigation(
       return;
     }
     // If no application ID or application already resolved -> Profile tab
-    navigation.navigate('Main', { screen: 'ProfileTab' } as any);
+    navigation.navigate('Main', { screen: 'ProfileTab' });
     return;
   }
 
   // 7. Role Assigned
   if (kind === 'ROLE_ASSIGNED') {
-    navigation.navigate('Main', { screen: 'ProfileTab' } as any);
+    navigation.navigate('Main', { screen: 'ProfileTab' });
     return;
   }
 
@@ -168,10 +186,10 @@ export function handleAppNotificationNavigation(
       return;
     }
     Alert.alert('Event Unavailable', 'This event is no longer active or was removed.');
-    navigation.navigate('Main', { screen: 'EventsTab' } as any);
+    navigation.navigate('Main', { screen: 'EventsTab' });
     return;
   }
 
   // 9. Default Fallback
-  navigation.navigate('Main', { screen: 'InboxTab' } as any);
+  navigation.navigate('Main', { screen: 'InboxTab' });
 }

@@ -14,6 +14,7 @@ import { DeclineReasonModal } from '../../components/DeclineReasonModal';
 import { SwipeableRow, SwipeAction } from '../../components/SwipeableRow';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { dispatchLocalAlert } from '../../services/emergencyBroadcast';
+import { handleAppNotificationNavigation } from '../../utils/notificationRouter';
 import UserAvatar from '../../components/UserAvatar';
 import VerifiedCheck from '../../components/VerifiedCheck';
 import { relativeTime } from '../../utils/relativeTime';
@@ -32,6 +33,11 @@ const ICON: Record<AppNotification['kind'], keyof typeof Ionicons.glyphMap> = {
   MEMBERSHIP_REQUEST: 'people',
   INQUIRY_RECEIVED: 'chatbubble-ellipses',
   EMERGENCY_BROADCAST: 'warning',
+  COHOST_REQUEST: 'people-circle',
+  COHOST_APPROVED: 'checkmark-done-circle',
+  COHOST_REJECTED: 'close-circle',
+  COHOST_PAYMENT_SUBMITTED: 'card',
+  COHOST_PAYMENT_VERIFIED: 'checkmark-circle',
 };
 
 const ICON_COLOR: Record<AppNotification['kind'], string> = {
@@ -48,6 +54,11 @@ const ICON_COLOR: Record<AppNotification['kind'], string> = {
   MEMBERSHIP_REQUEST: '#3B82F6',
   INQUIRY_RECEIVED: '#D41367',
   EMERGENCY_BROADCAST: '#EF4444',
+  COHOST_REQUEST: '#F59E0B',
+  COHOST_APPROVED: '#10B981',
+  COHOST_REJECTED: '#EF4444',
+  COHOST_PAYMENT_SUBMITTED: '#3B82F6',
+  COHOST_PAYMENT_VERIFIED: '#10B981',
 };
 
 type Tab = 'notifications' | 'messages' | 'chats';
@@ -198,79 +209,14 @@ export default function InboxScreen() {
   };
 
   const handleNotificationPress = (item: AppNotification) => {
-    if (user && !item.is_read) markNotificationRead(item.id);
-    if (item.kind === 'EMERGENCY_BROADCAST') {
-      const broadcasterName = item.title.replace(/^🚨\s*(?:EMERGENCY\s*SOS|NEARBY\s*EMERGENCY|SOS):\s*/i, '').trim() || 'Rotaract Member in Distress';
-      const broadcaster = users.find(u => u.id === item.user_id || (u.full_name && u.full_name.toLowerCase() === broadcasterName.toLowerCase()));
-
-      const clubMatch = item.message.match(/\((Rotaract Club of [^)]+|RC [^)]+|District 3800)\)/i);
-      const clubName = clubMatch ? clubMatch[1] : (broadcaster?.club_name || 'District 3800');
-
-      const msgMatch = item.message.match(/"([^"]+)"/);
-      const customNote = msgMatch ? msgMatch[1] : '';
-
-      const coordsMatch = item.message.match(/maps\.google\.com\/\?q=([0-9.-]+),([0-9.-]+)/);
-      const lat = coordsMatch ? parseFloat(coordsMatch[1]) : 14.6948;
-      const lng = coordsMatch ? parseFloat(coordsMatch[2]) : 120.9664;
-
-      const addrMatch = item.message.match(/near\s+(.*?)(?:\.|\"|\s+Map:|\s+Location:|$)/i);
-      const addressHint = addrMatch ? addrMatch[1].trim() : (customNote ? 'Coordinates provided' : item.message);
-
-      dispatchLocalAlert({
-        id: item.id,
-        user_id: broadcaster?.id || item.user_id,
-        full_name: broadcaster?.full_name || broadcasterName,
-        avatar_url: broadcaster?.avatar_url,
-        club_id: broadcaster?.club_id || '',
-        club_name: clubName,
-        contact_number: broadcaster?.contact_number,
-        latitude: lat,
-        longitude: lng,
-        status: 'ACTIVE',
-        map_url: `https://maps.google.com/?q=${lat},${lng}`,
-        address_hint: addressHint,
-        message: customNote || undefined,
-        created_at: item.created_at,
-        playSound: false,
-      });
-      return;
-    }
-    if (item.conversation_id) {
-      const conv = conversations.find(c => c.id === item.conversation_id);
-      if (conv?.is_group) {
-        navigation.navigate('Chat', {
-          conversationId: conv.id,
-          eventId: conv.event_id,
-          recipientId: 'ALL_PARTICIPANTS',
-          recipientName: `${conv.event_title ?? 'Event'} Group Chat`,
-          eventTitle: conv.event_title,
-        });
-        return;
-      }
-      if (!conv && item.event_id) {
-        const ev = events.find(e => e.id === item.event_id);
-        if (ev) { openGroupChat(ev); return; }
-      }
-      const otherId = conv
-        ? (conv.participant_user_id === user?.id ? conv.organizer_user_id : conv.participant_user_id)
-        : undefined;
-      const other = otherId ? users.find(u => u.id === otherId) : undefined;
-      navigation.navigate('Chat', {
-        conversationId: item.conversation_id,
-        eventId: item.event_id,
-        recipientId: other?.id ?? '',
-        recipientName: other?.full_name ?? item.title.replace('Inquiry from ', '').trim(),
-      });
-    } else if (item.event_id) {
-      if (item.kind === 'JOIN_APPROVED' && user && canAccessEventGroupChat(item.event_id, user.id)) {
-        const ev = events.find(e => e.id === item.event_id);
-        if (ev) openGroupChat(ev);
-      } else {
-        navigation.navigate('EventDetail', { eventId: item.event_id });
-      }
-    } else if (item.application_id) {
-      navigation.navigate('ApplicationReview', { applicationId: item.application_id });
-    }
+    handleAppNotificationNavigation(item, navigation, {
+      user,
+      events,
+      users,
+      conversations,
+      markNotificationRead,
+      dispatchLocalAlert,
+    });
   };
 
   // ---- Renderers -----------------------------------------------------------

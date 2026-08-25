@@ -4,7 +4,7 @@ import * as Notifications from 'expo-notifications';
 import { useAuth } from '../context/AuthContext';
 import { useData } from '../context/DataContext';
 import { usePreferences } from '../context/PreferencesContext';
-import { navigate } from '../navigation/navigationRef';
+import { navigate, navigationRef } from '../navigation/navigationRef';
 import RotaractNotifications from '../../modules/rotaract-notifications';
 import {
   configurePushNotifications,
@@ -12,6 +12,7 @@ import {
   unregisterPushTokenAsync,
 } from '../services/push';
 import { dispatchLocalAlert } from '../services/emergencyBroadcast';
+import { handleAppNotificationNavigation } from '../utils/notificationRouter';
 
 /** Deep-link payload carried by every push (set by the send-push Edge Function or local notification). */
 interface PushData {
@@ -118,108 +119,21 @@ export function PushNotifications() {
   const routeTo = useCallback((data: PushData): boolean => {
     if (!user) return false;
 
-    // 1. Emergency SOS Broadcast tap -> open Map & trigger distress modal
-    if (data.type === 'EMERGENCY_SOS' || data.kind === 'EMERGENCY_SOS' || data.kind === 'EMERGENCY_BROADCAST') {
-      const rawTitle = data.title || '';
-      const rawBody = data.body || '';
-
-      const broadcasterName = data.full_name || rawTitle.replace(/^🚨\s*(?:EMERGENCY\s*SOS|NEARBY\s*EMERGENCY|SOS):\s*/i, '').trim() || 'Rotaract Member in Distress';
-      const broadcaster = users.find(u => (data.user_id && u.id === data.user_id) || (u.full_name && u.full_name.toLowerCase() === broadcasterName.toLowerCase()));
-
-      const clubMatch = rawBody.match(/\((Rotaract Club of [^)]+|RC [^)]+|District 3800)\)/i);
-      const clubName = data.club_name || (clubMatch ? clubMatch[1] : (broadcaster?.club_name || 'District 3800'));
-
-      const msgMatch = rawBody.match(/"([^"]+)"/);
-      const customNote = data.message || (msgMatch ? msgMatch[1] : '');
-
-      const coordsMatch = rawBody.match(/maps\.google\.com\/\?q=([0-9.-]+),([0-9.-]+)/);
-      const lat = typeof data.latitude === 'number' ? data.latitude : (coordsMatch ? parseFloat(coordsMatch[1]) : 14.6948);
-      const lng = typeof data.longitude === 'number' ? data.longitude : (coordsMatch ? parseFloat(coordsMatch[2]) : 120.9664);
-
-      const addrMatch = rawBody.match(/near\s+(.*?)(?:\.|\"|\s+Map:|\s+Location:|$)/i);
-      const addressHint = data.address_hint || (addrMatch ? addrMatch[1].trim() : (customNote ? 'Coordinates provided' : (rawBody || 'Location coordinates provided')));
-
-      dispatchLocalAlert({
-        id: data.broadcastId || data.notificationId || `sos_${Date.now()}`,
-        user_id: data.user_id || broadcaster?.id || '',
-        full_name: broadcaster?.full_name || broadcasterName,
-        avatar_url: data.avatar_url || broadcaster?.avatar_url,
-        club_id: data.club_id || broadcaster?.club_id || '',
-        club_name: clubName,
-        contact_number: data.contact_number || broadcaster?.contact_number,
-        latitude: lat,
-        longitude: lng,
-        status: 'ACTIVE',
-        map_url: `https://maps.google.com/?q=${lat},${lng}`,
-        address_hint: addressHint,
-        message: customNote || undefined,
-        created_at: new Date().toISOString(),
-      });
-      navigate('Main', { screen: 'MapTab' } as any);
-      return true;
-    }
-
-    // 2. Chat messages
-    if (data.conversation_id) {
-      const conv = conversations.find(c => c.id === data.conversation_id);
-      if (conv?.is_group) {
-        navigate('Chat', {
-          conversationId: conv.id,
-          eventId: conv.event_id,
-          recipientId: 'ALL_PARTICIPANTS',
-          recipientName: `${conv.event_title ?? 'Event'} Group Chat`,
-          eventTitle: conv.event_title,
-        });
-        return true;
-      }
-      if (conv) {
-        const otherId = conv.participant_user_id === user.id ? conv.organizer_user_id : conv.participant_user_id;
-        const other = otherId ? users.find(u => u.id === otherId) : undefined;
-        navigate('Chat', {
-          conversationId: conv.id,
-          eventId: conv.event_id,
-          recipientId: other?.id ?? '',
-          recipientName: other?.full_name ?? conv.participant_name ?? 'Rotaractor',
-          eventTitle: conv.event_title,
-        });
-        return true;
-      }
-      // Conversation not synced yet: a group broadcast can still open its event.
-      const targetEventId = data.event_id || data.eventId;
-      if (targetEventId) {
-        const ev = events.find(e => e.id === targetEventId);
-        if (ev && canAccessEventGroupChat(ev.id, user.id)) {
-          const group = getOrCreateEventGroupConversation(ev.id);
-          navigate('Chat', {
-            conversationId: group.id,
-            eventId: ev.id,
-            recipientId: 'ALL_PARTICIPANTS',
-            recipientName: `${ev.title} Group Chat`,
-            eventTitle: ev.title,
-          });
-          return true;
-        }
-      }
-      return false; // wait for data to sync, then retry
-    }
-
-    // 3. Event Detail & Reminders
+    // Wait for events data to hydrate if target event is present
     const targetEventId = data.event_id || data.eventId;
-    if (targetEventId) {
-      navigate('EventDetail', { eventId: targetEventId });
-      return true;
+    if (targetEventId && events.length === 0) {
+      return false;
     }
 
-    // 4. Membership application review
-    if (data.application_id) {
-      navigate('ApplicationReview', { applicationId: data.application_id });
-      return true;
-    }
-
-    // 5. Fallback: Inbox Tab
-    navigate('Main', { screen: 'InboxTab' } as any);
+    handleAppNotificationNavigation(data, navigationRef as any, {
+      user,
+      events,
+      users,
+      conversations,
+      dispatchLocalAlert,
+    });
     return true;
-  }, [user, conversations, users, events, canAccessEventGroupChat, getOrCreateEventGroupConversation, markConversationRead]);
+  }, [user, events, users, conversations]);
 
   // Resolve the pending tap once the needed data is present; retry as data syncs.
   useEffect(() => {

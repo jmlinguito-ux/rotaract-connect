@@ -34,6 +34,11 @@ const ICON: Record<NotificationKind, keyof typeof Ionicons.glyphMap> = {
   MEMBERSHIP_REQUEST: 'people',
   INQUIRY_RECEIVED: 'chatbubble-ellipses',
   EMERGENCY_BROADCAST: 'warning',
+  COHOST_REQUEST: 'people-circle',
+  COHOST_APPROVED: 'checkmark-done-circle',
+  COHOST_REJECTED: 'close-circle',
+  COHOST_PAYMENT_SUBMITTED: 'card',
+  COHOST_PAYMENT_VERIFIED: 'checkmark-circle',
 };
 
 const ICON_COLOR: Record<NotificationKind, string> = {
@@ -50,6 +55,11 @@ const ICON_COLOR: Record<NotificationKind, string> = {
   MEMBERSHIP_REQUEST: colors.warning,
   INQUIRY_RECEIVED: colors.primary,
   EMERGENCY_BROADCAST: colors.danger,
+  COHOST_REQUEST: colors.warning,
+  COHOST_APPROVED: colors.success,
+  COHOST_REJECTED: colors.danger,
+  COHOST_PAYMENT_SUBMITTED: colors.info,
+  COHOST_PAYMENT_VERIFIED: colors.success,
 };
 
 export default function NotificationsScreen({ navigation }: Props) {
@@ -57,7 +67,7 @@ export default function NotificationsScreen({ navigation }: Props) {
   const { colors: themeColors, isNightMode } = useTheme();
   const {
     notificationsFor, markNotificationsRead, deleteNotification, deleteAllNotifications, participantsFor, invitationFor,
-    approveParticipant, declineParticipant, respondInvitation, users, events,
+    approveParticipant, declineParticipant, respondInvitation, users, events, conversations,
   } = useData();
 
   const [reviewModalData, setReviewModalData] = useState<{
