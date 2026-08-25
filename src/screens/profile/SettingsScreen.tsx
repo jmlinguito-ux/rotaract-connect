@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Switch, Alert, Modal, TextInput, ActivityIndicator, KeyboardAvoidingView, Platform, Image } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert, Modal, TextInput, ActivityIndicator, KeyboardAvoidingView, Platform, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
+import AppSwitch from '../../components/AppSwitch';
 import { RootStackParamList } from '../../navigation/types';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -437,15 +438,13 @@ export default function SettingsScreen({ navigation }: Props) {
               <View style={[styles.rowIconWrap, { backgroundColor: themeColors.primary + '1A' }]}>
                 <Ionicons name="phone-portrait-outline" size={18} color={themeColors.primary} />
               </View>
-              <View style={{ flex: 1 }}>
+              <View style={{ flex: 1, paddingRight: 10 }}>
                 <Text style={titleStyle}>Push Notifications</Text>
                 <Text style={subStyle}>Get alerts even when the app is closed. Your notification history stays available in your Inbox.</Text>
               </View>
-              <Switch
+              <AppSwitch
                 value={pushEnabled}
                 onValueChange={setPushEnabled}
-                trackColor={{ false: themeColors.border, true: themeColors.primary }}
-                thumbColor="#fff"
               />
             </View>
 
@@ -455,15 +454,13 @@ export default function SettingsScreen({ navigation }: Props) {
               <View style={[styles.rowIconWrap, { backgroundColor: themeColors.primary + '1A' }]}>
                 <Ionicons name="alarm-outline" size={18} color={themeColors.primary} />
               </View>
-              <View style={{ flex: 1 }}>
+              <View style={{ flex: 1, paddingRight: 10 }}>
                 <Text style={titleStyle}>Event Reminders</Text>
                 <Text style={subStyle}>Alerts for upcoming events and check-ins</Text>
               </View>
-              <Switch
+              <AppSwitch
                 value={eventReminders}
                 onValueChange={setEventReminders}
-                trackColor={{ false: themeColors.border, true: themeColors.primary }}
-                thumbColor="#fff"
               />
             </View>
 
@@ -473,15 +470,13 @@ export default function SettingsScreen({ navigation }: Props) {
               <View style={[styles.rowIconWrap, { backgroundColor: themeColors.primary + '1A' }]}>
                 <Ionicons name="chatbubble-ellipses-outline" size={18} color={themeColors.primary} />
               </View>
-              <View style={{ flex: 1 }}>
+              <View style={{ flex: 1, paddingRight: 10 }}>
                 <Text style={titleStyle}>Inquiries & Messages</Text>
                 <Text style={subStyle}>Direct messages from Rotaractors</Text>
               </View>
-              <Switch
+              <AppSwitch
                 value={inquiryAlerts}
                 onValueChange={setInquiryAlerts}
-                trackColor={{ false: themeColors.border, true: themeColors.primary }}
-                thumbColor="#fff"
               />
             </View>
 
@@ -491,15 +486,13 @@ export default function SettingsScreen({ navigation }: Props) {
               <View style={[styles.rowIconWrap, { backgroundColor: themeColors.primary + '1A' }]}>
                 <Ionicons name="person-add-outline" size={18} color={themeColors.primary} />
               </View>
-              <View style={{ flex: 1 }}>
+              <View style={{ flex: 1, paddingRight: 10 }}>
                 <Text style={titleStyle}>Join Requests & Approvals</Text>
                 <Text style={subStyle}>Notifications for event registrations</Text>
               </View>
-              <Switch
+              <AppSwitch
                 value={joinRequestsAlerts}
                 onValueChange={setJoinRequestsAlerts}
-                trackColor={{ false: themeColors.border, true: themeColors.primary }}
-                thumbColor="#fff"
               />
             </View>
 
@@ -509,15 +502,13 @@ export default function SettingsScreen({ navigation }: Props) {
               <View style={[styles.rowIconWrap, { backgroundColor: themeColors.primary + '1A' }]}>
                 <Ionicons name="megaphone-outline" size={18} color={themeColors.primary} />
               </View>
-              <View style={{ flex: 1 }}>
+              <View style={{ flex: 1, paddingRight: 10 }}>
                 <Text style={titleStyle}>District Announcements</Text>
                 <Text style={subStyle}>District 3800 news and updates</Text>
               </View>
-              <Switch
+              <AppSwitch
                 value={districtAnnouncements}
                 onValueChange={setDistrictAnnouncements}
-                trackColor={{ false: themeColors.border, true: themeColors.primary }}
-                thumbColor="#fff"
               />
             </View>
           </View>
@@ -603,15 +594,13 @@ export default function SettingsScreen({ navigation }: Props) {
               <View style={[styles.rowIconWrap, { backgroundColor: themeColors.primary + '1A' }]}>
                 <Ionicons name="chatbubbles-outline" size={18} color={themeColors.primary} />
               </View>
-              <View style={{ flex: 1 }}>
+              <View style={{ flex: 1, paddingRight: 10 }}>
                 <Text style={titleStyle}>Allow Direct Inquiries</Text>
                 <Text style={subStyle}>Let members outside your club start a chat with you</Text>
               </View>
-              <Switch
+              <AppSwitch
                 value={user.allow_direct_inquiries !== false}
                 onValueChange={v => updateProfile({ allow_direct_inquiries: v })}
-                trackColor={{ false: themeColors.border, true: themeColors.primary }}
-                thumbColor="#fff"
               />
             </View>
 
@@ -621,15 +610,13 @@ export default function SettingsScreen({ navigation }: Props) {
               <View style={[styles.rowIconWrap, { backgroundColor: themeColors.primary + '1A' }]}>
                 <Ionicons name="ellipse" size={18} color={themeColors.primary} />
               </View>
-              <View style={{ flex: 1 }}>
+              <View style={{ flex: 1, paddingRight: 10 }}>
                 <Text style={titleStyle}>Show Active Status</Text>
                 <Text style={subStyle}>Let others see when you're online in chats</Text>
               </View>
-              <Switch
+              <AppSwitch
                 value={showActiveStatus}
                 onValueChange={setShowActiveStatus}
-                trackColor={{ false: themeColors.border, true: themeColors.primary }}
-                thumbColor="#fff"
               />
             </View>
 
@@ -644,11 +631,11 @@ export default function SettingsScreen({ navigation }: Props) {
               <View style={[styles.rowIconWrap, { backgroundColor: themeColors.primary + '1A' }]}>
                 <Ionicons name="notifications-outline" size={18} color={themeColors.primary} />
               </View>
-              <View style={{ flex: 1 }}>
+              <View style={{ flex: 1, paddingRight: 10 }}>
                 <Text style={titleStyle}>Push Notifications</Text>
                 <Text style={subStyle}>Event invitations, approvals, live attendance passes & SOS alerts</Text>
               </View>
-              <Switch
+              <AppSwitch
                 value={pushEnabled}
                 onValueChange={async (val) => {
                   setPushEnabled(val);
@@ -656,8 +643,6 @@ export default function SettingsScreen({ navigation }: Props) {
                     await registerForPushNotificationsAsync();
                   }
                 }}
-                trackColor={{ false: themeColors.border, true: themeColors.primary }}
-                thumbColor="#fff"
               />
             </View>
           </View>
@@ -671,15 +656,13 @@ export default function SettingsScreen({ navigation }: Props) {
               <View style={[styles.rowIconWrap, { backgroundColor: themeColors.primary + '1A' }]}>
                 <Ionicons name="navigate-outline" size={18} color={themeColors.primary} />
               </View>
-              <View style={{ flex: 1 }}>
+              <View style={{ flex: 1, paddingRight: 10 }}>
                 <Text style={titleStyle}>High Accuracy GPS</Text>
                 <Text style={subStyle}>Recommended for precise check-ins</Text>
               </View>
-              <Switch
+              <AppSwitch
                 value={highAccuracyGps}
                 onValueChange={setHighAccuracyGps}
-                trackColor={{ false: themeColors.border, true: themeColors.primary }}
-                thumbColor="#fff"
               />
             </View>
 
@@ -689,17 +672,16 @@ export default function SettingsScreen({ navigation }: Props) {
               <View style={[styles.rowIconWrap, { backgroundColor: '#EF4444' + '1A' }]}>
                 <Ionicons name="shield-half-outline" size={18} color="#EF4444" />
               </View>
-              <View style={{ flex: 1 }}>
+              <View style={{ flex: 1, paddingRight: 10 }}>
                 <Text style={titleStyle}>Emergency SOS Proximity Alerts</Text>
                 <Text style={subStyle}>
                   Alerts you with instant chime when a member within 5 km triggers an SOS distress signal (0% idle battery)
                 </Text>
               </View>
-              <Switch
+              <AppSwitch
                 value={safetyNetworkActive}
                 onValueChange={handleToggleSafetyNetwork}
-                trackColor={{ false: themeColors.border, true: '#EF4444' }}
-                thumbColor="#fff"
+                activeColor="#EF4444"
               />
             </View>
 

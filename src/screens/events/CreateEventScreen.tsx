@@ -21,6 +21,7 @@ import { SegmentedTimeInput } from '../../components/SegmentedTimeInput';
 import { ConfirmRulesModal } from '../../components/ConfirmRulesModal';
 import { editLockRulesForSubmit } from '../../utils/eventEditPolicy';
 import { KeyboardAwareScrollView, useKeyboardAwareOnFocus } from '../../components/KeyboardAwareScrollView';
+import AppSwitch from '../../components/AppSwitch';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'CreateEvent'>;
 
@@ -853,11 +854,9 @@ function SettingToggleRow({
         <Text style={[styles.settingLabel, { color: themeColors.text }]}>{label}</Text>
         {subtitle ? <Text style={[styles.settingSubtitle, { color: themeColors.textMuted }]}>{subtitle}</Text> : null}
       </View>
-      <Switch
+      <AppSwitch
         value={value}
         onValueChange={onChange}
-        trackColor={{ false: themeColors.border, true: themeColors.primary + '80' }}
-        thumbColor={value ? themeColors.primary : '#f4f3f4'}
       />
     </TouchableOpacity>
   );

@@ -47,6 +47,7 @@ export default function CohostingScreen({ route, navigation }: Props) {
   const [paymentRow, setPaymentRow] = useState<EventCohost | null>(null);
   const [receiptUrl, setReceiptUrl] = useState<string | null>(null);
   const [isZooming, setIsZooming] = useState(false);
+  const [showRequestSheet, setShowRequestSheet] = useState(false);
 
   if (!event) {
     return (
@@ -172,7 +173,7 @@ export default function CohostingScreen({ route, navigation }: Props) {
             {canRequest && !myCohost && (
               <TouchableOpacity
                 style={[styles.primaryBtn, { backgroundColor: themeColors.primary }]}
-                onPress={doRequest}
+                onPress={() => setShowRequestSheet(true)}
               >
                 <Ionicons name="people-outline" size={16} color="#FFF" />
                 <Text style={styles.primaryBtnText}>Become a Cohost</Text>
@@ -334,6 +335,25 @@ export default function CohostingScreen({ route, navigation }: Props) {
         onConfirm={doCancel}
         onClose={() => setConfirmCancelId(null)}
       />
+
+      {/* Request to Cohost Sheet */}
+      {showRequestSheet && event && (
+        <RequestCohostSheet
+          eventTitle={event.title}
+          feeCentavos={event.cohosting_fee_centavos ?? 0}
+          benefits={event.cohosting_benefits}
+          onClose={() => setShowRequestSheet(false)}
+          onSubmit={async (expectedCount, message) => {
+            const res = await requestCohost(eventId, expectedCount, message);
+            if (res.ok) {
+              setShowRequestSheet(false);
+              Alert.alert('Application Submitted', 'Your club’s cohost request was submitted to the organizers.');
+            } else {
+              Alert.alert('Could not send request', res.error ?? 'Try again.');
+            }
+          }}
+        />
+      )}
 
       {/* Payment submission sheet — kept inline to avoid a separate screen for MVP. */}
       {paymentRow && (
@@ -624,6 +644,149 @@ function PaymentSheet({
   );
 }
 
+function RequestCohostSheet({
+  eventTitle,
+  feeCentavos,
+  benefits,
+  onClose,
+  onSubmit,
+}: {
+  eventTitle: string;
+  feeCentavos: number;
+  benefits?: string;
+  onClose: () => void;
+  onSubmit: (expectedCount: number, message?: string) => Promise<void>;
+}) {
+  const { colors: themeColors, isNightMode } = useTheme();
+  const insets = useSafeAreaInsets();
+  const keyboardOffset = useKeyboardOffset();
+  const isKeyboardOpen = keyboardOffset > 0;
+
+  const [expectedCount, setExpectedCount] = useState('25');
+  const [message, setMessage] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [isInputFocused, setIsInputFocused] = useState<'count' | 'msg' | null>(null);
+
+  const feePesos = Math.round(feeCentavos / 100);
+
+  const handleSubmit = async () => {
+    const count = parseInt(expectedCount, 10);
+    if (isNaN(count) || count < 1) {
+      Alert.alert('Invalid Count', 'Please enter at least 1 expected participant.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await onSubmit(count, message.trim() || undefined);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        style={[
+          styles.sheetOverlay,
+          Platform.OS === 'android' && isKeyboardOpen ? { paddingBottom: keyboardOffset } : null,
+        ]}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <TouchableOpacity style={styles.sheetBackdrop} activeOpacity={1} onPress={onClose} />
+        <View
+          style={[
+            styles.sheet,
+            {
+              backgroundColor: themeColors.surface,
+              borderColor: themeColors.border,
+              paddingBottom: isKeyboardOpen && Platform.OS === 'android'
+                ? 16
+                : Math.max(insets.bottom + 16, 28),
+              maxHeight: isKeyboardOpen ? '92%' : '85%',
+            },
+          ]}
+        >
+          <View style={styles.sheetHandle} />
+          <ScrollView
+            bounces={false}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: 10 }}
+          >
+            <Text style={[styles.sheetTitle, { color: themeColors.text }]}>Apply as Event Cohost</Text>
+            <Text style={[styles.meta, { color: themeColors.textMuted, marginBottom: 12 }]}>
+              {eventTitle} · {feePesos > 0 ? `Fee: ₱${feePesos.toLocaleString()}` : 'Free Cohosting'}
+            </Text>
+
+            {benefits ? (
+              <View style={[styles.benefitsBanner, { backgroundColor: isNightMode ? themeColors.bg : '#F8FAFC', borderColor: themeColors.border }]}>
+                <Ionicons name="gift-outline" size={16} color={themeColors.primary} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.benefitsTitle, { color: themeColors.primary }]}>Cohost Benefits</Text>
+                  <Text style={[styles.benefitsText, { color: themeColors.text }]}>
+                    {benefits}
+                  </Text>
+                </View>
+              </View>
+            ) : null}
+
+            <Text style={[styles.label, { color: themeColors.text, marginTop: 10 }]}>Expected Delegates / Attendees</Text>
+            <TextInput
+              style={[
+                styles.sheetTextInput,
+                {
+                  backgroundColor: themeColors.bg,
+                  borderColor: themeColors.border,
+                  color: themeColors.text,
+                },
+                isInputFocused === 'count' && { borderColor: themeColors.primary, borderWidth: 1.5 },
+              ]}
+              value={expectedCount}
+              onChangeText={t => setExpectedCount(t.replace(/[^0-9]/g, ''))}
+              onFocus={() => setIsInputFocused('count')}
+              onBlur={() => setIsInputFocused(null)}
+              keyboardType="number-pad"
+              placeholder="e.g. 25"
+              placeholderTextColor={themeColors.textMuted}
+            />
+
+            <Text style={[styles.label, { color: themeColors.text, marginTop: 12 }]}>Note or Proposal for Organizer (Optional)</Text>
+            <TextInput
+              style={[
+                styles.sheetTextInput,
+                {
+                  backgroundColor: themeColors.bg,
+                  borderColor: themeColors.border,
+                  color: themeColors.text,
+                  minHeight: 70,
+                  textAlignVertical: 'top',
+                },
+                isInputFocused === 'msg' && { borderColor: themeColors.primary, borderWidth: 1.5 },
+              ]}
+              value={message}
+              onChangeText={setMessage}
+              onFocus={() => setIsInputFocused('msg')}
+              onBlur={() => setIsInputFocused(null)}
+              placeholder="e.g. Caloocan delegating 25 youth leaders."
+              placeholderTextColor={themeColors.textMuted}
+              multiline
+            />
+
+            <View style={styles.sheetActions}>
+              <ActionBtn label="Cancel" onPress={onClose} variant="ghost" />
+              <ActionBtn
+                label={submitting ? "Submitting..." : "Send Cohost Request"}
+                variant="primary"
+                onPress={handleSubmit}
+              />
+            </View>
+          </ScrollView>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   list: { padding: 16, paddingBottom: 32 },
@@ -695,6 +858,32 @@ const styles = StyleSheet.create({
   },
   uploadBtnText: { fontSize: 13, fontWeight: '800' },
   sheetActions: { flexDirection: 'row', gap: 8, justifyContent: 'flex-end', marginTop: 20 },
+  sheetTextInput: {
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+  },
+  benefitsBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  benefitsTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    marginBottom: 2,
+  },
+  benefitsText: {
+    fontSize: 12,
+    lineHeight: 16,
+  },
 
   // Receipt preview dialog modal
   receiptBackdrop: {

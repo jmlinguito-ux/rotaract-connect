@@ -13,6 +13,7 @@ import { EmergencyAlert } from '../types';
 import UserAvatar from './UserAvatar';
 import { formatDistance } from '../utils/checkIn';
 import { playEmergencySound, stopAlertSound } from '../services/sound';
+import { useTheme } from '../context/ThemeContext';
 
 interface Props {
   visible: boolean;
@@ -27,6 +28,7 @@ export default function EmergencyAlertModal({
   distanceMetersAway,
   onDismiss,
 }: Props) {
+  const { colors: themeColors, isNightMode } = useTheme();
   useEffect(() => {
     if (visible && alert && alert.playSound !== false) {
       playEmergencySound();
@@ -68,7 +70,7 @@ export default function EmergencyAlertModal({
       onRequestClose={onDismiss}
     >
       <View style={styles.backdrop}>
-        <View style={styles.card}>
+        <View style={[styles.card, { backgroundColor: isNightMode ? themeColors.cardBg : '#FFFFFF', borderColor: themeColors.border }]}>
           {/* Header Badge */}
           <View style={styles.alertHeader}>
             <View style={styles.iconPulse}>
@@ -83,16 +85,16 @@ export default function EmergencyAlertModal({
           </View>
 
           {/* User Info */}
-          <View style={styles.userSection}>
+          <View style={[styles.userSection, { borderBottomColor: isNightMode ? themeColors.border : '#F3F4F6' }]}>
             <UserAvatar
               user={{ full_name: alert.full_name, avatar_url: alert.avatar_url }}
               size={56}
             />
             <View style={styles.userDetails}>
-              <Text style={styles.userName}>{alert.full_name}</Text>
-              <Text style={styles.userClub}>{alert.club_name}</Text>
+              <Text style={[styles.userName, { color: themeColors.text }]}>{alert.full_name}</Text>
+              <Text style={[styles.userClub, { color: themeColors.textMuted }]}>{alert.club_name}</Text>
               {distanceMetersAway !== undefined && distanceMetersAway > 0 && (
-                <View style={styles.distancePill}>
+                <View style={[styles.distancePill, { backgroundColor: isNightMode ? '#450A0A' : '#FEF2F2', borderColor: isNightMode ? '#7F1D1D' : '#FECACA' }]}>
                   <Ionicons name="navigate" size={12} color="#EF4444" />
                   <Text style={styles.distanceText}>
                     Approx. {formatDistance(distanceMetersAway)} away
@@ -103,17 +105,17 @@ export default function EmergencyAlertModal({
           </View>
 
           {/* Location & Message Info Box */}
-          <View style={styles.infoBox}>
+          <View style={[styles.infoBox, { backgroundColor: isNightMode ? themeColors.surface : '#F9FAFB', borderColor: isNightMode ? themeColors.border : '#E5E7EB' }]}>
             <View style={styles.infoRow}>
               <Ionicons name="location-sharp" size={18} color="#EF4444" />
-              <Text style={styles.infoText} numberOfLines={2}>
+              <Text style={[styles.infoText, { color: themeColors.text }]} numberOfLines={2}>
                 {alert.address_hint || 'Coordinates provided'}
               </Text>
             </View>
             {alert.message ? (
               <View style={[styles.infoRow, { marginTop: 8 }]}>
-                <Ionicons name="chatbubble-ellipses" size={16} color="#6B7280" />
-                <Text style={styles.messageText}>"{alert.message}"</Text>
+                <Ionicons name="chatbubble-ellipses" size={16} color={themeColors.textMuted} />
+                <Text style={[styles.messageText, { color: themeColors.textMuted }]}>"{alert.message}"</Text>
               </View>
             ) : null}
           </View>
@@ -126,9 +128,9 @@ export default function EmergencyAlertModal({
             </TouchableOpacity>
 
             {alert.contact_number ? (
-              <TouchableOpacity style={styles.callBtn} onPress={handleCall}>
-                <Ionicons name="call" size={18} color="#1F2937" />
-                <Text style={styles.callBtnText}>Call ({alert.contact_number})</Text>
+              <TouchableOpacity style={[styles.callBtn, { backgroundColor: isNightMode ? themeColors.surface : '#F3F4F6' }]} onPress={handleCall}>
+                <Ionicons name="call" size={18} color={themeColors.text} />
+                <Text style={[styles.callBtnText, { color: themeColors.text }]}>Call ({alert.contact_number})</Text>
               </TouchableOpacity>
             ) : null}
 
@@ -152,7 +154,7 @@ export default function EmergencyAlertModal({
             </View>
 
             <TouchableOpacity style={styles.dismissBtn} onPress={onDismiss}>
-              <Text style={styles.dismissBtnText}>Dismiss Alert</Text>
+              <Text style={[styles.dismissBtnText, { color: themeColors.textMuted }]}>Dismiss Alert</Text>
             </TouchableOpacity>
           </View>
         </View>

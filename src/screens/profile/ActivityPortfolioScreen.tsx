@@ -21,7 +21,7 @@ type FilterMode = 'ATTENDED' | 'JOINED' | 'ORGANIZED';
 export default function ActivityPortfolioScreen({ route, navigation }: Props) {
   const { user } = useAuth();
   const { userStats, events, participants, impacts, users } = useData();
-  const { colors: themeColors } = useTheme();
+  const { colors: themeColors, isNightMode } = useTheme();
 
   const initialFilter = route.params?.initialFilter || 'ATTENDED';
   const [filter, setFilter] = useState<FilterMode>(initialFilter);
@@ -305,7 +305,7 @@ export default function ActivityPortfolioScreen({ route, navigation }: Props) {
           </View>
 
           {/* Linear Progress Bar */}
-          <View style={[styles.progressBarTrack, { backgroundColor: themeColors.surface }]}>
+          <View style={[styles.progressBarTrack, { backgroundColor: isNightMode ? 'rgba(255, 255, 255, 0.14)' : '#E2E8F0' }]}>
             <View
               style={[
                 styles.progressBarFill,

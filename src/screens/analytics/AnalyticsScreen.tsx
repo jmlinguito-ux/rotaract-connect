@@ -16,7 +16,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Analytics'>;
 export default function AnalyticsScreen({ navigation }: Props) {
   const { user } = useAuth();
   const { events, impacts, users, applications, clubs } = useData();
-  const { colors: themeColors } = useTheme();
+  const { colors: themeColors, isNightMode } = useTheme();
   const [selectedZone, setSelectedZone] = useState<string | 'ALL'>('ALL');
 
   const filteredClubs = useMemo(() => {
@@ -142,7 +142,7 @@ export default function AnalyticsScreen({ navigation }: Props) {
               <Text style={[styles.barLabel, { color: themeColors.textMuted }]}>Service Projects ({serviceProjectsCount})</Text>
               <Text style={[styles.barLabel, { color: themeColors.textMuted }]}>Fellowships ({fellowshipsCount})</Text>
             </View>
-            <View style={[styles.barTrack, { backgroundColor: themeColors.surface }]}>
+            <View style={[styles.barTrack, { backgroundColor: isNightMode ? 'rgba(255, 255, 255, 0.14)' : '#E2E8F0' }]}>
               <View style={[styles.barFillService, { width: `${(serviceProjectsCount / Math.max(1, filteredEvents.length)) * 100}%`, backgroundColor: themeColors.success }]} />
               <View style={[styles.barFillFellowship, { width: `${(fellowshipsCount / Math.max(1, filteredEvents.length)) * 100}%`, backgroundColor: themeColors.warning }]} />
             </View>
@@ -172,7 +172,7 @@ export default function AnalyticsScreen({ navigation }: Props) {
                     <Text style={[styles.aofLabel, { color: themeColors.text }]}>{item.label}</Text>
                   </View>
                   <View style={styles.aofMetricsGroup}>
-                    <View style={[styles.aofProjectsBadge, { backgroundColor: themeColors.surface }]}>
+                    <View style={[styles.aofProjectsBadge, { backgroundColor: isNightMode ? themeColors.bg : themeColors.surface }]}>
                       <Text style={[styles.aofProjectsText, { color: themeColors.text }]}>
                         {item.projectCount} proj{item.projectCount === 1 ? '' : 's'}
                       </Text>
@@ -183,7 +183,7 @@ export default function AnalyticsScreen({ navigation }: Props) {
                   </View>
                 </View>
                 {/* Horizontal Progress Bar */}
-                <View style={[styles.aofTrack, { backgroundColor: themeColors.surface }]}>
+                <View style={[styles.aofTrack, { backgroundColor: isNightMode ? 'rgba(255, 255, 255, 0.14)' : '#E2E8F0' }]}>
                   <View
                     style={[
                       styles.aofFill,

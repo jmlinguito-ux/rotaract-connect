@@ -1,6 +1,7 @@
 import React from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Switch } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
+import AppSwitch from './AppSwitch';
 
 export interface CohostingValue {
   enabled: boolean;
@@ -32,17 +33,15 @@ export default function CohostingFields({ value, onChange }: Props) {
   return (
     <View style={styles.container}>
       <View style={styles.headerRow}>
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, paddingRight: 8 }}>
           <Text style={[styles.label, { color: themeColors.text }]}>Cohosting</Text>
           <Text style={[styles.hint, { color: themeColors.textMuted }]}>
             Allow other Rotaract clubs to cohost and get automatic participant quotas
           </Text>
         </View>
-        <Switch
+        <AppSwitch
           value={value.enabled}
           onValueChange={v => set({ enabled: v })}
-          trackColor={{ false: themeColors.border, true: themeColors.primary + '80' }}
-          thumbColor={value.enabled ? themeColors.primary : '#f4f3f4'}
         />
       </View>
 
@@ -108,11 +107,9 @@ export default function CohostingFields({ value, onChange }: Props) {
                 Review and approve each cohosting request before confirming
               </Text>
             </View>
-            <Switch
+            <AppSwitch
               value={value.requiresApproval}
               onValueChange={v => set({ requiresApproval: v })}
-              trackColor={{ false: themeColors.border, true: themeColors.primary + '80' }}
-              thumbColor={value.requiresApproval ? themeColors.primary : '#f4f3f4'}
             />
           </View>
 

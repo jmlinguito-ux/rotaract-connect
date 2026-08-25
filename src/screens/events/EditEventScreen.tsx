@@ -21,6 +21,7 @@ import { CoverPhotoPicker } from '../../components/CoverPhotoPicker';
 import { eventEditPolicy, isMaterialChange } from '../../utils/eventEditPolicy';
 import { ConfirmRulesModal } from '../../components/ConfirmRulesModal';
 import { KeyboardAwareScrollView, useKeyboardAwareOnFocus } from '../../components/KeyboardAwareScrollView';
+import AppSwitch from '../../components/AppSwitch';
 import type { RotaractEvent } from '../../types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'EditEvent'>;
@@ -909,11 +910,9 @@ function SettingToggleRow({
         <Text style={[styles.settingLabel, { color: themeColors.text }]}>{label}</Text>
         {subtitle ? <Text style={[styles.settingSubtitle, { color: themeColors.textMuted }]}>{subtitle}</Text> : null}
       </View>
-      <Switch
+      <AppSwitch
         value={value}
         onValueChange={onChange}
-        trackColor={{ false: themeColors.border, true: themeColors.primary + '80' }}
-        thumbColor={value ? themeColors.primary : '#f4f3f4'}
       />
     </TouchableOpacity>
   );

@@ -622,7 +622,7 @@ export default function MapScreen() {
 }
 
 export function EventCard({ event, userCoords, onPress }: { event: RotaractEvent; userCoords?: { latitude: number; longitude: number } | null; onPress: () => void }) {
-  const { colors: c } = useTheme();
+  const { colors: c, isNightMode } = useTheme();
   let distStr = '';
   if (userCoords) {
     const meters = distanceMeters(userCoords, { latitude: event.latitude, longitude: event.longitude });
@@ -635,12 +635,12 @@ export function EventCard({ event, userCoords, onPress }: { event: RotaractEvent
         <View style={styles.badgeWrap}>
           <StatusBadge status={event.status} />
           {event.event_type === 'SERVICE_PROJECT' ? (
-            <View style={[styles.typeBadge, { backgroundColor: '#EBF9F3' }]}>
+            <View style={[styles.typeBadge, { backgroundColor: isNightMode ? '#064E3B33' : '#EBF9F3' }]}>
               <FontAwesome5 name="hands-helping" size={10} color={c.success} />
               <Text style={[styles.typeText, { color: c.success }]}>Service Project</Text>
             </View>
           ) : (
-            <View style={[styles.typeBadge, { backgroundColor: '#FFF4E5' }]}>
+            <View style={[styles.typeBadge, { backgroundColor: isNightMode ? '#78350F33' : '#FFF4E5' }]}>
               <Ionicons name="people" size={11} color={c.warning} />
               <Text style={[styles.typeText, { color: c.warning }]}>Fellowship</Text>
             </View>

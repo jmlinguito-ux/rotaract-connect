@@ -1297,7 +1297,7 @@ export default function EventDetailScreen({ route, navigation }: Props) {
                 </TouchableOpacity>
 
                 {/* Capacity Progress Bar */}
-                <View style={[styles.partProgressBar, { backgroundColor: isNightMode ? themeColors.surface : '#E2E8F0' }]}>
+                <View style={[styles.partProgressBar, { backgroundColor: isNightMode ? 'rgba(255, 255, 255, 0.14)' : '#E2E8F0' }]}>
                   <View
                     style={[
                       styles.partProgressFill,
@@ -1315,7 +1315,7 @@ export default function EventDetailScreen({ route, navigation }: Props) {
                     style={[
                       styles.allocationInnerBlock,
                       {
-                        backgroundColor: isNightMode ? themeColors.surface : '#F8FAFC',
+                        backgroundColor: isNightMode ? themeColors.bg : '#F8FAFC',
                         borderColor: isNightMode ? themeColors.border : '#E2E8F0',
                       },
                     ]}

@@ -128,7 +128,7 @@ export default function MarkAttendanceScreen({ route }: Props) {
               Checked In ({checkedOutCount} Departed)
             </Text>
           </View>
-          <View style={[styles.progressContainer, { backgroundColor: themeColors.surface }]}>
+          <View style={[styles.progressContainer, { backgroundColor: isNightMode ? 'rgba(255, 255, 255, 0.14)' : '#E2E8F0' }]}>
             <View
               style={[
                 styles.progressBar,
