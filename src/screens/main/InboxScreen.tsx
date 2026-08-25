@@ -38,6 +38,7 @@ const ICON: Record<AppNotification['kind'], keyof typeof Ionicons.glyphMap> = {
   COHOST_REJECTED: 'close-circle',
   COHOST_PAYMENT_SUBMITTED: 'card',
   COHOST_PAYMENT_VERIFIED: 'checkmark-circle',
+  CERTIFICATE_READY: 'ribbon',
 };
 
 const ICON_COLOR: Record<AppNotification['kind'], string> = {
@@ -59,6 +60,7 @@ const ICON_COLOR: Record<AppNotification['kind'], string> = {
   COHOST_REJECTED: '#EF4444',
   COHOST_PAYMENT_SUBMITTED: '#3B82F6',
   COHOST_PAYMENT_VERIFIED: '#10B981',
+  CERTIFICATE_READY: '#D41367',
 };
 
 type Tab = 'notifications' | 'messages' | 'chats';

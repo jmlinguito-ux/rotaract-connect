@@ -172,7 +172,18 @@ export function handleAppNotificationNavigation(
     return;
   }
 
-  // 7. Role Assigned
+  // 7. Certificate of Volunteer Service / Hours Credited -> Volunteer Portfolio
+  if (
+    kind === 'CERTIFICATE_READY' ||
+    /certificate\s+(?:ready|generated|available|of\s+service)/i.test(rawTitle) ||
+    /volunteer\s+hours\s+credited/i.test(rawTitle) ||
+    /volunteer\s+hours\s+credited/i.test(rawMessage)
+  ) {
+    navigation.navigate('ActivityPortfolio', { initialFilter: 'ATTENDED' });
+    return;
+  }
+
+  // 8. Role Assigned
   if (kind === 'ROLE_ASSIGNED') {
     navigation.navigate('Main', { screen: 'ProfileTab' });
     return;

@@ -328,7 +328,8 @@ export type NotificationKind =
   | 'COHOST_APPROVED'
   | 'COHOST_REJECTED'
   | 'COHOST_PAYMENT_SUBMITTED'
-  | 'COHOST_PAYMENT_VERIFIED';
+  | 'COHOST_PAYMENT_VERIFIED'
+  | 'CERTIFICATE_READY';
 
 /** Organizer banner priority. HIGH triggers sound + vibration where the OS allows. */
 export type NotificationPriority = 'NORMAL' | 'ALERT' | 'HIGH';

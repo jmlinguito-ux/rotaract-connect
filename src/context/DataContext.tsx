@@ -1818,7 +1818,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
     db.upsertImpact(impact);
     setEvents(prev => prev.map(e => (e.id === impact.event_id ? { ...e, status: 'COMPLETED' } : e)));
     db.updateEvent(impact.event_id, { status: 'COMPLETED' });
-  }, []);
+
+    const ev = events.find(e => e.id === impact.event_id);
+    const attendees = participants.filter(p => p.event_id === impact.event_id && (p.attendance_status === 'ATTENDED' || p.status === 'JOINED'));
+    for (const att of attendees) {
+      pushNotif({
+        user_id: att.user_id,
+        kind: 'CERTIFICATE_READY',
+        title: 'Certificate of Service Ready 📜',
+        message: `Your Certificate of Volunteer Service for "${ev?.title ?? 'the event'}" is ready! ${impact.volunteer_hours > 0 ? `${impact.volunteer_hours} volunteer hours credited.` : ''} Tap to view your portfolio.`,
+        event_id: impact.event_id,
+      });
+    }
+  }, [events, participants, pushNotif]);
 
   const reviewApplication = useCallback((appId, action, actor, notes = '') => {
     const a = applications.find(x => x.id === appId);

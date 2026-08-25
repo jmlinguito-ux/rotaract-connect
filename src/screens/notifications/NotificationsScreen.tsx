@@ -39,6 +39,7 @@ const ICON: Record<NotificationKind, keyof typeof Ionicons.glyphMap> = {
   COHOST_REJECTED: 'close-circle',
   COHOST_PAYMENT_SUBMITTED: 'card',
   COHOST_PAYMENT_VERIFIED: 'checkmark-circle',
+  CERTIFICATE_READY: 'ribbon',
 };
 
 const ICON_COLOR: Record<NotificationKind, string> = {
@@ -60,6 +61,7 @@ const ICON_COLOR: Record<NotificationKind, string> = {
   COHOST_REJECTED: colors.danger,
   COHOST_PAYMENT_SUBMITTED: colors.info,
   COHOST_PAYMENT_VERIFIED: colors.success,
+  CERTIFICATE_READY: colors.primary,
 };
 
 export default function NotificationsScreen({ navigation }: Props) {
