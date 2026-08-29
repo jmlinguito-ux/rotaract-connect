@@ -69,3 +69,7 @@ supabase/.temp/
 modules/*/android/build/
 modules/*/android/.gradle/
 **/.gradle/
+.clinerules
+.agents/rules/antigravity-rtk-rules.md
+.gitignore
+.gitignore
