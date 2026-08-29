@@ -11,14 +11,31 @@ import QRCode from 'qrcode';
 import { PDFDocument } from 'pdf-lib';
 import { AppUser, RotaractEvent, EventParticipant, EventImpact } from '../types';
 import { calculateParticipantHours } from './hoursCalculation';
-import { ROTARACT_HEADER_LOGO_BASE64 } from './logoBase64';
 import {
   CERT_SERIF_REGULAR_BASE64,
   CERT_SERIF_ITALIC_BASE64,
 } from './fontsBase64';
-import {
-  EMOJI_DATA_URI,
-} from './certAssetsBase64';
+
+// Lazy-loaded: logoBase64 (~47KB) and certAssetsBase64 (~463KB) are only needed
+// when generating a PDF. Static imports forced both into the initial bundle (and
+// every reload's module graph). They resolve once on first cert generation and
+// are cached for the rest of the session.
+let certAssetsPromise: Promise<{
+  ROTARACT_HEADER_LOGO_BASE64: string;
+  EMOJI_DATA_URI: Record<string, string>;
+}> | null = null;
+function getCertAssets() {
+  if (!certAssetsPromise) {
+    certAssetsPromise = Promise.all([
+      import('./logoBase64'),
+      import('./certAssetsBase64'),
+    ]).then(([logo, cert]) => ({
+      ROTARACT_HEADER_LOGO_BASE64: logo.ROTARACT_HEADER_LOGO_BASE64,
+      EMOJI_DATA_URI: cert.EMOJI_DATA_URI,
+    }));
+  }
+  return certAssetsPromise;
+}
 
 /**
  * Shared print CSS utilities (emoji sizing, etc.).
@@ -38,8 +55,8 @@ const EMBEDDED_FONT_CSS = `
  * Renders an emoji as an inline Twemoji <img> when we have an embedded asset,
  * so it looks identical on every device; falls back to the raw glyph otherwise.
  */
-function emojiImg(glyph: string): string {
-  const uri = EMOJI_DATA_URI[glyph];
+function emojiImg(glyph: string, uriMap: Record<string, string>): string {
+  const uri = uriMap[glyph];
   return uri ? `<img class="emoji" src="${uri}" alt="" />` : glyph;
 }
 
@@ -103,6 +120,7 @@ export async function generateCertificateLandscapeHTML({
   drrSignatureUrl,
 }: ExportCertificateParams): Promise<string> {
   const distinction = getDistinctionBadge(stats.hours);
+  const { ROTARACT_HEADER_LOGO_BASE64, EMOJI_DATA_URI } = await getCertAssets();
   const formattedDate = new Date().toLocaleDateString('en-US', {
     month: 'long',
     day: 'numeric',
@@ -482,7 +500,7 @@ export async function generateCertificateLandscapeHTML({
               <!-- Summary Metric Chips -->
               <div class="metric-row">
                 <div class="metric-chip">
-                  <div class="metric-val" style="color: ${distinction.color};">${emojiImg(distinction.icon)} ${distinction.title}</div>
+                  <div class="metric-val" style="color: ${distinction.color};">${emojiImg(distinction.icon, EMOJI_DATA_URI)} ${distinction.title}</div>
                   <div class="metric-lbl">Distinction Tier</div>
                 </div>
                 <div class="metric-chip">
@@ -566,6 +584,7 @@ export async function generateTranscriptPortraitHTML({
   stats,
 }: ExportCertificateParams): Promise<string> {
   const distinction = getDistinctionBadge(stats.hours);
+  const { ROTARACT_HEADER_LOGO_BASE64, EMOJI_DATA_URI } = await getCertAssets();
   const certId = `D3800-${user.id.substring(0, 6).toUpperCase()}-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
 
   const rowsHtml = attendedItems.length > 0
@@ -774,7 +793,7 @@ export async function generateTranscriptPortraitHTML({
               <div><strong>Rotary Year:</strong> 2025–2026</div>
               <div><strong>Club:</strong> ${user.club_name || 'Rotaract Club'}</div>
               <div><strong>Position:</strong> ${user.position}</div>
-              <div><strong>Distinction:</strong> ${emojiImg(distinction.icon)} ${distinction.title}</div>
+              <div><strong>Distinction:</strong> ${emojiImg(distinction.icon, EMOJI_DATA_URI)} ${distinction.title}</div>
               <div><strong>Total Service:</strong> <span style="color: #D91B5C; font-weight: 900;">${stats.hours} Verified Hours</span></div>
             </div>
 

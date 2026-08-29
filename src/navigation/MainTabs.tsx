@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { MainTabParamList } from './types';
@@ -19,7 +19,10 @@ export default function MainTabs() {
   const { unreadInboxCountForUser } = useData();
   const { colors: themeColors } = useTheme();
 
-  const unreadCount = user ? unreadInboxCountForUser(user.id) : 0;
+  // The badge lookup now resolves against a precomputed unread-count map (O(1)),
+  // but still memoize it so it only re-runs when the underlying data changes —
+  // not on every tab re-render.
+  const unreadCount = useMemo(() => (user ? unreadInboxCountForUser(user.id) : 0), [user, unreadInboxCountForUser]);
 
   return (
     <Tab.Navigator

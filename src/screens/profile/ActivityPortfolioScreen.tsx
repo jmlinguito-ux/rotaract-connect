@@ -33,8 +33,14 @@ export default function ActivityPortfolioScreen({ route, navigation }: Props) {
     }
   }, [route.params?.initialFilter]);
 
+  // Memoized: userStats scans every participant + event; recompute only when data
+  // actually changes, not on every render.
+  const stats = useMemo(
+    () => (user ? userStats(user.id) : { joined: 0, organized: 0, hours: 0, clubsCollab: 0, service: 0, fellowships: 0 }),
+    [user, userStats],
+  );
+
   if (!user) return null;
-  const stats = userStats(user.id);
 
   const joinedParticipants = participants.filter(p => p.user_id === user.id && p.status === 'JOINED');
   const allEventsList = joinedParticipants

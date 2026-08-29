@@ -58,13 +58,24 @@ export async function loadAll(signal?: AbortSignal): Promise<LoadedData> {
   ] = await Promise.all([
     withSignal(supabase.from('profiles').select('*')),
     withSignal(supabase.from('clubs').select('*')),
-    withSignal(supabase.from('events').select('*')),
+    // Bounded selects: the district dataset must not grow without limit. Sorted
+    // newest-first so a cap ever hit drops the OLDEST rows, never the recent ones
+    // the UI actually shows. (Same rationale as the notifications/direct_messages
+    // caps below.)
+    withSignal(supabase.from('events').select('*')
+      .order('start_datetime', { ascending: false }).limit(2000)),
     withSignal(supabase.from('event_participating_clubs').select('*')),
-    withSignal(supabase.from('event_participants').select('*')),
-    withSignal(supabase.from('event_invitations').select('*')),
+    withSignal(supabase.from('event_participants').select('*')
+      .order('joined_at', { ascending: false }).limit(5000)),
+    withSignal(supabase.from('event_invitations').select('*')
+      .order('sent_at', { ascending: false }).limit(2000)),
     withSignal(supabase.from('event_impacts').select('*')),
-    withSignal(supabase.from('verification_applications').select('*')),
-    withSignal(supabase.from('audit_logs').select('*')),
+    withSignal(supabase.from('verification_applications').select('*')
+      .order('submitted_at', { ascending: false }).limit(500)),
+    // audit_logs grows forever (every governance action appends); cap it the same
+    // way as notifications so a reload never re-ships the entire history.
+    withSignal(supabase.from('audit_logs').select('*')
+      .order('created_at', { ascending: false }).limit(500)),
     // Ordered and capped explicitly. PostgREST enforces a server-side row cap
     // (1000 by default), so an unordered select silently returned an ARBITRARY
     // slice once a user passed it — with no guarantee the newest were included.
@@ -80,7 +91,8 @@ export async function loadAll(signal?: AbortSignal): Promise<LoadedData> {
     withSignal(supabase.from('direct_messages').select('*')
       .order('created_at', { ascending: false }).limit(1000)),
     // message_reads may not exist until migration 0007 is applied — tolerate that.
-    withSignal(supabase.from('message_reads').select('*')),
+    withSignal(supabase.from('message_reads').select('*')
+      .order('last_read_at', { ascending: false }).limit(2000)),
     // message_deletions may not exist until migration 0009 — tolerate that. RLS
     // already scopes this to the current user's own rows.
     withSignal(supabase.from('message_deletions').select('message_id')),
@@ -89,7 +101,8 @@ export async function loadAll(signal?: AbortSignal): Promise<LoadedData> {
     // add a serial round-trip that stalls the whole load.
     withSignal(supabase.from('conversation_states').select('*')),
     // message_reactions may not exist until migration 0029 — tolerate that.
-    withSignal(supabase.from('message_reactions').select('*')),
+    withSignal(supabase.from('message_reactions').select('*')
+      .order('created_at', { ascending: false }).limit(2000)),
     // event_club_allocations may not exist until migration 0041 — tolerate that.
     withSignal(supabase.from('event_club_allocations').select('*')),
     // event_cohosts may not exist until migration 0043 — tolerate that.

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -27,8 +27,15 @@ export default function ProfileScreen() {
   const [fullImageUri, setFullImageUri] = useState<string | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
+  // Memoized: userStats scans every participant + event; recomputing it on every
+  // render (including every realtime reload that re-renders this tab) was wasted
+  // work. Recomputes only when the underlying data or user changes.
+  const stats = useMemo(
+    () => (user ? userStats(user.id) : { joined: 0, organized: 0, hours: 0, clubsCollab: 0, service: 0, fellowships: 0 }),
+    [user, userStats],
+  );
+
   if (!user) return null;
-  const stats = userStats(user.id);
   const roleBadge = getHighestRoleBadge(user);
 
   const handlePickImage = async () => {

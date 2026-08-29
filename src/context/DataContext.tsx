@@ -8,7 +8,7 @@ import {
   EventClubAllocation, EventCohost,
 } from '../types';
 import { AppState } from 'react-native';
-import { loadAll, db } from '../services/db';
+import { loadAll, db, LoadedData } from '../services/db';
 import { canClubRegister } from '../utils/clubAllocation';
 import { canMessageUser } from '../utils/messaging';
 import RotaractNotifications from '../../modules/rotaract-notifications';
@@ -258,28 +258,30 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [clubAllocations, setClubAllocations] = useState<EventClubAllocation[]>([]);
   const [cohosts, setCohosts] = useState<EventCohost[]>([]);
 
-  // 1. Immediately hydrate local state from persistent cache on boot (0ms instant startup)
+  // 1. Immediately hydrate local state from persistent cache on boot (0ms instant startup).
+  //    If the network snapshot already resolved (fast connection), skip the stale
+  //    cache write — applying it afterwards would flash old data over fresh data.
+  const snapshotLoadedRef = useRef(false);
   useEffect(() => {
     getCachedData().then(cached => {
-      if (cached) {
-        setUsers(cached.users ?? []);
-        setClubs(cached.clubs ?? []);
-        setEvents(cached.events ?? []);
-        setParticipants(cached.participants ?? []);
-        setInvitations(cached.invitations ?? []);
-        setImpacts(cached.impacts ?? []);
-        setApplications(cached.applications ?? []);
-        setAuditLogs(cached.auditLogs ?? []);
-        setNotifications(cached.notifications ?? []);
-        setConversations(cached.conversations ?? []);
-        setMessages(cached.messages ?? []);
-        setReadCursors(cached.readCursors ?? []);
-        setDeletedMessageIds(cached.deletedMessageIds ?? []);
-        setConversationStates(cached.conversationStates ?? []);
-        setReactions(cached.reactions ?? []);
-        setClubAllocations(cached.clubAllocations ?? []);
-        setCohosts(cached.cohosts ?? []);
-      }
+      if (!cached || snapshotLoadedRef.current) return;
+      setUsers(cached.users ?? []);
+      setClubs(cached.clubs ?? []);
+      setEvents(cached.events ?? []);
+      setParticipants(cached.participants ?? []);
+      setInvitations(cached.invitations ?? []);
+      setImpacts(cached.impacts ?? []);
+      setApplications(cached.applications ?? []);
+      setAuditLogs(cached.auditLogs ?? []);
+      setNotifications(cached.notifications ?? []);
+      setConversations(cached.conversations ?? []);
+      setMessages(cached.messages ?? []);
+      setReadCursors(cached.readCursors ?? []);
+      setDeletedMessageIds(cached.deletedMessageIds ?? []);
+      setConversationStates(cached.conversationStates ?? []);
+      setReactions(cached.reactions ?? []);
+      setClubAllocations(cached.clubAllocations ?? []);
+      setCohosts(cached.cohosts ?? []);
     });
   }, []);
 
@@ -304,6 +306,36 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   }, [isAuthenticated]);
 
+  // Keep the latest in-memory snapshot in a ref so the background writer below
+  // always serializes CURRENT state (including realtime merges) without forcing
+  // the writer effect to re-subscribe to AppState on every data change.
+  const snapshotRef = useRef<LoadedData | null>(null);
+  useEffect(() => {
+    snapshotRef.current = {
+      users, clubs, events, participants, invitations, impacts, applications,
+      auditLogs, notifications, conversations, messages, readCursors,
+      deletedMessageIds, conversationStates, reactions, clubAllocations, cohosts,
+    };
+  });
+
+  // Persist the snapshot ONCE when the app leaves the foreground (background or
+  // inactive) — the whole point of the cache is a fast NEXT launch, so this is
+  // the cheapest correct moment to write it. Writes here replace the old
+  // per-reload `setCachedData` that serialized the entire dataset on the JS
+  // thread every time a realtime event triggered a reload.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const write = () => {
+      const s = snapshotRef.current;
+      if (!s) return;
+      setCachedData(s).catch(() => {});
+    };
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'background' || state === 'inactive') write();
+    });
+    return () => sub.remove();
+  }, [isAuthenticated]);
+
   // Pulls the full dataset from Supabase and replaces local state with it.
   // Supabase is the source of truth, so this both hydrates on load and reconciles
   // any optimistic writes with what actually persisted. `cancelledRef` guards
@@ -323,9 +355,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setReactions(d.reactions);
     setClubAllocations(d.clubAllocations);
     setCohosts(d.cohosts);
+    // A snapshot landed; a concurrent cache hydrate (if still pending) must not
+    // overwrite this newer data with yesterday's disk copy.
+    snapshotLoadedRef.current = true;
 
-    // Save snapshot to local persistent cache for instant future launches
-    setCachedData(d);
+    // NOTE: no cache write here. Persisting the full snapshot on EVERY reload
+    // (realtime reloads included) serialized megabytes on the JS thread and
+    // hammered AsyncStorage. The cache is written once when the app leaves the
+    // foreground instead — see the AppState effect below.
   }, []);
 
   // Concurrent pulls (e.g. two screens fire refresh at once, or a user pulls
@@ -406,6 +443,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     applySnapshot,
     setMessages,
     setNotifications,
+    setConversations,
     setReadCursors,
     setDeletedMessageIds,
     setConversationStates,
@@ -1776,9 +1814,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
     db.upsertConversationState(conversationId, userId, updates);
   }, [mergeConversationState]);
 
-  const reactionsFor = useCallback((messageId: string) => {
-    return reactions.filter(r => r.message_id === messageId);
+  // Reactions keyed by message_id ONCE per data change: ChatScreen's per-row
+  // `reactionsFor` lookups are then O(1) instead of a full `reactions.filter`
+  // scan for every visible message on every render.
+  const reactionsByMessage = useMemo(() => {
+    const m = new Map<string, MessageReaction[]>();
+    for (const r of reactions) {
+      const arr = m.get(r.message_id);
+      if (arr) arr.push(r);
+      else m.set(r.message_id, [r]);
+    }
+    return m;
   }, [reactions]);
+
+  const reactionsFor = useCallback((messageId: string) => {
+    return reactionsByMessage.get(messageId) ?? [];
+  }, [reactionsByMessage]);
 
   const toggleMessageReaction = useCallback((messageId: string, userId: string, emoji: string) => {
     const existing = reactions.find(r => r.message_id === messageId && r.user_id === userId);
@@ -1933,42 +1984,85 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const notificationsFor = useCallback((userId: string) => notifications.filter(n => n.user_id === userId), [notifications]);
   const unreadCountForUser = useCallback((userId: string) => notifications.filter(n => n.user_id === userId && !n.is_read).length, [notifications]);
 
-  const unreadInboxCountForUser = useCallback((userId: string) => {
+  // Precomputed once per data change: total unread (notifications + DM threads +
+  // group chats) for EVERY user. The tab badge calls this every render, so an
+  // O(dataset) scan per call would re-run the same work on every reload and
+  // every tab re-render. Building the map once makes the per-call lookup O(1).
+  const unreadInboxCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    const add = (userId: string, n: number) => counts.set(userId, (counts.get(userId) ?? 0) + n);
+
     // 1. Unread notifications
-    const unreadNotifs = notifications.filter(n => n.user_id === userId && !n.is_read && n.kind !== 'INQUIRY_RECEIVED').length;
+    for (const n of notifications) {
+      if (!n.is_read && n.kind !== 'INQUIRY_RECEIVED') add(n.user_id, 1);
+    }
 
-    // 2. Unread DMs
-    const unreadDMs = conversations
-      .filter(c => !c.is_group && (c.participant_user_id === userId || c.organizer_user_id === userId))
-      .filter(c => {
-        const msgs = messages.filter(m => m.conversation_id === c.id);
-        const last = msgs[msgs.length - 1];
-        if (!last || last.sender_id === userId) return false;
-        const cursor = readCursors.find(cur => cur.conversation_id === c.id && cur.user_id === userId);
-        return !cursor || new Date(last.created_at).getTime() > new Date(cursor.last_read_at).getTime();
-      }).length;
+    // 2. Unread DMs — newest message per 1:1 conversation decides, per side.
+    const lastByConv = new Map<string, DirectMessage>();
+    for (const m of messages) lastByConv.set(m.conversation_id, m);
 
-    // 3. Unread Group Chats
-    const myEvents = events.filter(e => {
-      if (e.organizer_user_id === userId) return true;
-      const p = participants.find(part => part.event_id === e.id && part.user_id === userId);
-      return p?.status === 'JOINED';
-    });
+    const cursorByConvUser = new Map<string, ReadCursor>();
+    for (const cur of readCursors) cursorByConvUser.set(`${cur.conversation_id}:${cur.user_id}`, cur);
 
-    const unreadGroups = myEvents.filter(e => {
-      const groupConv = conversations.find(c => c.event_id === e.id && c.is_group);
-      if (!groupConv) return false;
-      const msgs = messages.filter(m => m.conversation_id === groupConv.id);
-      if (msgs.length === 0) return false;
-      const last = msgs[msgs.length - 1];
-      if (!last || last.sender_id === userId) return false;
-      const cursor = readCursors.find(cur => cur.conversation_id === groupConv.id && cur.user_id === userId);
-      const cursorTime = cursor ? new Date(cursor.last_read_at).getTime() : 0;
-      return msgs.some(m => m.sender_id !== userId && new Date(m.created_at).getTime() > cursorTime);
-    }).length;
+    for (const c of conversations) {
+      if (c.is_group) continue;
+      const sides = new Set<string>();
+      if (c.participant_user_id) sides.add(c.participant_user_id);
+      if (c.organizer_user_id) sides.add(c.organizer_user_id);
+      for (const userId of sides) {
+        const last = lastByConv.get(c.id);
+        if (!last || last.sender_id === userId) continue;
+        const cursor = cursorByConvUser.get(`${c.id}:${userId}`);
+        if (!cursor || new Date(last.created_at).getTime() > new Date(cursor.last_read_at).getTime()) {
+          add(userId, 1);
+        }
+      }
+    }
 
-    return unreadNotifs + unreadDMs + unreadGroups;
+    // 3. Unread Group Chats — one per event the user organizes or has joined.
+    const groupConvByEvent = new Map<string, Conversation>();
+    for (const c of conversations) {
+      if (c.is_group && c.event_id) groupConvByEvent.set(c.event_id, c);
+    }
+
+    const userIdsByEvent = new Map<string, Set<string>>();
+    for (const e of events) {
+      if (e.organizer_user_id) {
+        const set = userIdsByEvent.get(e.id) ?? new Set<string>();
+        set.add(e.organizer_user_id);
+        userIdsByEvent.set(e.id, set);
+      }
+    }
+    for (const p of participants) {
+      if (p.status !== 'JOINED') continue;
+      const set = userIdsByEvent.get(p.event_id) ?? new Set<string>();
+      set.add(p.user_id);
+      userIdsByEvent.set(p.event_id, set);
+    }
+
+    for (const [eventId, userIds] of userIdsByEvent) {
+      const conv = groupConvByEvent.get(eventId);
+      if (!conv) continue;
+      const last = lastByConv.get(conv.id);
+      if (!last) continue;
+      const msgs = messages.filter(m => m.conversation_id === conv.id);
+      if (msgs.length === 0) continue;
+      for (const userId of userIds) {
+        if (last.sender_id === userId) continue;
+        const cursor = cursorByConvUser.get(`${conv.id}:${userId}`);
+        const cursorTime = cursor ? new Date(cursor.last_read_at).getTime() : 0;
+        if (msgs.some(m => m.sender_id !== userId && new Date(m.created_at).getTime() > cursorTime)) {
+          add(userId, 1);
+        }
+      }
+    }
+
+    return counts;
   }, [notifications, conversations, messages, readCursors, events, participants]);
+
+  const unreadInboxCountForUser = useCallback((userId: string) => {
+    return unreadInboxCounts.get(userId) ?? 0;
+  }, [unreadInboxCounts]);
 
   const auditFor = useCallback((appId: string) => auditLogs.filter(l => l.application_id === appId), [auditLogs]);
 

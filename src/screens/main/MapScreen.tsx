@@ -120,15 +120,23 @@ export default function MapScreen() {
   const [mapExpanded, setMapExpanded] = useState(false);
   const [userCoords, setUserCoords] = useState<{ latitude: number; longitude: number } | null>(null);
 
+  // Club coords resolved separately from the raw `clubs` array. Depending the
+  // effect on `clubs` made every realtime reload (a new array reference each
+  // time) re-run getLastKnownPositionAsync + getCurrentPositionAsync even though
+  // nothing relevant changed — a GPS wake on every data change.
+  const userClubCoords = useMemo(() => {
+    const userClub = clubs.find(c => c.id === user?.club_id);
+    return userClub?.latitude && userClub?.longitude
+      ? { latitude: userClub.latitude, longitude: userClub.longitude }
+      : null;
+  }, [clubs, user?.club_id]);
+
   useEffect(() => {
     if (!isFocused) return;
 
     (async () => {
-      const userClub = clubs.find(c => c.id === user?.club_id);
       const defaultFallback =
-        userClub?.latitude && userClub?.longitude
-          ? { latitude: userClub.latitude, longitude: userClub.longitude }
-          : { latitude: 14.6500, longitude: 121.0800 };
+        userClubCoords ?? { latitude: 14.6500, longitude: 121.0800 };
 
       try {
         // Stability Refinement: Switch from request (active) to get (passive) check.
@@ -151,7 +159,7 @@ export default function MapScreen() {
         setUserCoords(defaultFallback);
       }
     })();
-  }, [user?.club_id, clubs, isFocused]);
+  }, [userClubCoords?.latitude, userClubCoords?.longitude, isFocused]);
 
   const activeFilterCount =
     selectedDistances.length + selectedZones.length + selectedOpenness.length + selectedAreas.length + selectedDates.length;

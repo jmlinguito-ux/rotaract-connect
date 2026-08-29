@@ -453,6 +453,9 @@ export default function ChatScreen({ route, navigation }: Props) {
   // show only on whichever device had the faster clock). A timestamp check is kept
   // as a fallback for legacy cursors that predate last_read_message_id.
   const cursors = readCursorsFor(conversationId);
+  // O(1) name/avatar lookups per rendered row instead of `users.find` (O(all users)
+  // for every visible message on every render).
+  const userById = useMemo(() => new Map(users.map(u => [u.id, u])), [users]);
   const messageIndex = useMemo(() => {
     const m = new Map<string, number>();
     messages.forEach((msg, i) => m.set(msg.id, i));
@@ -496,9 +499,9 @@ export default function ChatScreen({ route, navigation }: Props) {
         }
         return false;
       })
-      .map(c => users.find(u => u.id === c.user_id))
+      .map(c => userById.get(c.user_id))
       .filter((u): u is NonNullable<typeof u> => !!u);
-  }, [cursors, messageIndex, users, user?.id]);
+  }, [cursors, messageIndex, userById, user?.id]);
 
   if (!user) return null;
 
@@ -837,7 +840,7 @@ export default function ChatScreen({ route, navigation }: Props) {
             const isMe = item.sender_id === user.id;
             const isUrgent = !!item.text?.startsWith('🚨');
             const isAnnouncement = !!item.is_broadcast || !!item.text?.startsWith('📢') || isUrgent;
-            const senderUser = users.find(u => u.id === item.sender_id);
+            const senderUser = userById.get(item.sender_id);
             const readCount = readCountFor(item);
             const isRead = readCount > 0;
             // Inverted list: chronological run starts when the older message (index + 1) has a different event_id

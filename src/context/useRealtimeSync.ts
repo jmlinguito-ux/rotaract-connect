@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
 import {
-  AppUser, AppNotification, DirectMessage, ReadCursor, ConversationState, MessageReaction,
+  AppUser, AppNotification, DirectMessage, ReadCursor, ConversationState, MessageReaction, Conversation,
 } from '../types';
 import { supabase } from '../services/supabase';
 import { playAlertSound, getActiveChatConversation } from '../services/sound';
@@ -15,6 +15,7 @@ export interface RealtimeSyncArgs {
   applySnapshot: (cancelledRef?: { current: boolean }, signal?: AbortSignal) => Promise<void>;
   setMessages: React.Dispatch<React.SetStateAction<DirectMessage[]>>;
   setNotifications: React.Dispatch<React.SetStateAction<AppNotification[]>>;
+  setConversations: React.Dispatch<React.SetStateAction<Conversation[]>>;
   setReadCursors: React.Dispatch<React.SetStateAction<ReadCursor[]>>;
   setDeletedMessageIds: React.Dispatch<React.SetStateAction<string[]>>;
   setConversationStates: React.Dispatch<React.SetStateAction<ConversationState[]>>;
@@ -28,6 +29,7 @@ export function useRealtimeSync({
   applySnapshot,
   setMessages,
   setNotifications,
+  setConversations,
   setReadCursors,
   setDeletedMessageIds,
   setConversationStates,
@@ -75,11 +77,19 @@ export function useRealtimeSync({
       };
     };
 
-    // Debounced full reload for snapshot reconciliation.
+    // Debounced full reload for snapshot reconciliation. A new event cancels the
+    // pending timer AND aborts any in-flight reload, so a sustained burst of
+    // table changes (or a slow network) can never stack overlapping full fetches.
     let reloadTimer: ReturnType<typeof setTimeout> | null = null;
+    let reloadController: AbortController | null = null;
     const scheduleReload = () => {
       if (reloadTimer) clearTimeout(reloadTimer);
-      reloadTimer = setTimeout(() => { applySnapshot().catch(() => {}); }, 400);
+      reloadController?.abort();
+      reloadController = new AbortController();
+      const signal = reloadController.signal;
+      reloadTimer = setTimeout(() => {
+        applySnapshot(undefined, signal).catch(() => {});
+      }, 400);
     };
 
     // Re-sync whenever the app returns from background
@@ -282,13 +292,43 @@ export function useRealtimeSync({
       })
       .subscribe(logStatus('reactions'));
 
+    // Conversations move fast (last_message updates on every chat message) and
+    // are cheap to merge, so they are NOT in the reload list below. Merging
+    // directly keeps the Inbox reordering live without forcing every connected
+    // client to re-pull all 18 tables on every message sent anywhere in the
+    // district (that was the reload storm). New conversations still reload once
+    // so the derived display names (participant/organizer/club) resolve.
+    const conversationsChannel = supabase
+      .channel('rt-conversations')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'conversations' }, () => {
+        scheduleReload();
+      })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'conversations' }, payload => {
+        const c = payload.new as any;
+        if (!c?.id) return;
+        setConversations(prev => prev.map(x => {
+          if (x.id !== c.id) return x;
+          return {
+            ...x,
+            last_message: c.last_message ?? x.last_message,
+            last_message_at: c.last_message_at ?? x.last_message_at,
+            event_title: c.event_title ?? x.event_title,
+          };
+        }));
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'conversations' }, payload => {
+        const id = (payload.old as any)?.id;
+        if (id) setConversations(prev => prev.filter(c => c.id !== id));
+      })
+      .subscribe(logStatus('conversations'));
+
     // Conversations move fast enough (last_message updates) to merge directly, so
     // the Inbox reorders live; heavier tables just schedule a reload. Each table
     // gets its OWN channel so one table missing from the realtime publication
     // cannot error out the others (a shared channel fails as a unit).
     const tableReloadChannels = ([
       'events', 'event_participants', 'event_invitations', 'event_impacts',
-      'verification_applications', 'conversations',
+      'verification_applications',
       // Added with migration 0019. `clubs` and `event_participating_clubs` decide
       // who must approve an event, so without them an approver set could change
       // with no client noticing; `profiles` keeps OTHER members' roles and
@@ -304,6 +344,7 @@ export function useRealtimeSync({
 
     return () => {
       if (reloadTimer) clearTimeout(reloadTimer);
+      reloadController?.abort();
       appStateSub.remove();
       supabase.removeChannel(messagesChannel);
       supabase.removeChannel(notifChannel);
@@ -311,6 +352,7 @@ export function useRealtimeSync({
       supabase.removeChannel(deletionsChannel);
       supabase.removeChannel(convStateChannel);
       supabase.removeChannel(reactionsChannel);
+      supabase.removeChannel(conversationsChannel);
       tableReloadChannels.forEach(ch => supabase.removeChannel(ch));
     };
   }, [isAuthenticated, authUser, applySnapshot]);

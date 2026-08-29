@@ -116,7 +116,7 @@ export default function EventsScreen() {
     });
   }, [events, participants, user]);
 
-  const stats = user ? userStats(user.id) : { joined: 0, hours: 0 };
+  const stats = useMemo(() => (user ? userStats(user.id) : { joined: 0, hours: 0 }), [user, userStats]);
 
   const myInviteCount = useMemo(() => {
     if (!user) return 0;
