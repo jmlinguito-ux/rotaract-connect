@@ -2086,9 +2086,9 @@ GRANT ALL ON FUNCTION "public"."admin_set_role"("p_user_id" "uuid", "p_role" "te
 
 
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."events" TO "anon";
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."events" TO "authenticated";
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."events" TO "service_role";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."events" TO "anon";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."events" TO "authenticated";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."events" TO "service_role";
 
 
 
@@ -2142,105 +2142,105 @@ GRANT ALL ON FUNCTION "public"."unsend_message"("p_message_id" "uuid") TO "authe
 
 
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."audit_logs" TO "anon";
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."audit_logs" TO "authenticated";
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."audit_logs" TO "service_role";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."audit_logs" TO "anon";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."audit_logs" TO "authenticated";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."audit_logs" TO "service_role";
 
 
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."clubs" TO "anon";
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."clubs" TO "authenticated";
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."clubs" TO "service_role";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."clubs" TO "anon";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."clubs" TO "authenticated";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."clubs" TO "service_role";
 
 
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."conversation_states" TO "anon";
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."conversation_states" TO "authenticated";
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."conversation_states" TO "service_role";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."conversation_states" TO "anon";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."conversation_states" TO "authenticated";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."conversation_states" TO "service_role";
 
 
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."conversations" TO "anon";
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."conversations" TO "authenticated";
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."conversations" TO "service_role";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."conversations" TO "anon";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."conversations" TO "authenticated";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."conversations" TO "service_role";
 
 
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."direct_messages" TO "anon";
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."direct_messages" TO "authenticated";
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."direct_messages" TO "service_role";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."direct_messages" TO "anon";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."direct_messages" TO "authenticated";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."direct_messages" TO "service_role";
 
 
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."event_impacts" TO "anon";
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."event_impacts" TO "authenticated";
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."event_impacts" TO "service_role";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."event_impacts" TO "anon";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."event_impacts" TO "authenticated";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."event_impacts" TO "service_role";
 
 
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."event_invitations" TO "anon";
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."event_invitations" TO "authenticated";
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."event_invitations" TO "service_role";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."event_invitations" TO "anon";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."event_invitations" TO "authenticated";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."event_invitations" TO "service_role";
 
 
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."event_participants" TO "anon";
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."event_participants" TO "authenticated";
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."event_participants" TO "service_role";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."event_participants" TO "anon";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."event_participants" TO "authenticated";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."event_participants" TO "service_role";
 
 
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."event_participating_clubs" TO "anon";
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."event_participating_clubs" TO "authenticated";
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."event_participating_clubs" TO "service_role";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."event_participating_clubs" TO "anon";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."event_participating_clubs" TO "authenticated";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."event_participating_clubs" TO "service_role";
 
 
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."message_deletions" TO "anon";
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."message_deletions" TO "authenticated";
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."message_deletions" TO "service_role";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."message_deletions" TO "anon";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."message_deletions" TO "authenticated";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."message_deletions" TO "service_role";
 
 
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."message_reads" TO "anon";
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."message_reads" TO "authenticated";
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."message_reads" TO "service_role";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."message_reads" TO "anon";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."message_reads" TO "authenticated";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."message_reads" TO "service_role";
 
 
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."notifications" TO "anon";
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."notifications" TO "authenticated";
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."notifications" TO "service_role";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."notifications" TO "anon";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."notifications" TO "authenticated";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."notifications" TO "service_role";
 
 
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."profiles" TO "anon";
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."profiles" TO "authenticated";
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."profiles" TO "service_role";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."profiles" TO "anon";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."profiles" TO "authenticated";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."profiles" TO "service_role";
 
 
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."push_deliveries" TO "anon";
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."push_deliveries" TO "authenticated";
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."push_deliveries" TO "service_role";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."push_deliveries" TO "anon";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."push_deliveries" TO "authenticated";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."push_deliveries" TO "service_role";
 
 
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."push_tokens" TO "anon";
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."push_tokens" TO "authenticated";
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."push_tokens" TO "service_role";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."push_tokens" TO "anon";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."push_tokens" TO "authenticated";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."push_tokens" TO "service_role";
 
 
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."verification_applications" TO "anon";
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."verification_applications" TO "authenticated";
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."verification_applications" TO "service_role";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."verification_applications" TO "anon";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."verification_applications" TO "authenticated";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."verification_applications" TO "service_role";
 
 
 
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."zones" TO "anon";
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."zones" TO "authenticated";
-GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLE "public"."zones" TO "service_role";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."zones" TO "anon";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."zones" TO "authenticated";
+GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLE "public"."zones" TO "service_role";
 
 
 
@@ -2268,9 +2268,9 @@ ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON FUN
 
 
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TABLES TO "postgres";
-ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLES TO "anon";
-ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLES TO "authenticated";
-ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT REFERENCES,TRIGGER,TRUNCATE,MAINTAIN ON TABLES TO "service_role";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLES TO "anon";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLES TO "authenticated";
+ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT REFERENCES,TRIGGER,TRUNCATE ON TABLES TO "service_role";
 
 
 
