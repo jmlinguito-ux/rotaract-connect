@@ -50,6 +50,16 @@
 		<false/>
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>supabasekong-b4moya82q6ohx0yirzijfoyu.178.104.23.228.sslip.io</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+			</dict>
+		</dict>
 	</dict>
 	<key>NSBonjourServices</key>
 	<array>
@@ -57,8 +67,6 @@
 	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>Allow $(PRODUCT_NAME) to access your camera</string>
-	<key>NSFaceIDUsageDescription</key>
-	<string></string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Expo Dev Launcher uses the local network to discover and connect to development servers running on your computer.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>

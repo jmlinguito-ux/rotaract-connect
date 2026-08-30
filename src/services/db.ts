@@ -11,6 +11,11 @@ import {
  * fields the UI expects (club/organizer names, a participating-club list from
  * the junction table, etc.) that are not stored as columns.
  *
+ * `loadTables` can re-pull a SUBSET of those tables (plus their join
+ * dependencies) so a realtime change to one table no longer forces the client
+ * to re-fetch all of them — on a far-away/slow server that full reload was the
+ * dominant cost behind sluggish chats, events, and lists.
+ *
  * Writes are thin pass-throughs governed by the RLS policies in schema.sql.
  * Callers generate row ids client-side (uuid) so optimistic local state and the
  * persisted row share the same id.
@@ -41,6 +46,121 @@ export interface LoadedData {
   cohosts: EventCohost[];
 }
 
+/** Any table `loadAll`/`loadTables` can hydrate. */
+export type TableName =
+  | 'profiles' | 'clubs' | 'events' | 'event_participating_clubs' | 'event_participants'
+  | 'event_invitations' | 'event_impacts' | 'verification_applications' | 'audit_logs'
+  | 'notifications' | 'conversations' | 'direct_messages' | 'message_reads'
+  | 'message_deletions' | 'conversation_states' | 'message_reactions'
+  | 'event_club_allocations' | 'event_cohosts';
+
+/**
+ * Extra tables fetched alongside a table so its derived display fields resolve.
+ * Example: an `events` row has no `organizing_club_name` column — the client
+ * joins `clubs`, and `participating_club_ids` comes from the junction table.
+ */
+const TABLE_DEPS: Record<TableName, readonly TableName[]> = {
+  profiles: ['clubs'],                              // users → club_name
+  clubs: ['profiles'],                              // clubs → president_name
+  events: ['event_participating_clubs', 'clubs'],   // events → participating_club_ids + organizing_club_name
+  event_participating_clubs: ['events', 'clubs'],   // events re-derived after junction change
+  event_participants: [],
+  event_invitations: [],
+  event_impacts: [],
+  verification_applications: ['clubs'],             // applications → club_name
+  audit_logs: [],
+  notifications: [],
+  conversations: ['profiles', 'clubs', 'events'],   // participant/organizer names + group organizer club
+  direct_messages: ['profiles'],                    // messages → sender_name
+  message_reads: [],
+  message_deletions: [],
+  conversation_states: [],
+  message_reactions: [],
+  event_club_allocations: [],
+  event_cohosts: [],
+};
+
+const ALL_TABLES = Object.keys(TABLE_DEPS) as TableName[];
+
+/** Raw rows for every table the app hydrates (the pre-mapping shape). */
+interface RawRows {
+  profiles: any[];
+  clubs: any[];
+  events: any[];
+  event_participating_clubs: any[];
+  event_participants: any[];
+  event_invitations: any[];
+  event_impacts: any[];
+  verification_applications: any[];
+  audit_logs: any[];
+  notifications: any[];
+  conversations: any[];
+  direct_messages: any[];
+  message_reads: any[];
+  message_deletions: any[];
+  conversation_states: any[];
+  message_reactions: any[];
+  event_club_allocations: any[];
+  event_cohosts: any[];
+}
+
+/** Bounded, newest-first query for one table (see per-table rationale below). */
+function tableQuery(table: TableName) {
+  switch (table) {
+    case 'profiles': return supabase.from('profiles').select('*');
+    case 'clubs': return supabase.from('clubs').select('*');
+    // Bounded selects: the district dataset must not grow without limit. Sorted
+    // newest-first so a cap ever hit drops the OLDEST rows, never the recent ones
+    // the UI actually shows. (Same rationale as the notifications/direct_messages
+    // caps below.)
+    case 'events': return supabase.from('events').select('*')
+      .order('start_datetime', { ascending: false }).limit(2000);
+    case 'event_participating_clubs': return supabase.from('event_participating_clubs').select('*');
+    case 'event_participants': return supabase.from('event_participants').select('*')
+      .order('joined_at', { ascending: false }).limit(5000);
+    case 'event_invitations': return supabase.from('event_invitations').select('*')
+      .order('sent_at', { ascending: false }).limit(2000);
+    case 'event_impacts': return supabase.from('event_impacts').select('*');
+    case 'verification_applications': return supabase.from('verification_applications').select('*')
+      .order('submitted_at', { ascending: false }).limit(500);
+    // audit_logs grows forever (every governance action appends); cap it the same
+    // way as notifications so a reload never re-ships the entire history.
+    case 'audit_logs': return supabase.from('audit_logs').select('*')
+      .order('created_at', { ascending: false }).limit(500);
+    // Ordered and capped explicitly. PostgREST enforces a server-side row cap
+    // (1000 by default), so an unordered select silently returned an ARBITRARY
+    // slice once a user passed it — with no guarantee the newest were included.
+    // Newest-first makes truncation deterministic: you lose the oldest, never the
+    // most recent.
+    case 'notifications': return supabase.from('notifications').select('*')
+      .order('created_at', { ascending: false }).limit(500);
+    case 'conversations': return supabase.from('conversations').select('*');
+    // Descending, not ascending: with the same server-side cap, ascending order
+    // returned the OLDEST rows and dropped recent chat history entirely. The client
+    // re-sorts ascending for display (see messagesForConversation), so the fetch
+    // order is free to be whatever keeps the right rows.
+    case 'direct_messages': return supabase.from('direct_messages').select('*')
+      .order('created_at', { ascending: false }).limit(1000);
+    // message_reads may not exist until migration 0007 is applied — tolerate that.
+    case 'message_reads': return supabase.from('message_reads').select('*')
+      .order('last_read_at', { ascending: false }).limit(2000);
+    // message_deletions may not exist until migration 0009 — tolerate that. RLS
+    // already scopes this to the current user's own rows.
+    case 'message_deletions': return supabase.from('message_deletions').select('message_id');
+    // conversation_states may not exist until migration 0011 — tolerate that. RLS
+    // scopes it to the caller's own rows.
+    case 'conversation_states': return supabase.from('conversation_states').select('*');
+    // message_reactions may not exist until migration 0029 — tolerate that.
+    case 'message_reactions': return supabase.from('message_reactions').select('*')
+      .order('created_at', { ascending: false }).limit(2000);
+    // event_club_allocations may not exist until migration 0041 — tolerate that.
+    case 'event_club_allocations': return supabase.from('event_club_allocations').select('*');
+    // event_cohosts may not exist until migration 0043 — tolerate that.
+    case 'event_cohosts': return supabase.from('event_cohosts').select('*');
+  }
+}
+
+
 /**
  * `signal` lets a caller actually cancel the in-flight HTTP requests (not just
  * give up on them JS-side) — used by DataContext's refresh timeout so a hung
@@ -48,89 +168,53 @@ export interface LoadedData {
  * in the background to resolve at some arbitrary later time.
  */
 export async function loadAll(signal?: AbortSignal): Promise<LoadedData> {
+  return mapRawToLoaded(await fetchRaw(signal, ALL_TABLES));
+}
+
+/** Fetch raw rows for the given tables in parallel. */
+async function fetchRaw(signal: AbortSignal | undefined, tables: readonly TableName[]): Promise<Partial<RawRows>> {
   const withSignal = <T extends { abortSignal(s: AbortSignal): T }>(q: T): T =>
     signal ? q.abortSignal(signal) : q;
 
-  const [
-    profilesRes, clubsRes, eventsRes, epcRes, partsRes, invRes, impRes,
-    appsRes, auditRes, notifRes, convRes, msgRes, readsRes, delsRes, convStatesRes, reactionsRes,
-    allocRes, cohostsRes,
-  ] = await Promise.all([
-    withSignal(supabase.from('profiles').select('*')),
-    withSignal(supabase.from('clubs').select('*')),
-    // Bounded selects: the district dataset must not grow without limit. Sorted
-    // newest-first so a cap ever hit drops the OLDEST rows, never the recent ones
-    // the UI actually shows. (Same rationale as the notifications/direct_messages
-    // caps below.)
-    withSignal(supabase.from('events').select('*')
-      .order('start_datetime', { ascending: false }).limit(2000)),
-    withSignal(supabase.from('event_participating_clubs').select('*')),
-    withSignal(supabase.from('event_participants').select('*')
-      .order('joined_at', { ascending: false }).limit(5000)),
-    withSignal(supabase.from('event_invitations').select('*')
-      .order('sent_at', { ascending: false }).limit(2000)),
-    withSignal(supabase.from('event_impacts').select('*')),
-    withSignal(supabase.from('verification_applications').select('*')
-      .order('submitted_at', { ascending: false }).limit(500)),
-    // audit_logs grows forever (every governance action appends); cap it the same
-    // way as notifications so a reload never re-ships the entire history.
-    withSignal(supabase.from('audit_logs').select('*')
-      .order('created_at', { ascending: false }).limit(500)),
-    // Ordered and capped explicitly. PostgREST enforces a server-side row cap
-    // (1000 by default), so an unordered select silently returned an ARBITRARY
-    // slice once a user passed it — with no guarantee the newest were included.
-    // Newest-first makes truncation deterministic: you lose the oldest, never the
-    // most recent.
-    withSignal(supabase.from('notifications').select('*')
-      .order('created_at', { ascending: false }).limit(500)),
-    withSignal(supabase.from('conversations').select('*')),
-    // Descending, not ascending: with the same server-side cap, ascending order
-    // returned the OLDEST rows and dropped recent chat history entirely. The client
-    // re-sorts ascending for display (see messagesForConversation), so the fetch
-    // order is free to be whatever keeps the right rows.
-    withSignal(supabase.from('direct_messages').select('*')
-      .order('created_at', { ascending: false }).limit(1000)),
-    // message_reads may not exist until migration 0007 is applied — tolerate that.
-    withSignal(supabase.from('message_reads').select('*')
-      .order('last_read_at', { ascending: false }).limit(2000)),
-    // message_deletions may not exist until migration 0009 — tolerate that. RLS
-    // already scopes this to the current user's own rows.
-    withSignal(supabase.from('message_deletions').select('message_id')),
-    // conversation_states may not exist until migration 0011 — tolerate that. RLS
-    // scopes it to the caller's own rows. Kept in the parallel batch so it can't
-    // add a serial round-trip that stalls the whole load.
-    withSignal(supabase.from('conversation_states').select('*')),
-    // message_reactions may not exist until migration 0029 — tolerate that.
-    withSignal(supabase.from('message_reactions').select('*')
-      .order('created_at', { ascending: false }).limit(2000)),
-    // event_club_allocations may not exist until migration 0041 — tolerate that.
-    withSignal(supabase.from('event_club_allocations').select('*')),
-    // event_cohosts may not exist until migration 0043 — tolerate that.
-    withSignal(supabase.from('event_cohosts').select('*')),
-  ]);
+  const results = await Promise.all(
+    tables.map(async table => {
+      const res = await withSignal(tableQuery(table));
+      return { table, rows: (res.data ?? []) as any[] };
+    }),
+  );
+  const raw: Partial<RawRows> = {};
+  for (const r of results) (raw as any)[r.table] = r.rows;
+  return raw;
+}
 
-  const profiles = profilesRes.data ?? [];
-  const clubs = clubsRes.data ?? [];
-  const events = eventsRes.data ?? [];
-  const epc = epcRes.data ?? [];
+// --- Lookup helpers ----------------------------------------------------------
 
-  // Lookups for deriving display fields.
-  const nameById = new Map<string, string>(profiles.map((p: any) => [p.id, p.full_name]));
-  const clubNameById = new Map<string, string>(clubs.map((c: any) => [c.id, c.club_name]));
-  const partClubsByEvent = new Map<string, string[]>();
-  for (const row of epc as any[]) {
-    const arr = partClubsByEvent.get(row.event_id) ?? [];
+function userNameLookup(profiles: any[]): Map<string, string> {
+  return new Map(profiles.map(p => [p.id, p.full_name]));
+}
+function clubNameLookup(clubs: any[]): Map<string, string> {
+  return new Map(clubs.map(c => [c.id, c.club_name]));
+}
+function participatingClubIdsByEvent(epc: any[]): Map<string, string[]> {
+  const m = new Map<string, string[]>();
+  for (const row of epc) {
+    const arr = m.get(row.event_id) ?? [];
     arr.push(row.club_id);
-    partClubsByEvent.set(row.event_id, arr);
+    m.set(row.event_id, arr);
   }
+  return m;
+}
 
-  const users: AppUser[] = profiles.map((p: any) => ({
+// --- Per-table mappers (shared by loadAll and loadTables) --------------------
+
+function mapUsers(profiles: any[], clubNames: Map<string, string>): AppUser[] {
+  return profiles.map(p => ({
     id: p.id,
     full_name: p.full_name,
     email: p.email,
     username: p.username,
     club_id: p.club_id ?? '',
-    club_name: (p.club_id && clubNameById.get(p.club_id)) || '',
+    club_name: (p.club_id && clubNames.get(p.club_id)) || '',
     position: p.position,
     role: p.role,
     system_role: p.system_role ?? undefined,
@@ -144,8 +228,10 @@ export async function loadAll(signal?: AbortSignal): Promise<LoadedData> {
     allow_direct_inquiries: p.allow_direct_inquiries ?? true,
     contact_privacy: p.contact_privacy ?? 'ALL_VERIFIED',
   }));
+}
 
-  const mappedClubs: Club[] = clubs.map((c: any) => ({
+function mapClubs(clubs: any[], names: Map<string, string>): Club[] {
+  return clubs.map(c => ({
     id: c.id,
     club_name: c.club_name,
     club_code: c.club_code,
@@ -159,10 +245,13 @@ export async function loadAll(signal?: AbortSignal): Promise<LoadedData> {
     club_type: c.club_type ?? 'COMMUNITY_BASED',
     institution_name: c.institution_name ?? undefined,
     president_id: c.president_id ?? '',
-    president_name: (c.president_id && nameById.get(c.president_id)) || 'Pending Election',
+    president_name: (c.president_id && names.get(c.president_id)) || 'Pending Election',
   }));
+}
 
-  const mappedEvents: RotaractEvent[] = events.map((e: any) => ({
+
+function mapEvents(events: any[], clubNames: Map<string, string>, partClubsByEvent: Map<string, string[]>): RotaractEvent[] {
+  return events.map(e => ({
     id: e.id,
     title: e.title,
     description: e.description ?? '',
@@ -175,7 +264,7 @@ export async function loadAll(signal?: AbortSignal): Promise<LoadedData> {
     address: e.address,
     city: e.city,
     organizing_club_id: e.organizing_club_id,
-    organizing_club_name: clubNameById.get(e.organizing_club_id) || '',
+    organizing_club_name: clubNames.get(e.organizing_club_id) || '',
     organizer_user_id: e.organizer_user_id,
     co_organizer_user_ids: e.co_organizer_user_ids ?? [],
     participating_club_ids: partClubsByEvent.get(e.id) ?? [],
@@ -201,8 +290,10 @@ export async function loadAll(signal?: AbortSignal): Promise<LoadedData> {
     cohosting_requires_approval: e.cohosting_requires_approval ?? true,
     cohosting_benefits: e.cohosting_benefits ?? undefined,
   }));
+}
 
-  const clubAllocations: EventClubAllocation[] = (allocRes.data ?? []).map((a: any) => ({
+function mapClubAllocations(rows: any[]): EventClubAllocation[] {
+  return rows.map(a => ({
     id: a.id,
     event_id: a.event_id,
     club_id: a.club_id,
@@ -211,8 +302,10 @@ export async function loadAll(signal?: AbortSignal): Promise<LoadedData> {
     created_at: a.created_at ?? undefined,
     updated_at: a.updated_at ?? undefined,
   }));
+}
 
-  const cohosts: EventCohost[] = (cohostsRes.data ?? []).map((c: any) => ({
+function mapCohosts(rows: any[]): EventCohost[] {
+  return rows.map(c => ({
     id: c.id,
     event_id: c.event_id,
     club_id: c.club_id,
@@ -234,8 +327,10 @@ export async function loadAll(signal?: AbortSignal): Promise<LoadedData> {
     payment_verified_by_user_id: c.payment_verified_by_user_id ?? undefined,
     payment_review_notes: c.payment_review_notes ?? undefined,
   }));
+}
 
-  const participants: EventParticipant[] = (partsRes.data ?? []).map((p: any) => ({
+function mapParticipants(rows: any[]): EventParticipant[] {
+  return rows.map(p => ({
     id: p.id,
     event_id: p.event_id,
     user_id: p.user_id,
@@ -253,8 +348,10 @@ export async function loadAll(signal?: AbortSignal): Promise<LoadedData> {
     check_out_distance_m: p.check_out_distance_m ?? undefined,
     check_out_method: p.check_out_method ?? undefined,
   }));
+}
 
-  const invitations: EventInvitation[] = (invRes.data ?? []).map((i: any) => ({
+function mapInvitations(rows: any[]): EventInvitation[] {
+  return rows.map(i => ({
     id: i.id,
     event_id: i.event_id,
     invited_user_id: i.invited_user_id,
@@ -263,8 +360,10 @@ export async function loadAll(signal?: AbortSignal): Promise<LoadedData> {
     sent_at: i.sent_at,
     decline_reason: i.decline_reason ?? undefined,
   }));
+}
 
-  const impacts: EventImpact[] = (impRes.data ?? []).map((im: any) => ({
+function mapImpacts(rows: any[]): EventImpact[] {
+  return rows.map(im => ({
     event_id: im.event_id,
     volunteer_hours: im.volunteer_hours,
     beneficiaries: im.beneficiaries,
@@ -273,14 +372,17 @@ export async function loadAll(signal?: AbortSignal): Promise<LoadedData> {
     trees_planted: im.trees_planted,
     impact_summary: im.impact_summary ?? '',
   }));
+}
 
-  const applications: VerificationApplication[] = (appsRes.data ?? []).map((a: any) => ({
+
+function mapApplications(rows: any[], clubNames: Map<string, string>): VerificationApplication[] {
+  return rows.map(a => ({
     id: a.id,
     user_id: a.user_id,
     full_name: a.full_name,
     email: a.email,
     club_id: a.club_id,
-    club_name: clubNameById.get(a.club_id) || '',
+    club_name: clubNames.get(a.club_id) || '',
     member_id: a.member_id,
     position: a.position,
     status: a.status,
@@ -288,8 +390,10 @@ export async function loadAll(signal?: AbortSignal): Promise<LoadedData> {
     notes: a.notes ?? '',
     proof_url: a.proof_url ?? undefined,
   }));
+}
 
-  const auditLogs: AuditLog[] = (auditRes.data ?? []).map((l: any) => ({
+function mapAuditLogs(rows: any[]): AuditLog[] {
+  return rows.map(l => ({
     id: l.id,
     application_id: l.application_id,
     action: l.action,
@@ -300,8 +404,10 @@ export async function loadAll(signal?: AbortSignal): Promise<LoadedData> {
     notes: l.notes ?? '',
     created_at: l.created_at,
   }));
+}
 
-  const notifications: AppNotification[] = (notifRes.data ?? []).map((n: any) => ({
+function mapNotifications(rows: any[]): AppNotification[] {
+  return rows.map(n => ({
     id: n.id,
     user_id: n.user_id,
     kind: n.kind,
@@ -314,8 +420,10 @@ export async function loadAll(signal?: AbortSignal): Promise<LoadedData> {
     created_at: n.created_at,
     priority: n.priority ?? undefined,
   }));
+}
 
-  const conversations: Conversation[] = (convRes.data ?? []).map((c: any) => ({
+function mapConversations(rows: any[], names: Map<string, string>, clubNames: Map<string, string>, events: any[]): Conversation[] {
+  return rows.map(c => ({
     id: c.id,
     event_id: c.event_id ?? undefined,
     event_title: c.event_title ?? undefined,
@@ -323,23 +431,25 @@ export async function loadAll(signal?: AbortSignal): Promise<LoadedData> {
     participant_user_id: c.participant_user_id ?? undefined,
     participant_name: c.is_group
       ? `${c.event_title ?? 'Event'} Group Chat`
-      : (c.participant_user_id && nameById.get(c.participant_user_id)) || '',
+      : (c.participant_user_id && names.get(c.participant_user_id)) || '',
     organizer_user_id: c.organizer_user_id,
     organizer_name: c.is_group
-      ? (c.event_id && clubNameById.get(events.find((e: any) => e.id === c.event_id)?.organizing_club_id)) || 'Club'
-      : nameById.get(c.organizer_user_id) || '',
+      ? (c.event_id && clubNames.get(events.find((e: any) => e.id === c.event_id)?.organizing_club_id)) || 'Club'
+      : names.get(c.organizer_user_id) || '',
     last_message: c.last_message ?? '',
     last_message_at: c.last_message_at,
   }));
+}
 
-  const messages: DirectMessage[] = (msgRes.data ?? []).map((d: any) => ({
+function mapMessages(rows: any[], names: Map<string, string>): DirectMessage[] {
+  return rows.map(d => ({
     id: d.id,
     conversation_id: d.conversation_id,
     event_id: d.event_id ?? undefined,
     sender_id: d.sender_id,
-    sender_name: nameById.get(d.sender_id) || '',
+    sender_name: names.get(d.sender_id) || '',
     receiver_id: d.receiver_id ?? undefined,
-    receiver_name: (d.receiver_id && nameById.get(d.receiver_id)) || 'Group Chat',
+    receiver_name: (d.receiver_id && names.get(d.receiver_id)) || 'Group Chat',
     text: d.text ?? '',
     created_at: d.created_at,
     reply_to_message_id: d.reply_to_message_id ?? undefined,
@@ -347,19 +457,32 @@ export async function loadAll(signal?: AbortSignal): Promise<LoadedData> {
     reply_to_text: d.reply_to_text ?? undefined,
     attachment_path: d.attachment_path ?? undefined,
     attachment_type: d.attachment_type ?? undefined,
+    // Pre-calculated width/height + broadcast flag are mapped here too so
+    // snapshot-loaded messages render identically to realtime-arriving ones
+    // (the old loadAll dropped them, hiding announcements and resizing photos).
+    attachment_width: d.attachment_width ?? undefined,
+    attachment_height: d.attachment_height ?? undefined,
     deleted_at: d.deleted_at ?? undefined,
+    is_broadcast: d.is_broadcast ?? undefined,
+    mentioned_user_ids: d.mentioned_user_ids ?? undefined,
   }));
+}
 
-  const readCursors: ReadCursor[] = (readsRes.data ?? []).map((r: any) => ({
+function mapReadCursors(rows: any[]): ReadCursor[] {
+  return rows.map(r => ({
     conversation_id: r.conversation_id,
     user_id: r.user_id,
     last_read_at: r.last_read_at,
     last_read_message_id: r.last_read_message_id ?? undefined,
   }));
+}
 
-  const deletedMessageIds: string[] = (delsRes.data ?? []).map((r: any) => r.message_id);
+function mapDeletedMessageIds(rows: any[]): string[] {
+  return rows.map(r => r.message_id);
+}
 
-  const conversationStates: ConversationState[] = (convStatesRes.data ?? []).map((s: any) => ({
+function mapConversationStates(rows: any[]): ConversationState[] {
+  return rows.map(s => ({
     conversation_id: s.conversation_id,
     user_id: s.user_id,
     pinned: !!s.pinned,
@@ -367,20 +490,112 @@ export async function loadAll(signal?: AbortSignal): Promise<LoadedData> {
     muted: !!s.muted,
     deleted_at: s.deleted_at ?? undefined,
   }));
+}
 
-  const reactions: MessageReaction[] = (reactionsRes.data ?? []).map((r: any) => ({
+function mapReactions(rows: any[]): MessageReaction[] {
+  return rows.map(r => ({
     id: r.id,
     message_id: r.message_id,
     user_id: r.user_id,
     emoji: r.emoji,
     created_at: r.created_at,
   }));
+}
+
+
+function mapRawToLoaded(raw: Partial<RawRows>): LoadedData {
+  const profiles = raw.profiles ?? [];
+  const clubs = raw.clubs ?? [];
+  const events = raw.events ?? [];
+  const names = userNameLookup(profiles);
+  const clubNames = clubNameLookup(clubs);
+  const partClubsByEvent = participatingClubIdsByEvent(raw.event_participating_clubs ?? []);
 
   return {
-    users, clubs: mappedClubs, events: mappedEvents, participants, invitations,
-    impacts, applications, auditLogs, notifications, conversations, messages, readCursors,
-    deletedMessageIds, conversationStates, reactions, clubAllocations, cohosts,
+    users: mapUsers(profiles, clubNames),
+    clubs: mapClubs(clubs, names),
+    events: mapEvents(events, clubNames, partClubsByEvent),
+    participants: mapParticipants(raw.event_participants ?? []),
+    invitations: mapInvitations(raw.event_invitations ?? []),
+    impacts: mapImpacts(raw.event_impacts ?? []),
+    applications: mapApplications(raw.verification_applications ?? [], clubNames),
+    auditLogs: mapAuditLogs(raw.audit_logs ?? []),
+    notifications: mapNotifications(raw.notifications ?? []),
+    conversations: mapConversations(raw.conversations ?? [], names, clubNames, events),
+    messages: mapMessages(raw.direct_messages ?? [], names),
+    readCursors: mapReadCursors(raw.message_reads ?? []),
+    deletedMessageIds: mapDeletedMessageIds(raw.message_deletions ?? []),
+    conversationStates: mapConversationStates(raw.conversation_states ?? []),
+    reactions: mapReactions(raw.message_reactions ?? []),
+    clubAllocations: mapClubAllocations(raw.event_club_allocations ?? []),
+    cohosts: mapCohosts(raw.event_cohosts ?? []),
   };
+}
+
+/**
+ * Re-pulls only the requested tables (plus their join dependencies) and returns
+ * the mapped slices. Used by realtime sync so a change to one table no longer
+ * re-fetches all of them; the caller merges the returned keys into its state.
+ */
+export async function loadTables(
+  signal: AbortSignal | undefined,
+  tables: readonly TableName[],
+): Promise<Partial<LoadedData>> {
+  const need = new Set<TableName>();
+  for (const t of tables) {
+    need.add(t);
+    for (const dep of TABLE_DEPS[t]) need.add(dep);
+  }
+  const raw = await fetchRaw(signal, [...need]);
+  const names = userNameLookup(raw.profiles ?? []);
+  const clubNames = clubNameLookup(raw.clubs ?? []);
+  const partClubsByEvent = participatingClubIdsByEvent(raw.event_participating_clubs ?? []);
+
+  const result: Partial<LoadedData> = {};
+  if (tables.includes('profiles')) result.users = mapUsers(raw.profiles ?? [], clubNames);
+  if (tables.includes('clubs')) result.clubs = mapClubs(raw.clubs ?? [], names);
+  if (tables.includes('events') || tables.includes('event_participating_clubs'))
+    result.events = mapEvents(raw.events ?? [], clubNames, partClubsByEvent);
+  if (tables.includes('event_participants')) result.participants = mapParticipants(raw.event_participants ?? []);
+  if (tables.includes('event_invitations')) result.invitations = mapInvitations(raw.event_invitations ?? []);
+  if (tables.includes('event_impacts')) result.impacts = mapImpacts(raw.event_impacts ?? []);
+  if (tables.includes('verification_applications'))
+    result.applications = mapApplications(raw.verification_applications ?? [], clubNames);
+  if (tables.includes('audit_logs')) result.auditLogs = mapAuditLogs(raw.audit_logs ?? []);
+  if (tables.includes('notifications')) result.notifications = mapNotifications(raw.notifications ?? []);
+  if (tables.includes('conversations'))
+    result.conversations = mapConversations(raw.conversations ?? [], names, clubNames, raw.events ?? []);
+  if (tables.includes('direct_messages')) result.messages = mapMessages(raw.direct_messages ?? [], names);
+  if (tables.includes('message_reads')) result.readCursors = mapReadCursors(raw.message_reads ?? []);
+  if (tables.includes('message_deletions')) result.deletedMessageIds = mapDeletedMessageIds(raw.message_deletions ?? []);
+  if (tables.includes('conversation_states')) result.conversationStates = mapConversationStates(raw.conversation_states ?? []);
+  if (tables.includes('message_reactions')) result.reactions = mapReactions(raw.message_reactions ?? []);
+  if (tables.includes('event_club_allocations')) result.clubAllocations = mapClubAllocations(raw.event_club_allocations ?? []);
+  if (tables.includes('event_cohosts')) result.cohosts = mapCohosts(raw.event_cohosts ?? []);
+  return result;
+}
+
+/**
+ * Loads one page of a conversation's history, newest-anchored, for chat
+ * infinite-scroll. Newer messages stay in the snapshot/realtime stream; this
+ * only fills in older pages that fell off the bounded `direct_messages` pull.
+ */
+export async function fetchMessagesForConversation(
+  conversationId: string,
+  opts: { beforeCreatedAt?: string; limit?: number } = {},
+): Promise<DirectMessage[]> {
+  const { beforeCreatedAt, limit = 50 } = opts;
+  let q = supabase
+    .from('direct_messages')
+    .select('*')
+    .eq('conversation_id', conversationId)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (beforeCreatedAt) q = q.lt('created_at', beforeCreatedAt);
+
+  const { data } = await q;
+  const profilesRes = await supabase.from('profiles').select('id, full_name');
+  return mapMessages(data ?? [], userNameLookup(profilesRes.data ?? []));
 }
 
 // ---------------------------------------------------------------------------

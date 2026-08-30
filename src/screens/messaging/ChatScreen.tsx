@@ -42,7 +42,7 @@ export default function ChatScreen({ route, navigation }: Props) {
   const {
     messagesForConversation, sendDirectMessage, retryMessage, deleteMessageForMe, unsendMessage, events, users, participantsFor,
     getOrCreateConversation, markConversationRead, readCursorsFor, conversationStateFor, setConversationMuted, conversations,
-    reactionsFor, toggleMessageReaction,
+    reactionsFor, toggleMessageReaction, loadOlderMessages,
   } = useData();
   const { colors: themeColors, isNightMode } = useTheme();
   const { showToast } = useToast();
@@ -53,6 +53,13 @@ export default function ChatScreen({ route, navigation }: Props) {
   // In an inverted list, y=0 is the newest message at the bottom.
   const atBottom = useRef(true);
   const [showNewMsgPill, setShowNewMsgPill] = useState(false);
+
+  // Scroll-up (older-history) pagination. `hasOlderRef` turns off once a page
+  // comes back short (< 50) or empty, so onEndReached stops re-firing forever at
+  // the top of an exhausted conversation. Reset whenever the conversation changes.
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const hasOlderRef = useRef(true);
+  useEffect(() => { hasOlderRef.current = true; }, [conversationId]);
 
   const handleScroll = useCallback((e: any) => {
     const { contentOffset } = e.nativeEvent;
@@ -135,6 +142,22 @@ export default function ChatScreen({ route, navigation }: Props) {
   const effectiveEventId = eventId || currentConv?.event_id;
   const event = effectiveEventId ? events.find(e => e.id === effectiveEventId) : undefined;
   const recipientUser = !isGroupChat ? users.find(u => u.id === recipientId || u.full_name === recipientName) : undefined;
+
+  // Scroll-up (older-history) pagination. `hasOlderRef` turns off once a page
+  // comes back short (< 50) or empty, so onEndReached stops re-firing forever at
+  // the top of an exhausted conversation.
+  const handleLoadOlder = useCallback(async () => {
+    if (loadingOlder || !hasOlderRef.current) return;
+    const oldest = messages[0]; // `messages` is ascending → oldest first
+    if (!oldest) return;
+    setLoadingOlder(true);
+    try {
+      const added = await loadOlderMessages(conversationId, oldest.created_at);
+      if (added < 50) hasOlderRef.current = false;
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [loadingOlder, messages, conversationId, loadOlderMessages]);
 
   // Matching messages based on query and filter
   const matchingMessageIds = useMemo(() => {
@@ -833,6 +856,15 @@ export default function ChatScreen({ route, navigation }: Props) {
             onScroll={handleScroll}
             scrollEventThrottle={16}
             keyboardShouldPersistTaps="handled"
+            onEndReached={handleLoadOlder}
+            onEndReachedThreshold={0.5}
+            ListFooterComponent={
+              loadingOlder ? (
+                <View style={styles.loadingOlder}>
+                  <ActivityIndicator size="small" color={themeColors.primary} />
+                </View>
+              ) : null
+            }
             onScrollToIndexFailed={(info) => {
               listRef.current?.scrollToOffset({ offset: info.highestMeasuredFrameIndex * 50, animated: true });
             }}
@@ -1624,6 +1656,9 @@ const styles = StyleSheet.create({
   msgEventChip: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', maxWidth: '100%', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10, borderWidth: 1, marginBottom: 6 },
   msgEventChipText: { fontSize: 11, fontWeight: '800', flexShrink: 1 },
   messageList: { padding: 16, paddingBottom: 24, gap: 12 },
+  // Inverted list: this footer renders at the TOP, over the oldest messages,
+  // as a small spinner while an older page is being fetched.
+  loadingOlder: { paddingVertical: 16, alignItems: 'center' },
   messageWrapper: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
   myWrapper: { justifyContent: 'flex-end' },
   theirWrapper: { justifyContent: 'flex-start' },

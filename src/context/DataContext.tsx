@@ -8,7 +8,7 @@ import {
   EventClubAllocation, EventCohost,
 } from '../types';
 import { AppState } from 'react-native';
-import { loadAll, db, LoadedData } from '../services/db';
+import { loadAll, loadTables, fetchMessagesForConversation, db, LoadedData, TableName } from '../services/db';
 import { canClubRegister } from '../utils/clubAllocation';
 import { canMessageUser } from '../utils/messaging';
 import RotaractNotifications from '../../modules/rotaract-notifications';
@@ -229,6 +229,13 @@ interface DataContextValue {
   impactFor: (eventId: string) => EventImpact | undefined;
   notificationsFor: (userId: string) => AppNotification[];
   messagesForConversation: (conversationId: string, forUserId?: string) => DirectMessage[];
+  /**
+   * Fetches an older page of a conversation's history and merges it into the
+   * shared message pool. Safe to call repeatedly (scroll-up pagination); each
+   * call stops at the oldest message already present. Resolves with how many
+   * messages were newly merged (0 = no more history).
+   */
+  loadOlderMessages: (conversationId: string, beforeCreatedAt?: string) => Promise<number>;
   unreadCountForUser: (userId: string) => number;
   unreadInboxCountForUser: (userId: string) => number;
   auditFor: (appId: string) => AuditLog[];
@@ -365,6 +372,37 @@ export function DataProvider({ children }: { children: ReactNode }) {
     // foreground instead — see the AppState effect below.
   }, []);
 
+  // Incremental reload: re-pull only the tables that changed (plus their join
+  // dependencies) and merge the mapped slices into state. This is what realtime
+  // sync uses now instead of `applySnapshot`, so a change to ONE table (e.g. an
+  // event status flip or a new participant) no longer re-fetches all 19 tables
+  // for every connected client. On the far-away/slow VPS that full reload was
+  // the dominant cost behind sluggish chats, events, and lists.
+  const applyTables = useCallback(async (tables: TableName[], signal?: AbortSignal) => {
+    const partial = await loadTables(signal, tables);
+    if (!partial) return;
+    if (partial.users) setUsers(partial.users);
+    if (partial.clubs) setClubs(partial.clubs);
+    if (partial.events) setEvents(partial.events);
+    if (partial.participants) setParticipants(partial.participants);
+    if (partial.invitations) setInvitations(partial.invitations);
+    if (partial.impacts) setImpacts(partial.impacts);
+    if (partial.applications) setApplications(partial.applications);
+    if (partial.auditLogs) setAuditLogs(partial.auditLogs);
+    if (partial.notifications) setNotifications(partial.notifications);
+    if (partial.conversations) setConversations(partial.conversations);
+    if (partial.messages) setMessages(partial.messages);
+    if (partial.readCursors) setReadCursors(partial.readCursors);
+    if (partial.deletedMessageIds) setDeletedMessageIds(partial.deletedMessageIds);
+    if (partial.conversationStates) setConversationStates(partial.conversationStates);
+    if (partial.reactions) setReactions(partial.reactions);
+    if (partial.clubAllocations) setClubAllocations(partial.clubAllocations);
+    if (partial.cohosts) setCohosts(partial.cohosts);
+    // A fresh server-backed slice landed; a concurrent cache hydrate (if still
+    // pending) must not overwrite it with yesterday's disk copy.
+    snapshotLoadedRef.current = true;
+  }, []);
+
   // Concurrent pulls (e.g. two screens fire refresh at once, or a user pulls
   // again while one is already in flight) share a single underlying fetch so we
   // don't hammer Supabase or leave stale requests dangling. Both callers await
@@ -380,7 +418,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     if (refreshPromiseRef.current) return refreshPromiseRef.current;
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    // 25s (was 10s): the self-hosted Supabase VPS is far away and often slow,
+    // and a 10s ceiling aborted perfectly-fine reloads mid-flight, leaving stale
+    // data on screen. Long enough for a genuinely-working reload to finish, short
+    // enough that a truly hung connection is still torn down.
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
     const p = (async () => {
       try {
         await applySnapshot(undefined, controller.signal);
@@ -441,6 +483,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     authUser,
     users,
     applySnapshot,
+    applyTables,
     setMessages,
     setNotifications,
     setConversations,
@@ -1739,6 +1782,34 @@ export function DataProvider({ children }: { children: ReactNode }) {
       .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
   }, [messages, deletedMessageIds, conversationStates, authUser?.id]);
 
+  // Scroll-up pagination: fetch an older page of this conversation and merge it
+  // into the shared pool. `beforeCreatedAt` is the oldest message currently held
+  // for that conversation, so successive calls walk further back without overlap.
+  const loadOlderMessages = useCallback(async (conversationId: string, beforeCreatedAt?: string) => {
+    try {
+      const older = await fetchMessagesForConversation(conversationId, {
+        beforeCreatedAt,
+        limit: 50,
+      });
+      if (!older.length) return 0;
+      // Dedup against the latest rendered pool (via snapshotRef) so the returned
+      // count — which the screen uses to decide "no more history" — is reliable
+      // regardless of when React runs the state updater.
+      const existing = new Set(snapshotRef.current?.messages.map(m => m.id) ?? []);
+      const fresh = older.filter(m => !existing.has(m.id));
+      if (!fresh.length) return 0;
+      setMessages(prev => {
+        const cur = new Set(prev.map(m => m.id));
+        const add = fresh.filter(m => !cur.has(m.id));
+        return add.length ? [...add, ...prev] : prev;
+      });
+      return fresh.length;
+    } catch (e) {
+      console.warn('[loadOlderMessages] failed', e);
+      return 0;
+    }
+  }, []);
+
   // "Delete for me": hides a message from this user's own view only; other
   // participants still see it (messages are a single shared row, never removed).
   const deleteMessageForMe = useCallback((messageId: string, userId: string) => {
@@ -2122,7 +2193,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       createEvent, updateEvent, updateEventStatus, resetEventApprovals, cancelEvent, approveEvent, rejectEvent, requestDistrictEventReview,
       joinEvent, leaveEvent, approveParticipant, declineParticipant, markAttendance, checkIn, checkOut, addClub,
       invite, respondInvitation, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, sendDirectMessage, retryMessage, deleteMessageForMe, unsendMessage, markConversationRead, readCursorsFor, conversationStateFor, setConversationPinned, setConversationMuted, setConversationArchived, deleteConversationForMe, reactionsFor, toggleMessageReaction, broadcastToEvent, saveImpact, reviewApplication, resubmitApplication, pushNotification: pushNotif, markNotificationsRead, markNotificationRead, deleteNotification, deleteAllNotifications, updateUserRole, removeUser, addApplication,
-      participantsFor, invitationFor, participationFor, impactFor, notificationsFor, unreadCountForUser, unreadInboxCountForUser, messagesForConversation, auditFor,
+      participantsFor, invitationFor, participationFor, impactFor, notificationsFor, unreadCountForUser, unreadInboxCountForUser, messagesForConversation, loadOlderMessages, auditFor,
       applicationsForRole, userStats,
   }), [
     users, resolvedEvents, participants, invitations, impacts, applications, auditLogs, notifications, clubs, conversations, messages, readCursors, conversationStates, reactions, clubAllocations, setClubAllocation, releaseClubAllocations, cohosts, requestCohost, reviewCohost, submitCohostPayment, verifyCohostPayment, cancelCohost,
@@ -2130,7 +2201,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     createEvent, updateEvent, updateEventStatus, resetEventApprovals, cancelEvent, approveEvent, rejectEvent, requestDistrictEventReview,
     joinEvent, leaveEvent, approveParticipant, declineParticipant, markAttendance, checkIn, checkOut, addClub,
     invite, respondInvitation, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, sendDirectMessage, retryMessage, deleteMessageForMe, unsendMessage, markConversationRead, readCursorsFor, conversationStateFor, setConversationPinned, setConversationMuted, setConversationArchived, deleteConversationForMe, reactionsFor, toggleMessageReaction, broadcastToEvent, saveImpact, reviewApplication, resubmitApplication, pushNotif, markNotificationsRead, markNotificationRead, deleteNotification, deleteAllNotifications, updateUserRole, removeUser, addApplication,
-    participantsFor, invitationFor, participationFor, impactFor, notificationsFor, unreadCountForUser, unreadInboxCountForUser, messagesForConversation, auditFor,
+    participantsFor, invitationFor, participationFor, impactFor, notificationsFor, unreadCountForUser, unreadInboxCountForUser, messagesForConversation, loadOlderMessages, auditFor,
     applicationsForRole, userStats,
   ]);
 

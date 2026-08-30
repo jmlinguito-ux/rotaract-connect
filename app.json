@@ -65,6 +65,7 @@
       ],
       "@react-native-community/datetimepicker",
       "./plugins/withDisableScriptSandboxing",
+      "./plugins/withSupabaseHttp",
       "./plugins/withConversationNotifications",
       "expo-audio",
       "expo-asset",

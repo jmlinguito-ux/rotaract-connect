@@ -4,6 +4,7 @@ import {
   AppUser, AppNotification, DirectMessage, ReadCursor, ConversationState, MessageReaction, Conversation,
 } from '../types';
 import { supabase } from '../services/supabase';
+import { TableName } from '../services/db';
 import { playAlertSound, getActiveChatConversation } from '../services/sound';
 import { notifyChatMessage, notifyAppNotification } from '../services/notifications';
 
@@ -13,6 +14,8 @@ export interface RealtimeSyncArgs {
   /** Live view of `users`, for mapping realtime rows to display names. */
   users: AppUser[];
   applySnapshot: (cancelledRef?: { current: boolean }, signal?: AbortSignal) => Promise<void>;
+  /** Incremental reload — re-pulls only the given tables and merges the slices. */
+  applyTables: (tables: TableName[], signal?: AbortSignal) => Promise<void>;
   setMessages: React.Dispatch<React.SetStateAction<DirectMessage[]>>;
   setNotifications: React.Dispatch<React.SetStateAction<AppNotification[]>>;
   setConversations: React.Dispatch<React.SetStateAction<Conversation[]>>;
@@ -27,6 +30,7 @@ export function useRealtimeSync({
   authUser,
   users,
   applySnapshot,
+  applyTables,
   setMessages,
   setNotifications,
   setConversations,
@@ -77,9 +81,10 @@ export function useRealtimeSync({
       };
     };
 
-    // Debounced full reload for snapshot reconciliation. A new event cancels the
-    // pending timer AND aborts any in-flight reload, so a sustained burst of
-    // table changes (or a slow network) can never stack overlapping full fetches.
+    // Debounced full reload for snapshot reconciliation — used only for rare
+    // full-sync events (app foreground, initial subscription). A new event
+    // cancels the pending timer AND aborts any in-flight reload, so a sustained
+    // burst can never stack overlapping full fetches.
     let reloadTimer: ReturnType<typeof setTimeout> | null = null;
     let reloadController: AbortController | null = null;
     const scheduleReload = () => {
@@ -89,6 +94,27 @@ export function useRealtimeSync({
       const signal = reloadController.signal;
       reloadTimer = setTimeout(() => {
         applySnapshot(undefined, signal).catch(() => {});
+      }, 400);
+    };
+
+    // Per-table incremental reload: the WORKHORSE for routine table changes.
+    // Batching keeps a burst across several tables to ONE scoped fetch, and a
+    // repeat event aborts the in-flight one so nothing stacks. Each table change
+    // now costs a few queries (the table + its join deps) instead of re-pulling
+    // all 19 tables for every connected client.
+    const pendingTables = new Set<string>();
+    let tableTimer: ReturnType<typeof setTimeout> | null = null;
+    let tableController: AbortController | null = null;
+    const scheduleTableReload = (table: string) => {
+      pendingTables.add(table);
+      if (tableTimer) clearTimeout(tableTimer);
+      tableController?.abort();
+      tableController = new AbortController();
+      const signal = tableController.signal;
+      tableTimer = setTimeout(() => {
+        const tables = [...pendingTables] as TableName[];
+        pendingTables.clear();
+        if (tables.length) applyTables(tables, signal).catch(() => {});
       }, 400);
     };
 
@@ -323,9 +349,10 @@ export function useRealtimeSync({
       .subscribe(logStatus('conversations'));
 
     // Conversations move fast enough (last_message updates) to merge directly, so
-    // the Inbox reorders live; heavier tables just schedule a reload. Each table
-    // gets its OWN channel so one table missing from the realtime publication
-    // cannot error out the others (a shared channel fails as a unit).
+    // the Inbox reorders live; heavier tables do a SCOPEED incremental reload
+    // (only the changed table + its join deps) instead of re-pulling everything.
+    // Each table gets its OWN channel so one table missing from the realtime
+    // publication cannot error out the others (a shared channel fails as a unit).
     const tableReloadChannels = ([
       'events', 'event_participants', 'event_invitations', 'event_impacts',
       'verification_applications',
@@ -334,17 +361,19 @@ export function useRealtimeSync({
       // with no client noticing; `profiles` keeps OTHER members' roles and
       // verification badges current (a user's OWN profile is handled by its own
       // subscription in AuthContext).
-      'clubs', 'zones', 'event_participating_clubs', 'audit_logs', 'profiles',
+      'clubs', 'event_participating_clubs', 'audit_logs', 'profiles',
     ] as const).map(table =>
       supabase
         .channel(`rt-${table}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table }, scheduleReload)
+        .on('postgres_changes', { event: '*', schema: 'public', table }, () => scheduleTableReload(table))
         .subscribe(logStatus(table)),
     );
 
     return () => {
       if (reloadTimer) clearTimeout(reloadTimer);
       reloadController?.abort();
+      if (tableTimer) clearTimeout(tableTimer);
+      tableController?.abort();
       appStateSub.remove();
       supabase.removeChannel(messagesChannel);
       supabase.removeChannel(notifChannel);
@@ -355,5 +384,5 @@ export function useRealtimeSync({
       supabase.removeChannel(conversationsChannel);
       tableReloadChannels.forEach(ch => supabase.removeChannel(ch));
     };
-  }, [isAuthenticated, authUser, applySnapshot]);
+  }, [isAuthenticated, authUser, applySnapshot, applyTables]);
 }
