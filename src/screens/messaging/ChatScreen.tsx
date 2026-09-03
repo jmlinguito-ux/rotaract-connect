@@ -42,7 +42,7 @@ export default function ChatScreen({ route, navigation }: Props) {
   const {
     messagesForConversation, sendDirectMessage, retryMessage, deleteMessageForMe, unsendMessage, events, users, participantsFor,
     getOrCreateConversation, markConversationRead, readCursorsFor, conversationStateFor, setConversationMuted, conversations,
-    reactionsFor, toggleMessageReaction, loadOlderMessages,
+    reactionsFor, toggleMessageReaction, loadOlderMessages, refreshReadCursors,
   } = useData();
   const { colors: themeColors, isNightMode } = useTheme();
   const { showToast } = useToast();
@@ -293,6 +293,26 @@ export default function ChatScreen({ route, navigation }: Props) {
       markConversationRead(conversationId, user.id, lastMsgId);
     }
   }, [isFocused, lastMsgId, conversationId, user?.id, markConversationRead]);
+
+  // "Seen" catch-up: realtime read receipts can be delayed (slow server, or the
+  // message_reads table not yet published for realtime on the backend), so pull
+  // the read cursors when the chat opens, when the app resumes, and on a light
+  // interval while the chat is on screen. Each poll is one cheap targeted query
+  // (guarded against overlap in DataContext) — never a full reload.
+  useEffect(() => {
+    if (!isFocused || !conversationId) return;
+    refreshReadCursors();
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') refreshReadCursors();
+    });
+    const poll = setInterval(() => {
+      if (AppState.currentState === 'active') refreshReadCursors();
+    }, 15000);
+    return () => {
+      sub.remove();
+      clearInterval(poll);
+    };
+  }, [isFocused, conversationId, refreshReadCursors]);
 
   // When a new message lands: if user is at the bottom or it is their own message,
   // stay anchored at y=0; otherwise show the "New messages ↓" pill.

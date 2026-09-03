@@ -9,7 +9,7 @@ import expo.modules.notifications.service.delegates.SharedPreferencesNotificatio
 class RotaractPresentationDelegate(context: Context) : ExpoPresentationDelegate(context) {
     override suspend fun createNotification(
         notification: Notification,
-        notificationBehavior: NotificationBehaviorRecord?
+        notificationBehavior: NotificationBehaviorRecord?,
     ): android.app.Notification {
         return ConversationNotificationBuilder(context, notification, SharedPreferencesNotificationCategoriesStore(context)).apply {
             setAllowedBehavior(notificationBehavior)

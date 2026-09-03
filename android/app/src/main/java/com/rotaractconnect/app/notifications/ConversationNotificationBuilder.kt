@@ -1,98 +1,116 @@
 package com.rotaractconnect.app.notifications
 
-import android.app.Notification
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.os.Build
+import androidx.core.app.NotificationCompat
+import androidx.core.app.Person
+import androidx.core.app.RemoteInput
+import expo.modules.notifications.notifications.model.Notification
 import expo.modules.notifications.notifications.presentation.builders.ExpoNotificationBuilder
 import expo.modules.notifications.service.delegates.SharedPreferencesNotificationCategoriesStore
 
-/**
- * Renders chat pushes as Android conversation notifications.
- *
- * expo-notifications always builds a standard notification with BigTextStyle, which
- * puts any image in the large-icon slot on the RIGHT and leaves the app icon on the
- * left. A messaging app wants MessagingStyle + a Person carrying the sender's avatar
- * + a matching dynamic shortcut; Android then draws the avatar large on the LEFT and
- * groups repeat messages into one conversation.
- *
- * Only pushes carrying `type: "chat_message"` are restyled. Announcements, event
- * reminders and everything else fall through to expo's normal rendering untouched,
- * so they keep looking like ordinary app notifications.
- *
- * super.build() still runs: its content intent and marshalled extras are carried
- * over, and they are what make a tap route back through the JS response listener.
- */
 class ConversationNotificationBuilder(
-  context: Context,
-  notification: expo.modules.notifications.notifications.model.Notification,
-  store: SharedPreferencesNotificationCategoriesStore
+    context: Context,
+    notification: Notification,
+    store: SharedPreferencesNotificationCategoriesStore
 ) : ExpoNotificationBuilder(context, notification, store) {
 
-  private fun withStopIntent(base: Notification): Notification {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return base
-    val intent = Intent(context, StopAlertReceiver::class.java).apply { action = StopAlertReceiver.ACTION }
-    val pending = PendingIntent.getBroadcast(
-      context,
-      StopAlertReceiver.ACTION.hashCode(),
-      intent,
-      PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-    )
-    return Notification.Builder.recoverBuilder(context, base).setDeleteIntent(pending).build()
-  }
+    override suspend fun build(): android.app.Notification {
+        val expoNotification = super.build()
+        val content = notification.notificationRequest.content
+        val data = content.body
+        
+        if (data == null || !data.has("conversation_id")) {
+            return expoNotification
+        }
 
-  override suspend fun build(): android.app.Notification {
-    val base = super.build()
-    val content = notification.notificationRequest.content
+        val conversationId = data.getString("conversation_id")
+        val senderId = data.optString("sender_id")
+        val senderName = data.optString("sender_name", "Someone")
+        val messageText = data.optString("message_preview") ?: content.text ?: ""
+        val notificationId = conversationId.hashCode()
 
-    // Urgent organizer broadcasts keep sounding until acted on, so they need a
-    // delete intent — otherwise swiping the notification away would leave the loop
-    // ringing until its timeout.
-    val payload = ChatPayload.from(content.body, content.title, content.text)
-    if (payload == null) {
-      val notification = if (content.body?.optString("type") == "organizer_high") withStopIntent(base) else base
-      // Non-chat notifications (Approvals, Cancellations, Verifications, SOS, Announcements)
-      // Tint the full banner in Rotaract Cranberry (#D41367)
-      return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        val builder = Notification.Builder.recoverBuilder(context, notification)
-        builder.setColor(0xFFD41367.toInt())
-        builder.setColorized(true)
-        builder.build()
-      } else {
-        notification
-      }
+        // Use the notification already built by Expo as a base to preserve sounds, channels, etc.
+        val builder = NotificationCompat.Builder(context, expoNotification)
+
+        val user = Person.Builder().setName("Me").build()
+        val sender = Person.Builder().setName(senderName).setKey(senderId).build()
+        
+        val style = NotificationCompat.MessagingStyle(user)
+            .setConversationTitle(content.title)
+            .addMessage(messageText, System.currentTimeMillis(), sender)
+            .setGroupConversation(false)
+
+        builder.setStyle(style)
+        builder.setShortcutId(conversationId)
+        
+        addConversationActions(builder, conversationId, senderId, senderName, notificationId)
+
+        return builder.build()
     }
 
-    ConversationStore.saveMeta(
-      context,
-      payload.conversationId,
-      ConversationStore.Meta(payload.conversationName, payload.isGroup)
-    )
+    private fun addConversationActions(
+        builder: NotificationCompat.Builder,
+        conversationId: String,
+        senderId: String,
+        senderName: String,
+        notificationId: Int
+    ) {
+        val remoteInput = RemoteInput.Builder("result_receive_message")
+            .setLabel("Reply...")
+            .build()
 
-    val entries = ConversationStore.append(
-      context,
-      payload.conversationId,
-      ConversationStore.Entry(
-        senderId = payload.senderId,
-        senderName = payload.senderName,
-        text = payload.messagePreview,
-        timestamp = payload.sentAt,
-        avatarUrl = payload.senderAvatar
-      )
-    )
+        val replyIntent = Intent(context, ReplyReceiver::class.java).apply {
+            action = NotificationConstants.REPLY_ACTION
+            putExtra(NotificationConstants.EXTRA_CONVERSATION_ID, conversationId)
+            putExtra(NotificationConstants.EXTRA_NOTIFICATION_ID, notificationId)
+            putExtra(NotificationConstants.EXTRA_SENDER_ID, senderId)
+            putExtra(NotificationConstants.EXTRA_SENDER_NAME, senderName)
+        }
+        val replyPendingIntent = PendingIntent.getBroadcast(
+            context,
+            conversationId.hashCode(),
+            replyIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+        )
 
-    return ConversationNotification.build(
-      context = context,
-      conversationId = payload.conversationId,
-      conversationName = payload.conversationName,
-      isGroup = payload.isGroup,
-      entries = entries,
-      contentIntent = base.contentIntent,
-      extras = base.extras,
-      channelId = payload.channelId,
-      respectsMute = payload.respectsMute,
-      notificationKey = payload.notificationKey
-    )
-  }
+        val replyAction = NotificationCompat.Action.Builder(
+            android.R.drawable.ic_menu_send,
+            "Reply",
+            replyPendingIntent
+        ).addRemoteInput(remoteInput).build()
+
+        val muteIntent = Intent(context, MuteReceiver::class.java).apply {
+            action = NotificationConstants.MUTE_ACTION
+            putExtra(NotificationConstants.EXTRA_CONVERSATION_ID, conversationId)
+            putExtra(NotificationConstants.EXTRA_NOTIFICATION_ID, notificationId)
+        }
+        val mutePendingIntent = PendingIntent.getBroadcast(
+            context,
+            conversationId.hashCode() + 1,
+            muteIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val muteAction = NotificationCompat.Action.Builder(
+            android.R.drawable.ic_lock_silent_mode,
+            "Mute",
+            mutePendingIntent
+        ).build()
+
+        builder.addAction(replyAction)
+        builder.addAction(muteAction)
+        
+        val dismissIntent = Intent(context, NotificationDismissReceiver::class.java).apply {
+            action = NotificationConstants.DISMISS_ACTION
+            putExtra(NotificationConstants.EXTRA_CONVERSATION_ID, conversationId)
+        }
+        val dismissPendingIntent = PendingIntent.getBroadcast(
+            context,
+            conversationId.hashCode() + 2,
+            dismissIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        builder.setDeleteIntent(dismissPendingIntent)
+    }
 }

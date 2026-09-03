@@ -6,10 +6,10 @@ object NotificationConstants {
     const val ACTIVE_KEY = "__active_conversation"
     const val STOP_ALERT_ACTION = "com.rotaractconnect.app.STOP_URGENT_ALERT"
 
-    // Action strings for intents
-    const val REPLY_ACTION = "com.rotaractconnect.app.REPLY_ACTION"
-    const val MUTE_ACTION = "com.rotaractconnect.app.MUTE_ACTION"
-    const val DISMISS_ACTION = "com.rotaractconnect.app.DISMISS_ACTION"
+    // Action strings for intents from AndroidManifest.xml
+    const val REPLY_ACTION = "com.rotaractconnect.app.NOTIFICATION_REPLY"
+    const val MUTE_ACTION = "com.rotaractconnect.app.NOTIFICATION_MUTE"
+    const val DISMISS_ACTION = "com.rotaractconnect.app.NOTIFICATION_DISMISSED"
 
     // Extra keys
     const val EXTRA_CONVERSATION_ID = "conversation_id"

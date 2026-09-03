@@ -8,6 +8,7 @@ import {
   TextInput,
   ScrollView,
   Modal,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
@@ -70,7 +71,7 @@ const ALL_AREAS: AreaOfFocus[] = [
 export default function EventsScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const isFocused = useIsFocused();
-  const { events, participants, invitations, userStats, users, clubs } = useData();
+  const { events, participants, invitations, userStats, users, clubs, dataLoaded } = useData();
   const { user } = useAuth();
   const { colors: themeColors } = useTheme();
   const refreshControl = useAppRefreshControl();
@@ -217,6 +218,12 @@ export default function EventsScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.bg }]} edges={['top']}>
+      {!dataLoaded && (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color={themeColors.primary} />
+        </View>
+      )}
+      {dataLoaded && (<>
       {/* Header Bar */}
       <View style={styles.header}>
         <View>
@@ -444,6 +451,7 @@ export default function EventsScreen() {
         onPermissionGranted={() => setIsGpsEnabled(true)}
       />
 
+      </>)}
     </SafeAreaView>
   );
 }

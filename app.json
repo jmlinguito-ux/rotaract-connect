@@ -25,6 +25,7 @@
     },
     "android": {
       "package": "com.rotaractconnect.app",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -87,6 +88,9 @@
         {
           "ios": {
             "deploymentTarget": "16.4"
+          },
+          "android": {
+            "usesCleartextTraffic": true
           }
         }
       ],

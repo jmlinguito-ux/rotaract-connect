@@ -92,6 +92,13 @@ interface DataContextValue {
    * when its `refreshing` prop transitions from a value it inherited on mount).
    */
   refresh: () => Promise<void>;
+  /**
+   * True once the first dataset has been rendered — from the on-disk cache
+   * (instant, so repeat launches never flash blank) or from the first server
+   * snapshot. Screens gate their lists on this so a slow first load shows a
+   * spinner instead of an empty "no events/messages" state.
+   */
+  dataLoaded: boolean;
 
   createEvent: (e: Omit<RotaractEvent, 'id'>) => RotaractEvent;
   updateEvent: (eventId: string, updates: Partial<Omit<RotaractEvent, 'id'>>) => void;
@@ -128,6 +135,12 @@ interface DataContextValue {
   markConversationRead: (conversationId: string, userId: string, lastMessageId?: string) => void;
   /** Read cursors for a conversation — who has read up to when. */
   readCursorsFor: (conversationId: string) => ReadCursor[];
+  /**
+   * Targeted refresh of read receipts (message_reads) only — a single cheap
+   * query used when opening a chat or returning to it, so "Seen" catches up even
+   * if the realtime channel is down or the server is slow.
+   */
+  refreshReadCursors: () => void;
   /** The current user's own state for a conversation (pin/archive/delete), if any. */
   conversationStateFor: (conversationId: string, userId?: string) => ConversationState | undefined;
   /** Pins/unpins a conversation for the current user only. */
@@ -264,6 +277,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [reactions, setReactions] = useState<MessageReaction[]>([]);
   const [clubAllocations, setClubAllocations] = useState<EventClubAllocation[]>([]);
   const [cohosts, setCohosts] = useState<EventCohost[]>([]);
+  // False until the first dataset is on screen (cache hydrate or server snapshot).
+  const [dataLoaded, setDataLoaded] = useState(false);
 
   // 1. Immediately hydrate local state from persistent cache on boot (0ms instant startup).
   //    If the network snapshot already resolved (fast connection), skip the stale
@@ -289,6 +304,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setReactions(cached.reactions ?? []);
       setClubAllocations(cached.clubAllocations ?? []);
       setCohosts(cached.cohosts ?? []);
+      // Cached data is now on screen — mark loaded so screens stop showing the
+      // initial-load spinner (they render cached data until the server refreshes).
+      setDataLoaded(true);
     });
   }, []);
 
@@ -317,6 +335,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // always serializes CURRENT state (including realtime merges) without forcing
   // the writer effect to re-subscribe to AppState on every data change.
   const snapshotRef = useRef<LoadedData | null>(null);
+  // Guards the periodic read-cursor poll so two fetches can never overlap even
+  // if the slow server takes longer than the poll interval to answer.
+  const readCursorRefreshRef = useRef(false);
   useEffect(() => {
     snapshotRef.current = {
       users, clubs, events, participants, invitations, impacts, applications,
@@ -365,6 +386,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     // A snapshot landed; a concurrent cache hydrate (if still pending) must not
     // overwrite this newer data with yesterday's disk copy.
     snapshotLoadedRef.current = true;
+    // First dataset rendered — screens can stop showing the initial spinner.
+    setDataLoaded(true);
 
     // NOTE: no cache write here. Persisting the full snapshot on EVERY reload
     // (realtime reloads included) serialized megabytes on the JS thread and
@@ -401,6 +424,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     // A fresh server-backed slice landed; a concurrent cache hydrate (if still
     // pending) must not overwrite it with yesterday's disk copy.
     snapshotLoadedRef.current = true;
+    setDataLoaded(true);
   }, []);
 
   // Concurrent pulls (e.g. two screens fire refresh at once, or a user pulls
@@ -1832,6 +1856,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return readCursors.filter(c => c.conversation_id === conversationId);
   }, [readCursors]);
 
+  // Targeted catch-up of read receipts. One query, no full reload — fires when a
+  // chat opens and periodically while it's open so "Seen" is current even when
+  // the realtime channel is down (slow/distant server, or the message_reads
+  // table not yet published for realtime on the backend). Guarded so a slow
+  // server can never stack overlapping fetches.
+  const refreshReadCursors = useCallback(() => {
+    if (readCursorRefreshRef.current) return;
+    readCursorRefreshRef.current = true;
+    applyTables(['message_reads']).catch(() => {}).finally(() => {
+      readCursorRefreshRef.current = false;
+    });
+  }, [applyTables]);
+
   // ------------------------------------------------------------------
   // Per-user conversation inbox state (pin / archive / delete-for-me).
   // Optimistic local merge + upsert of the caller's OWN row only. RLS makes it
@@ -2189,18 +2226,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // correct — this only removes the gratuitous re-renders.
   const value = useMemo<DataContextValue>(() => ({
       users, events: resolvedEvents, participants, invitations, impacts, applications, auditLogs, notifications, clubs, conversations, messages, readCursors, conversationStates, reactions, clubAllocations, setClubAllocation, releaseClubAllocations, cohosts, requestCohost, reviewCohost, submitCohostPayment, verifyCohostPayment, cancelCohost,
-      refresh,
+      refresh, dataLoaded,
       createEvent, updateEvent, updateEventStatus, resetEventApprovals, cancelEvent, approveEvent, rejectEvent, requestDistrictEventReview,
       joinEvent, leaveEvent, approveParticipant, declineParticipant, markAttendance, checkIn, checkOut, addClub,
-      invite, respondInvitation, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, sendDirectMessage, retryMessage, deleteMessageForMe, unsendMessage, markConversationRead, readCursorsFor, conversationStateFor, setConversationPinned, setConversationMuted, setConversationArchived, deleteConversationForMe, reactionsFor, toggleMessageReaction, broadcastToEvent, saveImpact, reviewApplication, resubmitApplication, pushNotification: pushNotif, markNotificationsRead, markNotificationRead, deleteNotification, deleteAllNotifications, updateUserRole, removeUser, addApplication,
+      invite, respondInvitation, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, sendDirectMessage, retryMessage, deleteMessageForMe, unsendMessage, markConversationRead, readCursorsFor, refreshReadCursors, conversationStateFor, setConversationPinned, setConversationMuted, setConversationArchived, deleteConversationForMe, reactionsFor, toggleMessageReaction, broadcastToEvent, saveImpact, reviewApplication, resubmitApplication, pushNotification: pushNotif, markNotificationsRead, markNotificationRead, deleteNotification, deleteAllNotifications, updateUserRole, removeUser, addApplication,
       participantsFor, invitationFor, participationFor, impactFor, notificationsFor, unreadCountForUser, unreadInboxCountForUser, messagesForConversation, loadOlderMessages, auditFor,
       applicationsForRole, userStats,
   }), [
     users, resolvedEvents, participants, invitations, impacts, applications, auditLogs, notifications, clubs, conversations, messages, readCursors, conversationStates, reactions, clubAllocations, setClubAllocation, releaseClubAllocations, cohosts, requestCohost, reviewCohost, submitCohostPayment, verifyCohostPayment, cancelCohost,
-    refresh,
+    refresh, dataLoaded,
     createEvent, updateEvent, updateEventStatus, resetEventApprovals, cancelEvent, approveEvent, rejectEvent, requestDistrictEventReview,
     joinEvent, leaveEvent, approveParticipant, declineParticipant, markAttendance, checkIn, checkOut, addClub,
-    invite, respondInvitation, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, sendDirectMessage, retryMessage, deleteMessageForMe, unsendMessage, markConversationRead, readCursorsFor, conversationStateFor, setConversationPinned, setConversationMuted, setConversationArchived, deleteConversationForMe, reactionsFor, toggleMessageReaction, broadcastToEvent, saveImpact, reviewApplication, resubmitApplication, pushNotif, markNotificationsRead, markNotificationRead, deleteNotification, deleteAllNotifications, updateUserRole, removeUser, addApplication,
+    invite, respondInvitation, sendMessageToOrganizer, getOrCreateConversation, getOrCreateEventGroupConversation, canAccessEventGroupChat, sendDirectMessage, retryMessage, deleteMessageForMe, unsendMessage, markConversationRead, readCursorsFor, refreshReadCursors, conversationStateFor, setConversationPinned, setConversationMuted, setConversationArchived, deleteConversationForMe, reactionsFor, toggleMessageReaction, broadcastToEvent, saveImpact, reviewApplication, resubmitApplication, pushNotif, markNotificationsRead, markNotificationRead, deleteNotification, deleteAllNotifications, updateUserRole, removeUser, addApplication,
     participantsFor, invitationFor, participationFor, impactFor, notificationsFor, unreadCountForUser, unreadInboxCountForUser, messagesForConversation, loadOlderMessages, auditFor,
     applicationsForRole, userStats,
   ]);

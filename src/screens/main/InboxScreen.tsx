@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, FlatList, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -97,6 +97,7 @@ export default function InboxScreen() {
     setConversationMuted,
     setConversationArchived,
     deleteConversationForMe,
+    dataLoaded,
   } = useData();
   const { colors: themeColors } = useTheme();
   const refreshControl = useAppRefreshControl();
@@ -498,6 +499,12 @@ export default function InboxScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.bg }]} edges={['top']}>
+      {!dataLoaded && (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color={themeColors.primary} />
+        </View>
+      )}
+      {dataLoaded && (<>
       <View style={styles.header}>
         <Text style={[styles.headerTitle, { color: themeColors.text }]}>Inbox</Text>
       </View>
@@ -561,6 +568,7 @@ export default function InboxScreen() {
         }}
         onClose={() => setConfirmDeleteAll(false)}
       />
+      </>)}
     </SafeAreaView>
   );
 }
