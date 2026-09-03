@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
+import { useTheme } from '../context/ThemeContext';
 import { AreaOfFocus } from '../types';
 import { AREAS_OF_FOCUS } from '../data/areasOfFocus';
 
@@ -16,6 +17,7 @@ export function AreasOfFocusPicker({
   selected: AreaOfFocus[];
   onChange: (next: AreaOfFocus[]) => void;
 }) {
+  const { colors: themeColors, isNightMode } = useTheme();
   const [open, setOpen] = useState(false);
 
   const toggle = (key: AreaOfFocus) => {
@@ -29,10 +31,14 @@ export function AreasOfFocusPicker({
 
   return (
     <>
-      <Text style={styles.label}>Areas of Focus</Text>
+      <Text style={[styles.label, { color: themeColors.text }]}>Areas of Focus</Text>
 
       <TouchableOpacity
-        style={[styles.trigger, open && styles.triggerOpen]}
+        style={[
+          styles.trigger,
+          { backgroundColor: themeColors.surface, borderColor: themeColors.border },
+          open && [styles.triggerOpen, { borderColor: themeColors.primary }],
+        ]}
         onPress={() => setOpen(o => !o)}
         activeOpacity={0.8}
         accessibilityRole="button"
@@ -41,7 +47,7 @@ export function AreasOfFocusPicker({
       >
         <View style={styles.triggerContentWrap}>
           {selected.length === 0 ? (
-            <Text style={styles.triggerPlaceholder}>Select areas of focus</Text>
+            <Text style={[styles.triggerPlaceholder, { color: themeColors.textMuted }]}>Select areas of focus</Text>
           ) : (
             <View style={styles.insidePillsWrap}>
               {selected.map(key => {
@@ -50,7 +56,7 @@ export function AreasOfFocusPicker({
                 return (
                   <TouchableOpacity
                     key={key}
-                    style={styles.insideChip}
+                    style={[styles.insideChip, { backgroundColor: themeColors.primary + '18' }]}
                     onPress={e => {
                       e.stopPropagation();
                       toggle(key);
@@ -58,15 +64,15 @@ export function AreasOfFocusPicker({
                     accessibilityRole="button"
                     accessibilityLabel={`Remove ${area.label}`}
                   >
-                    <Text style={styles.insideChipText}>{area.label}</Text>
-                    <Ionicons name="close" size={13} color={colors.primary} />
+                    <Text style={[styles.insideChipText, { color: themeColors.primary }]}>{area.label}</Text>
+                    <Ionicons name="close" size={13} color={themeColors.primary} />
                   </TouchableOpacity>
                 );
               })}
             </View>
           )}
         </View>
-        <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textMuted} />
+        <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={18} color={themeColors.textMuted} />
       </TouchableOpacity>
 
       {open && (
@@ -76,23 +82,23 @@ export function AreasOfFocusPicker({
             activeOpacity={1}
             onPress={() => setOpen(false)}
           />
-          <View style={styles.menu}>
+          <View style={[styles.menu, { backgroundColor: isNightMode ? themeColors.surface : '#F8FAFC', borderColor: themeColors.border }]}>
             {AREAS_OF_FOCUS.map((area, i) => {
               const isSelected = selected.includes(area.key);
               return (
                 <TouchableOpacity
                   key={area.key}
-                  style={[styles.option, i > 0 && styles.optionDivider]}
+                  style={[styles.option, isSelected && { backgroundColor: themeColors.primary + '14' }, i > 0 && [styles.optionDivider, { borderTopColor: themeColors.border }]]}
                   onPress={() => toggle(area.key)}
                   accessibilityRole="button"
                   accessibilityLabel={area.label}
                   accessibilityState={{ selected: isSelected }}
                 >
-                  <View style={[styles.checkbox, isSelected && styles.checkboxOn]}>
+                  <View style={[styles.checkbox, { borderColor: themeColors.border }, isSelected && [styles.checkboxOn, { backgroundColor: themeColors.primary, borderColor: themeColors.primary }]]}>
                     {isSelected && <Ionicons name="checkmark" size={13} color="#fff" />}
                   </View>
-                  <Ionicons name={area.icon} size={16} color={isSelected ? colors.primary : colors.textMuted} />
-                  <Text style={[styles.optionText, isSelected && styles.optionTextOn]}>{area.label}</Text>
+                  <Ionicons name={area.icon} size={16} color={isSelected ? themeColors.primary : themeColors.textMuted} />
+                  <Text style={[styles.optionText, { color: isSelected ? themeColors.primary : themeColors.text }, isSelected && styles.optionTextOn]}>{area.label}</Text>
                 </TouchableOpacity>
               );
             })}
@@ -145,10 +151,15 @@ const styles = StyleSheet.create({
     marginTop: 6,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 12,
+    borderRadius: 14,
     backgroundColor: colors.bg,
     overflow: 'hidden',
     zIndex: 2,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
   },
   option: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 12 },
   optionDivider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },

@@ -8,11 +8,12 @@ import {
   FlatList,
   Modal,
   TextInput,
+  Platform,
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView, initialWindowMetrics } from 'react-native-safe-area-context';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useIsFocused } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AreaOfFocus, RotaractEvent, Club } from '../../types';
 import { RootStackParamList } from '../../navigation/types';
@@ -23,9 +24,11 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { zones } from '../../data/mockData';
 import { distanceMeters, formatDistance } from '../../utils/checkIn';
+import { openNavigationApp } from '../../utils/navigationLauncher';
 
 import { visibleEvents } from '../../utils/eventApproval';
 import { BottomSheet } from '../../components/BottomSheet';
+import EmergencySosButton from '../../components/EmergencySosButton';
 
 type DistanceOption = '5KM' | '15KM' | '30KM';
 type DateOption = 'TODAY' | 'WEEK' | 'MONTH';
@@ -98,6 +101,7 @@ function isDateInRange(startIso: string, option: DateOption): boolean {
 
 export default function MapScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const isFocused = useIsFocused();
   const { events, clubs, users, participants } = useData();
   const { user } = useAuth();
   const { colors: themeColors } = useTheme();
@@ -111,25 +115,51 @@ export default function MapScreen() {
 
   // Search & Modals
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [mapExpanded, setMapExpanded] = useState(false);
   const [userCoords, setUserCoords] = useState<{ latitude: number; longitude: number } | null>(null);
 
+  // Club coords resolved separately from the raw `clubs` array. Depending the
+  // effect on `clubs` made every realtime reload (a new array reference each
+  // time) re-run getLastKnownPositionAsync + getCurrentPositionAsync even though
+  // nothing relevant changed — a GPS wake on every data change.
+  const userClubCoords = useMemo(() => {
+    const userClub = clubs.find(c => c.id === user?.club_id);
+    return userClub?.latitude && userClub?.longitude
+      ? { latitude: userClub.latitude, longitude: userClub.longitude }
+      : null;
+  }, [clubs, user?.club_id]);
+
   useEffect(() => {
+    if (!isFocused) return;
+
     (async () => {
+      const defaultFallback =
+        userClubCoords ?? { latitude: 14.6500, longitude: 121.0800 };
+
       try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
+        // Stability Refinement: Switch from request (active) to get (passive) check.
+        // requestForegroundPermissionsAsync triggers a background system focus-steal
+        // on some devices even if permission is already granted, killing the keyboard.
+        const { status } = await Location.getForegroundPermissionsAsync();
         if (status === 'granted') {
-          const loc = await Location.getCurrentPositionAsync({});
+          // 1. Instantly get last known location from OS cache (0ms)
+          const lastLoc = await Location.getLastKnownPositionAsync();
+          if (lastLoc) {
+            setUserCoords({ latitude: lastLoc.coords.latitude, longitude: lastLoc.coords.longitude });
+          }
+          // 2. Fetch fresh position with balanced accuracy in background without blocking
+          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
           setUserCoords({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
         } else {
-          setUserCoords({ latitude: 14.5266, longitude: 121.1553 });
+          setUserCoords(defaultFallback);
         }
       } catch {
-        setUserCoords({ latitude: 14.5266, longitude: 121.1553 });
+        setUserCoords(defaultFallback);
       }
     })();
-  }, []);
+  }, [userClubCoords?.latitude, userClubCoords?.longitude, isFocused]);
 
   const activeFilterCount =
     selectedDistances.length + selectedZones.length + selectedOpenness.length + selectedAreas.length + selectedDates.length;
@@ -245,14 +275,16 @@ export default function MapScreen() {
 
       {/* Search & Multi-Select Dropdown Trigger */}
       <View style={styles.searchRowContainer}>
-        <View style={[styles.searchBox, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}>
-          <Ionicons name="search" size={16} color={themeColors.textMuted} />
+        <View style={[styles.searchBox, { backgroundColor: themeColors.cardBg, borderColor: isSearchFocused ? themeColors.primary : themeColors.border }, isSearchFocused && { borderWidth: 1.5 }]}>
+          <Ionicons name="search" size={16} color={isSearchFocused ? themeColors.primary : themeColors.textMuted} />
           <TextInput
             style={[styles.searchInput, { color: themeColors.text }]}
             placeholder="Search project, club, or location..."
             placeholderTextColor={themeColors.textMuted}
             value={searchQuery}
             onChangeText={setSearchQuery}
+            onFocus={() => setIsSearchFocused(true)}
+            onBlur={() => setIsSearchFocused(false)}
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={() => setSearchQuery('')}>
@@ -352,6 +384,9 @@ export default function MapScreen() {
           style={styles.mapCanvas}
           onMarkerPress={id => navigation.navigate('EventDetail', { eventId: id })}
         />
+
+        {/* SOS Panic Button - Upper Left inside the Map */}
+        <EmergencySosButton style={styles.mapSosOverlayBtn} />
 
         <TouchableOpacity
           style={[styles.expandMapBtn, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}
@@ -595,7 +630,7 @@ export default function MapScreen() {
 }
 
 export function EventCard({ event, userCoords, onPress }: { event: RotaractEvent; userCoords?: { latitude: number; longitude: number } | null; onPress: () => void }) {
-  const { colors: c } = useTheme();
+  const { colors: c, isNightMode } = useTheme();
   let distStr = '';
   if (userCoords) {
     const meters = distanceMeters(userCoords, { latitude: event.latitude, longitude: event.longitude });
@@ -608,12 +643,12 @@ export function EventCard({ event, userCoords, onPress }: { event: RotaractEvent
         <View style={styles.badgeWrap}>
           <StatusBadge status={event.status} />
           {event.event_type === 'SERVICE_PROJECT' ? (
-            <View style={[styles.typeBadge, { backgroundColor: '#EBF9F3' }]}>
+            <View style={[styles.typeBadge, { backgroundColor: isNightMode ? '#064E3B33' : '#EBF9F3' }]}>
               <FontAwesome5 name="hands-helping" size={10} color={c.success} />
               <Text style={[styles.typeText, { color: c.success }]}>Service Project</Text>
             </View>
           ) : (
-            <View style={[styles.typeBadge, { backgroundColor: '#FFF4E5' }]}>
+            <View style={[styles.typeBadge, { backgroundColor: isNightMode ? '#78350F33' : '#FFF4E5' }]}>
               <Ionicons name="people" size={11} color={c.warning} />
               <Text style={[styles.typeText, { color: c.warning }]}>Fellowship</Text>
             </View>
@@ -627,18 +662,28 @@ export function EventCard({ event, userCoords, onPress }: { event: RotaractEvent
       <Text style={[styles.cardTitle, { color: c.text }]}>{event.title}</Text>
       <Text style={[styles.cardClub, { color: c.textMuted }]}>{event.organizing_club_name}</Text>
 
-      <View style={styles.locationRow}>
-        <Ionicons name="location-outline" size={13} color={c.primary} />
-        <Text style={[styles.cardLoc, { color: c.textMuted }]} numberOfLines={1}>
-          {event.address}, {event.city}
-          {distStr ? ` • ${distStr} away` : ''}
-        </Text>
+      <View style={styles.cardFooterRow}>
+        <View style={styles.locationRow}>
+          <Ionicons name="location-outline" size={13} color={c.primary} />
+          <Text style={[styles.cardLoc, { color: c.textMuted }]} numberOfLines={1}>
+            {event.address}, {event.city}
+            {distStr ? ` • ${distStr}` : ''}
+          </Text>
+        </View>
       </View>
     </TouchableOpacity>
   );
 }
 
 function FullscreenMapModal({ visible, events, userCoords, colors: c, onClose, onPinPress }: { visible: boolean; events: RotaractEvent[]; userCoords: { latitude: number; longitude: number } | null; colors: any; onClose: () => void; onPinPress: (ev: RotaractEvent) => void }) {
+  const [selectedEv, setSelectedEv] = useState<RotaractEvent | null>(null);
+
+  let selectedDistStr = '';
+  if (selectedEv && userCoords) {
+    const meters = distanceMeters(userCoords, { latitude: selectedEv.latitude, longitude: selectedEv.longitude });
+    selectedDistStr = formatDistance(meters);
+  }
+
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <SafeAreaProvider initialMetrics={initialWindowMetrics}>
@@ -650,16 +695,54 @@ function FullscreenMapModal({ visible, events, userCoords, colors: c, onClose, o
             </TouchableOpacity>
           </View>
 
-          <EventMap
-            events={events}
-            userCoords={userCoords}
-            style={styles.fsCanvas}
-            interactive
-            onMarkerPress={id => {
-              const ev = events.find(e => e.id === id);
-              if (ev) onPinPress(ev);
-            }}
-          />
+          <View style={{ flex: 1, position: 'relative' }}>
+            <EventMap
+              events={events}
+              userCoords={userCoords}
+              style={styles.fsCanvas}
+              interactive
+              onMarkerPress={id => {
+                const ev = events.find(e => e.id === id);
+                if (ev) setSelectedEv(ev);
+              }}
+            />
+
+            {/* SOS Panic Button - Upper Left inside Fullscreen Map */}
+            <EmergencySosButton style={styles.mapSosOverlayBtn} />
+
+            {/* Floating Pin Preview HUD */}
+            {selectedEv && (
+              <View style={[styles.pinHudCard, { backgroundColor: c.cardBg, borderColor: c.border }]}>
+                <View style={styles.pinHudHeader}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.pinHudTitle, { color: c.text }]} numberOfLines={1}>{selectedEv.title}</Text>
+                    <Text style={[styles.pinHudClub, { color: c.textMuted }]}>{selectedEv.organizing_club_name} {selectedDistStr ? `• ${selectedDistStr} away` : ''}</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => setSelectedEv(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                    <Ionicons name="close-circle" size={20} color={c.textMuted} />
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.pinHudActions}>
+                  <TouchableOpacity
+                    style={[styles.pinHudNavBtn, { backgroundColor: c.primary + '18', borderColor: c.primary + '40' }]}
+                    onPress={() => openNavigationApp(selectedEv.latitude, selectedEv.longitude, selectedEv.title, selectedEv.address)}
+                  >
+                    <Ionicons name="navigate" size={13} color={c.primary} />
+                    <Text style={[styles.pinHudNavBtnText, { color: c.primary }]}>Get Directions</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.pinHudViewBtn, { backgroundColor: c.primary }]}
+                    onPress={() => onPinPress(selectedEv)}
+                  >
+                    <Text style={styles.pinHudViewBtnText}>View Event</Text>
+                    <Ionicons name="chevron-forward" size={14} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </View>
         </SafeAreaView>
       </SafeAreaProvider>
     </Modal>
@@ -669,6 +752,14 @@ function FullscreenMapModal({ visible, events, userCoords, colors: c, onClose, o
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   header: { padding: 20, paddingBottom: 10 },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 10,
+  },
   title: { fontSize: 28, fontWeight: '800' },
   subtitle: { fontSize: 13, marginTop: 2 },
   searchRowContainer: { paddingHorizontal: 16, marginBottom: 8, gap: 8 },
@@ -682,9 +773,20 @@ const styles = StyleSheet.create({
   activePillText: { color: '#fff', fontSize: 11, fontWeight: '700' },
   clearLink: { paddingHorizontal: 8, paddingVertical: 4 },
   clearLinkText: { fontSize: 12, fontWeight: '700' },
-  mapContainer: { height: 180, marginHorizontal: 16, borderRadius: 16, overflow: 'hidden', marginBottom: 12 },
-  mapCanvas: { width: '100%', height: '100%' },
-  expandMapBtn: { position: 'absolute', bottom: 10, right: 10, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, borderWidth: 1 },
+  mapContainer: { height: 180, marginHorizontal: 16, borderRadius: 16, overflow: Platform.OS === 'ios' ? 'hidden' : undefined, marginBottom: 12, position: 'relative' },
+  mapCanvas: { width: '100%', height: '100%', borderRadius: 16 },
+  mapSosOverlayBtn: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    zIndex: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 6,
+  },
+  expandMapBtn: { position: 'absolute', bottom: 10, right: 10, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, borderWidth: 1, zIndex: 10 },
   expandMapText: { fontSize: 11, fontWeight: '700' },
   listHeader: { paddingHorizontal: 20, marginBottom: 8 },
   listHeaderTitle: { fontSize: 11, fontWeight: '800', letterSpacing: 1 },
@@ -697,14 +799,24 @@ const styles = StyleSheet.create({
   cardDate: { fontSize: 11 },
   cardTitle: { fontSize: 16, fontWeight: '700' },
   cardClub: { fontSize: 12, marginTop: 2 },
-  locationRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8 },
+  locationRow: { flexDirection: 'row', alignItems: 'center', gap: 4, flex: 1 },
   cardLoc: { fontSize: 12, flex: 1 },
+  cardFooterRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 8 },
   empty: { textAlign: 'center', marginTop: 30 },
   fsSafe: { flex: 1 },
   fsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1 },
   fsTitle: { fontSize: 17, fontWeight: '800' },
   fsCloseBtn: { padding: 4 },
   fsCanvas: { flex: 1 },
+  pinHudCard: { position: 'absolute', bottom: 20, left: 16, right: 16, padding: 14, borderRadius: 16, borderWidth: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 8 },
+  pinHudHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 },
+  pinHudTitle: { fontSize: 16, fontWeight: '800' },
+  pinHudClub: { fontSize: 12, marginTop: 2 },
+  pinHudActions: { flexDirection: 'row', gap: 10 },
+  pinHudNavBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 10, borderWidth: 1 },
+  pinHudNavBtnText: { fontSize: 12, fontWeight: '700' },
+  pinHudViewBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 10 },
+  pinHudViewBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalContent: { borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '80%', padding: 20 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },

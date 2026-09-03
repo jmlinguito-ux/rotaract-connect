@@ -11,13 +11,17 @@ import { EventCard } from '../main/MapScreen';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
+import { canMessageUser, inquiryBlockedMessage } from '../../utils/messaging';
+import { openNavigationApp } from '../../utils/navigationLauncher';
 import { AppUser } from '../../types';
 import { UserProfileModal } from '../../components/UserProfileModal';
 import UserAvatar from '../../components/UserAvatar';
-import RotaryWheel from '../../components/RotaryWheel';
 import ClubLogo from '../../components/ClubLogo';
 import { VerifiedName } from '../../components/VerifiedCheck';
 import { visibleEvents } from '../../utils/eventApproval';
+import { callNumber, sendEmail } from '../../utils/contactLinks';
+import { useToast } from '../../context/ToastContext';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ClubDetail'>;
 
@@ -26,6 +30,7 @@ export default function ClubDetailScreen({ route }: Props) {
   const { user } = useAuth();
   const { clubs, events, users, participants, getOrCreateConversation } = useData();
   const { colors: themeColors } = useTheme();
+  const { showToast } = useToast();
   const [showMembers, setShowMembers] = useState(true);
   const [selectedUser, setSelectedUser] = useState<AppUser | null>(null);
 
@@ -37,8 +42,12 @@ export default function ClubDetailScreen({ route }: Props) {
   const clubMembers = users.filter(u => u.club_id === club.id);
   const presidentUser = users.find(u => u.id === club.president_id || u.full_name === club.president_name);
 
+  const [blockedName, setBlockedName] = useState<string | null>(null);
+
   const handleChatWithMember = (targetUser: AppUser | { id: string; full_name: string }) => {
     if (!user) return;
+    const full = users.find(u => u.id === targetUser.id);
+    if (!canMessageUser(full, user)) { setBlockedName(targetUser.full_name); return; }
     const conv = getOrCreateConversation(undefined, user, targetUser.id, targetUser.full_name);
     navigation.navigate('Chat', {
       conversationId: conv.id,
@@ -53,8 +62,78 @@ export default function ClubDetailScreen({ route }: Props) {
         <View style={[styles.header, { backgroundColor: themeColors.primary + '1A' }]}>
           <ClubLogo size={80} />
           <Text style={[styles.name, { color: themeColors.text }]}>{club.club_name}</Text>
+          
+          <View
+            style={[
+              styles.charterBadge,
+              club.club_type === 'INSTITUTION_BASED'
+                ? { backgroundColor: '#EDE9FE', borderColor: '#8B5CF6' }
+                : { backgroundColor: '#E0F2FE', borderColor: '#0284C7' },
+            ]}
+          >
+            <Ionicons
+              name={club.club_type === 'INSTITUTION_BASED' ? 'school' : 'business'}
+              size={12}
+              color={club.club_type === 'INSTITUTION_BASED' ? '#6D28D9' : '#0369A1'}
+            />
+            <Text
+              style={[
+                styles.charterBadgeText,
+                { color: club.club_type === 'INSTITUTION_BASED' ? '#6D28D9' : '#0369A1' },
+              ]}
+            >
+              {club.club_type === 'INSTITUTION_BASED'
+                ? `University-Based${club.institution_name ? ` (${club.institution_name})` : ''}`
+                : 'Community-Based Club'}
+            </Text>
+          </View>
+
           <Text style={[styles.meta, { color: themeColors.textMuted }]}>{zone?.zone_name} • {club.city}, {club.province}</Text>
+          {club.meeting_address && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 }}>
+              <Ionicons name="location-outline" size={13} color={themeColors.primary} />
+              <Text style={[styles.meta, { color: themeColors.text, fontWeight: '500' }]} numberOfLines={2}>
+                {club.meeting_address}
+              </Text>
+            </View>
+          )}
+          {club.email && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+              <Ionicons name="mail-outline" size={13} color={themeColors.textMuted} />
+              <Text style={[styles.meta, { color: themeColors.textMuted }]}>{club.email}</Text>
+            </View>
+          )}
           <Text style={[styles.clubId, { color: themeColors.textMuted }]}>{club.club_code}</Text>
+
+          {/* Quick Actions Row */}
+          <View style={styles.clubActionRow}>
+            <TouchableOpacity
+              style={[styles.clubActionBtn, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}
+              onPress={() => {
+                const targetEmail = club.email || presidentUser?.email;
+                if (targetEmail) {
+                  sendEmail(targetEmail);
+                } else {
+                  showToast({
+                    type: 'info',
+                    title: 'Email Unlisted',
+                    message: 'Club/President email is not publicly listed.',
+                  });
+                }
+              }}
+            >
+              <Ionicons name="mail-outline" size={13} color={themeColors.primary} />
+              <Text style={[styles.clubActionBtnText, { color: themeColors.primary }]}>Email Club</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.clubActionBtn, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}
+              onPress={() => openNavigationApp(club.latitude, club.longitude, club.club_name, club.meeting_address || `${club.city}, ${club.province}`)}
+            >
+              <Ionicons name="navigate-outline" size={13} color={themeColors.primary} />
+              <Text style={[styles.clubActionBtnText, { color: themeColors.primary }]}>Meeting Venue</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={[styles.statsRow, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}>
@@ -89,6 +168,7 @@ export default function ClubDetailScreen({ route }: Props) {
             </View>
             <TouchableOpacity
               style={[styles.chatIconBtn, { backgroundColor: themeColors.primary + '1A', borderColor: themeColors.primary + '3D' }]}
+              hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
               onPress={(e) => {
                 e.stopPropagation();
                 const target = presidentUser || { id: club.president_id || 'u_pres', full_name: club.president_name };
@@ -127,6 +207,7 @@ export default function ClubDetailScreen({ route }: Props) {
                   </View>
                   <TouchableOpacity
                     style={[styles.chatIconBtn, { backgroundColor: themeColors.primary + '1A', borderColor: themeColors.primary + '3D' }]}
+                    hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
                     onPress={(e) => {
                       e.stopPropagation();
                       handleChatWithMember(m);
@@ -158,7 +239,14 @@ export default function ClubDetailScreen({ route }: Props) {
         onClose={() => setSelectedUser(null)}
         onStartChat={(targetUser) => handleChatWithMember(targetUser)}
       />
-    </SafeAreaView>
+          <ConfirmDialog
+        visible={!!blockedName}
+        title="Messaging unavailable"
+        message={blockedName ? inquiryBlockedMessage(blockedName) : undefined}
+        onClose={() => setBlockedName(null)}
+        confirmLabel="OK"
+      />
+</SafeAreaView>
   );
 }
 
@@ -177,9 +265,14 @@ const styles = StyleSheet.create({
   logo: { width: 80, height: 80, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
   logoText: { color: '#fff', fontSize: 32, fontWeight: '800' },
   name: { fontSize: 22, fontWeight: '800', textAlign: 'center' },
+  charterBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, borderWidth: 1, marginTop: 8 },
+  charterBadgeText: { fontSize: 11, fontWeight: '700' },
   meta: { fontSize: 13, marginTop: 4 },
-  clubId: { fontSize: 11, marginTop: 6, letterSpacing: 0.5 },
-  statsRow: { flexDirection: 'row', margin: 16, borderRadius: 14, borderWidth: 1, padding: 16 },
+  clubId: { fontSize: 12, marginTop: 2, letterSpacing: 1 },
+  clubActionRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  clubActionBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, borderWidth: 1 },
+  clubActionBtnText: { fontSize: 12, fontWeight: '700' },
+  statsRow: { flexDirection: 'row', margin: 20, marginTop: -15, borderRadius: 16, padding: 16, borderWidth: 1 },
   stat: { flex: 1, alignItems: 'center' },
   statValue: { fontSize: 22, fontWeight: '800' },
   statLabel: { fontSize: 12, marginTop: 2 },

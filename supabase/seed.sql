@@ -1,6 +1,7 @@
 -- ========================================================
 -- ROTARACT CONNECT — SEED DATA (generated from src/data/mockData.ts)
--- Run AFTER schema.sql. Idempotent (ON CONFLICT DO NOTHING).
+-- Run AFTER the migrations (supabase db reset runs this automatically).
+-- Idempotent (ON CONFLICT DO NOTHING).
 -- Every seeded account signs in with password: Password123!
 -- ========================================================
 create extension if not exists pgcrypto with schema extensions;
@@ -41,6 +42,7 @@ INSERT INTO auth.users (instance_id, id, aud, role, email, encrypted_password, e
 INSERT INTO auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at, raw_app_meta_data, raw_user_meta_data, is_super_admin, confirmation_token, recovery_token, email_change_token_new, email_change) VALUES ('00000000-0000-0000-0000-000000000000', '7f7ee25c-0226-5328-a998-c5addebbe744', 'authenticated', 'authenticated', 'hannah@example.com', extensions.crypt('Password123!', extensions.gen_salt('bf')), now(), now(), now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Hannah Reyes"}', false, '', '', '', '') ON CONFLICT (id) DO NOTHING;
 INSERT INTO auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at, raw_app_meta_data, raw_user_meta_data, is_super_admin, confirmation_token, recovery_token, email_change_token_new, email_change) VALUES ('00000000-0000-0000-0000-000000000000', '63eef85d-3e17-5a85-9766-717ad7a2c543', 'authenticated', 'authenticated', 'marco@example.com', extensions.crypt('Password123!', extensions.gen_salt('bf')), now(), now(), now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Marco Ilagan"}', false, '', '', '', '') ON CONFLICT (id) DO NOTHING;
 INSERT INTO auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at, raw_app_meta_data, raw_user_meta_data, is_super_admin, confirmation_token, recovery_token, email_change_token_new, email_change) VALUES ('00000000-0000-0000-0000-000000000000', '5bc9cbb1-b501-5858-8663-486bcaf8a56b', 'authenticated', 'authenticated', 'elijah@example.com', extensions.crypt('Password123!', extensions.gen_salt('bf')), now(), now(), now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Elijah Ponce"}', false, '', '', '', '') ON CONFLICT (id) DO NOTHING;
+INSERT INTO auth.users (instance_id, id, aud, role, email, encrypted_password, email_confirmed_at, created_at, updated_at, raw_app_meta_data, raw_user_meta_data, is_super_admin, confirmation_token, recovery_token, email_change_token_new, email_change) VALUES ('00000000-0000-0000-0000-000000000000', '4d2a9f31-77bc-5e08-9a13-0c6b41f2ae90', 'authenticated', 'authenticated', 'rhea@d3800.org', extensions.crypt('Password123!', extensions.gen_salt('bf')), now(), now(), now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Rhea Delos Santos"}', false, '', '', '', '') ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO auth.identities (id, user_id, provider_id, identity_data, provider, last_sign_in_at, created_at, updated_at) VALUES (extensions.gen_random_uuid(), 'f14a7e10-1e84-5adc-90ae-949fba6c64a2', 'f14a7e10-1e84-5adc-90ae-949fba6c64a2', '{"sub":"f14a7e10-1e84-5adc-90ae-949fba6c64a2","email":"mateo@example.com","email_verified":true,"phone_verified":false}'::jsonb, 'email', now(), now(), now()) ON CONFLICT (provider_id, provider) DO NOTHING;
 INSERT INTO auth.identities (id, user_id, provider_id, identity_data, provider, last_sign_in_at, created_at, updated_at) VALUES (extensions.gen_random_uuid(), '8ac9d561-2d0a-55be-9228-7866e89508b7', '8ac9d561-2d0a-55be-9228-7866e89508b7', '{"sub":"8ac9d561-2d0a-55be-9228-7866e89508b7","email":"andrea@example.com","email_verified":true,"phone_verified":false}'::jsonb, 'email', now(), now(), now()) ON CONFLICT (provider_id, provider) DO NOTHING;
@@ -60,6 +62,7 @@ INSERT INTO auth.identities (id, user_id, provider_id, identity_data, provider, 
 INSERT INTO auth.identities (id, user_id, provider_id, identity_data, provider, last_sign_in_at, created_at, updated_at) VALUES (extensions.gen_random_uuid(), '7f7ee25c-0226-5328-a998-c5addebbe744', '7f7ee25c-0226-5328-a998-c5addebbe744', '{"sub":"7f7ee25c-0226-5328-a998-c5addebbe744","email":"hannah@example.com","email_verified":true,"phone_verified":false}'::jsonb, 'email', now(), now(), now()) ON CONFLICT (provider_id, provider) DO NOTHING;
 INSERT INTO auth.identities (id, user_id, provider_id, identity_data, provider, last_sign_in_at, created_at, updated_at) VALUES (extensions.gen_random_uuid(), '63eef85d-3e17-5a85-9766-717ad7a2c543', '63eef85d-3e17-5a85-9766-717ad7a2c543', '{"sub":"63eef85d-3e17-5a85-9766-717ad7a2c543","email":"marco@example.com","email_verified":true,"phone_verified":false}'::jsonb, 'email', now(), now(), now()) ON CONFLICT (provider_id, provider) DO NOTHING;
 INSERT INTO auth.identities (id, user_id, provider_id, identity_data, provider, last_sign_in_at, created_at, updated_at) VALUES (extensions.gen_random_uuid(), '5bc9cbb1-b501-5858-8663-486bcaf8a56b', '5bc9cbb1-b501-5858-8663-486bcaf8a56b', '{"sub":"5bc9cbb1-b501-5858-8663-486bcaf8a56b","email":"elijah@example.com","email_verified":true,"phone_verified":false}'::jsonb, 'email', now(), now(), now()) ON CONFLICT (provider_id, provider) DO NOTHING;
+INSERT INTO auth.identities (id, user_id, provider_id, identity_data, provider, last_sign_in_at, created_at, updated_at) VALUES (extensions.gen_random_uuid(), '4d2a9f31-77bc-5e08-9a13-0c6b41f2ae90', '4d2a9f31-77bc-5e08-9a13-0c6b41f2ae90', '{"sub":"4d2a9f31-77bc-5e08-9a13-0c6b41f2ae90","email":"rhea@d3800.org","email_verified":true,"phone_verified":false}'::jsonb, 'email', now(), now(), now()) ON CONFLICT (provider_id, provider) DO NOTHING;
 
 -- Profiles
 INSERT INTO profiles (id, full_name, email, username, club_id, position, role, verification_status, avatar_url, contact_number) VALUES ('f14a7e10-1e84-5adc-90ae-949fba6c64a2', 'Mateo Ramos', 'mateo@example.com', 'mateor', '22222222-2222-2222-2222-222222222201', 'Member', 'MEMBER', 'VERIFIED', NULL, '0917 210 4488') ON CONFLICT (id) DO NOTHING;
@@ -80,6 +83,11 @@ INSERT INTO profiles (id, full_name, email, username, club_id, position, role, v
 INSERT INTO profiles (id, full_name, email, username, club_id, position, role, verification_status, avatar_url, contact_number) VALUES ('7f7ee25c-0226-5328-a998-c5addebbe744', 'Hannah Reyes', 'hannah@example.com', 'hannah', '22222222-2222-2222-2222-222222222201', 'Secretary', 'MEMBER', 'AWAITING_CLUB_VALIDATION', NULL, NULL) ON CONFLICT (id) DO NOTHING;
 INSERT INTO profiles (id, full_name, email, username, club_id, position, role, verification_status, avatar_url, contact_number) VALUES ('63eef85d-3e17-5a85-9766-717ad7a2c543', 'Marco Ilagan', 'marco@example.com', 'marco', '22222222-2222-2222-2222-222222222202', 'Member', 'MEMBER', 'VERIFIED', NULL, NULL) ON CONFLICT (id) DO NOTHING;
 INSERT INTO profiles (id, full_name, email, username, club_id, position, role, verification_status, avatar_url, contact_number) VALUES ('5bc9cbb1-b501-5858-8663-486bcaf8a56b', 'Elijah Ponce', 'elijah@example.com', 'elijah', '22222222-2222-2222-2222-222222222204', 'Vice President', 'MEMBER', 'AWAITING_ADMIN_VERIFICATION', NULL, NULL) ON CONFLICT (id) DO NOTHING;
+
+-- District Area Admin: District Admin powers scoped to their own Zone (derived
+-- from their club's zone_id). Governs Zone 3 via Rotaract Club of Valenzuela.
+INSERT INTO profiles (id, full_name, email, username, club_id, position, role, verification_status, avatar_url, contact_number) VALUES ('4d2a9f31-77bc-5e08-9a13-0c6b41f2ae90', 'Rhea Delos Santos', 'rhea@d3800.org', 'rdelossantos', '22222222-2222-2222-2222-222222222201', 'District Area Admin', 'DISTRICT_AREA_ADMIN', 'VERIFIED', NULL, '0917 555 0143') ON CONFLICT (id) DO NOTHING;
+UPDATE profiles SET system_role = 'DISTRICT_AREA_ADMIN', club_role = 'MEMBER' WHERE id = '4d2a9f31-77bc-5e08-9a13-0c6b41f2ae90';
 
 -- Link club presidents now that profiles exist
 UPDATE clubs SET president_id = '8ac9d561-2d0a-55be-9228-7866e89508b7' WHERE id = '22222222-2222-2222-2222-222222222201';
@@ -102,21 +110,11 @@ INSERT INTO events (id, title, description, event_type, status, start_datetime, 
 INSERT INTO events (id, title, description, event_type, status, start_datetime, end_datetime, latitude, longitude, address, city, organizing_club_id, organizer_user_id, co_organizer_user_ids, approved_by_club_ids, max_participants, requires_approval, allow_participant_invites, visibility, lock_leave_cutoff_hours, cover_photo, contact_number, contact_email, areas_of_focus) VALUES ('4dd3a724-95ad-504e-99db-da07c976092d', 'Typhoon Relief Repacking', 'Relief packing and distribution for families displaced by flooding across Valenzuela and the CAMANAVA area.', 'SERVICE_PROJECT', 'CANCELLED', '2026-08-24T01:00:00.000Z', '2026-08-24T07:00:00.000Z', 14.7, 120.9822, 'Valenzuela People''s Park Covered Court', 'Valenzuela', '22222222-2222-2222-2222-222222222201', '8ac9d561-2d0a-55be-9228-7866e89508b7', '{}'::uuid[], '{}'::uuid[], 80, false, true, 'VERIFIED_ROTARACTORS', 24, 'https://images.unsplash.com/photo-1469571486292-0ba58a3f068b?w=800&q=80', '+63 917 550 1120', 'relief@racvalenzuela.org', ARRAY['COMMUNITY_DEVELOPMENT']::area_of_focus[]) ON CONFLICT (id) DO NOTHING;
 
 -- Event participating clubs
-INSERT INTO event_participating_clubs (event_id, club_id) VALUES ('7280b543-08eb-52a2-b912-00e67a06d6b9', '22222222-2222-2222-2222-222222222202') ON CONFLICT DO NOTHING;
-INSERT INTO event_participating_clubs (event_id, club_id) VALUES ('144bf03f-701d-5c8b-9d02-6c26ca362fcf', '22222222-2222-2222-2222-222222222202') ON CONFLICT DO NOTHING;
-INSERT INTO event_participating_clubs (event_id, club_id) VALUES ('144bf03f-701d-5c8b-9d02-6c26ca362fcf', '22222222-2222-2222-2222-222222222203') ON CONFLICT DO NOTHING;
-INSERT INTO event_participating_clubs (event_id, club_id) VALUES ('bb935735-4116-57ad-9075-8e4fd3d33be7', '22222222-2222-2222-2222-222222222202') ON CONFLICT DO NOTHING;
-INSERT INTO event_participating_clubs (event_id, club_id) VALUES ('bb935735-4116-57ad-9075-8e4fd3d33be7', '22222222-2222-2222-2222-222222222203') ON CONFLICT DO NOTHING;
-INSERT INTO event_participating_clubs (event_id, club_id) VALUES ('cd6c41fe-4854-5a5f-af7d-89c720aea859', '22222222-2222-2222-2222-222222222204') ON CONFLICT DO NOTHING;
-INSERT INTO event_participating_clubs (event_id, club_id) VALUES ('2f8d8834-1acd-5946-9027-61e703e2b21c', '22222222-2222-2222-2222-222222222201') ON CONFLICT DO NOTHING;
-INSERT INTO event_participating_clubs (event_id, club_id) VALUES ('2f8d8834-1acd-5946-9027-61e703e2b21c', '22222222-2222-2222-2222-222222222204') ON CONFLICT DO NOTHING;
-INSERT INTO event_participating_clubs (event_id, club_id) VALUES ('2f8d8834-1acd-5946-9027-61e703e2b21c', '22222222-2222-2222-2222-222222222205') ON CONFLICT DO NOTHING;
-INSERT INTO event_participating_clubs (event_id, club_id) VALUES ('843649b8-f504-5334-a2e0-e27c37609476', '22222222-2222-2222-2222-222222222201') ON CONFLICT DO NOTHING;
-INSERT INTO event_participating_clubs (event_id, club_id) VALUES ('843649b8-f504-5334-a2e0-e27c37609476', '22222222-2222-2222-2222-222222222202') ON CONFLICT DO NOTHING;
-INSERT INTO event_participating_clubs (event_id, club_id) VALUES ('843649b8-f504-5334-a2e0-e27c37609476', '22222222-2222-2222-2222-222222222203') ON CONFLICT DO NOTHING;
-INSERT INTO event_participating_clubs (event_id, club_id) VALUES ('843649b8-f504-5334-a2e0-e27c37609476', '22222222-2222-2222-2222-222222222204') ON CONFLICT DO NOTHING;
-INSERT INTO event_participating_clubs (event_id, club_id) VALUES ('78d5164d-9f80-5fb6-9d46-648c7869c6f1', '22222222-2222-2222-2222-222222222202') ON CONFLICT DO NOTHING;
-INSERT INTO event_participating_clubs (event_id, club_id) VALUES ('4dd3a724-95ad-504e-99db-da07c976092d', '22222222-2222-2222-2222-222222222202') ON CONFLICT DO NOTHING;
+
+-- event_participating_clubs is intentionally NOT seeded. It previously held 15
+-- co-hosting partner rows; co-hosting was removed as a feature. The column now
+-- means "clubs involved" (organizing club + co-organizers' clubs) and is written
+-- by the app on create/edit, so seeding stale co-host links would misrepresent it.
 
 -- Event participants
 INSERT INTO event_participants (id, event_id, user_id, status, attendance_status, joined_at, checked_in_at, check_in_latitude, check_in_longitude, check_in_distance_m, check_in_method) VALUES ('e0a10ff0-1057-573a-a979-15d5be5a044f', '7280b543-08eb-52a2-b912-00e67a06d6b9', '8ac9d561-2d0a-55be-9228-7866e89508b7', 'JOINED', 'NOT_MARKED', '2026-08-10T00:00:00.000Z', NULL, NULL, NULL, NULL, 'SELF_GPS') ON CONFLICT (id) DO NOTHING;

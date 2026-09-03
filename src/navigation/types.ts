@@ -1,8 +1,11 @@
 import { NavigatorScreenParams } from '@react-navigation/native';
+import { RotaractEvent } from '../types';
 
 export type AuthStackParamList = {
   Login: undefined;
   Register: undefined;
+  EmailVerification: { email: string };
+  ForgotPassword: { username?: string } | undefined;
   ClubSelect: { onSelect?: (clubId: string) => void } | undefined;
   VerificationPending: undefined;
 };
@@ -20,10 +23,12 @@ export type RootStackParamList = {
   Main: NavigatorScreenParams<MainTabParamList>;
   EventDetail: { eventId: string };
   ClubDetail: { clubId: string };
-  CreateEvent: undefined;
+  CreateEvent: { templateEvent?: RotaractEvent } | undefined;
   EditEvent: { eventId: string };
   InvitePicker: { eventId: string };
   Participants: { eventId: string };
+  ClubAllocation: { eventId: string };
+  Cohosting: { eventId: string };
   MarkAttendance: { eventId: string };
   CompleteEvent: { eventId: string };
   Notifications: undefined;
@@ -35,4 +40,7 @@ export type RootStackParamList = {
   Chat: { conversationId: string; eventId?: string; recipientId: string; recipientName: string; eventTitle?: string };
   Settings: undefined;
   RoleManagement: undefined;
+  OrganizerBroadcast: { eventId: string };
+  AuditLogs: undefined;
+  CertificateScanner: undefined;
 };

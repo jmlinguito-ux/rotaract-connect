@@ -8,13 +8,15 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { zones } from '../../data/mockData';
 import { RootStackParamList } from '../../navigation/types';
+import { exportDistrictImpactCSV } from '../../utils/csvExport';
+import { AREAS_OF_FOCUS } from '../../data/areasOfFocus';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Analytics'>;
 
 export default function AnalyticsScreen({ navigation }: Props) {
   const { user } = useAuth();
   const { events, impacts, users, applications, clubs } = useData();
-  const { colors: themeColors } = useTheme();
+  const { colors: themeColors, isNightMode } = useTheme();
   const [selectedZone, setSelectedZone] = useState<string | 'ALL'>('ALL');
 
   const filteredClubs = useMemo(() => {
@@ -25,20 +27,26 @@ export default function AnalyticsScreen({ navigation }: Props) {
   const filteredEvents = useMemo(() => {
     if (selectedZone === 'ALL') return events;
     const clubIds = new Set(filteredClubs.map(c => c.id));
-    return events.filter(e => clubIds.has(e.organizing_club_id));
+    return events.filter(e => clubIds.has(e.organizing_club_id) || e.participating_club_ids?.some(id => clubIds.has(id)));
   }, [events, filteredClubs, selectedZone]);
 
+  const filteredImpacts = useMemo(() => {
+    if (selectedZone === 'ALL') return impacts;
+    const eventIds = new Set(filteredEvents.map(e => e.id));
+    return impacts.filter(i => eventIds.has(i.event_id));
+  }, [impacts, filteredEvents, selectedZone]);
+
   const totalVolunteerHours = useMemo(() => {
-    return impacts.reduce((acc, imp) => acc + imp.volunteer_hours, 0);
-  }, [impacts]);
+    return filteredImpacts.reduce((acc, imp) => acc + imp.volunteer_hours, 0);
+  }, [filteredImpacts]);
 
   const totalBeneficiaries = useMemo(() => {
-    return impacts.reduce((acc, imp) => acc + imp.beneficiaries, 0);
-  }, [impacts]);
+    return filteredImpacts.reduce((acc, imp) => acc + imp.beneficiaries, 0);
+  }, [filteredImpacts]);
 
   const totalFunds = useMemo(() => {
-    return impacts.reduce((acc, imp) => acc + imp.funds_raised, 0);
-  }, [impacts]);
+    return filteredImpacts.reduce((acc, imp) => acc + imp.funds_raised, 0);
+  }, [filteredImpacts]);
 
   const totalVerifiedMembers = useMemo(() => {
     return users.filter(u => u.verification_status === 'VERIFIED').length;
@@ -51,12 +59,52 @@ export default function AnalyticsScreen({ navigation }: Props) {
   const serviceProjectsCount = filteredEvents.filter(e => e.event_type === 'SERVICE_PROJECT').length;
   const fellowshipsCount = filteredEvents.filter(e => e.event_type === 'FELLOWSHIP').length;
 
+  const aofStats = useMemo(() => {
+    return AREAS_OF_FOCUS.map(aof => {
+      const matchingEvents = filteredEvents.filter(
+        e => e.areas_of_focus && e.areas_of_focus.includes(aof.key),
+      );
+      const matchingEventIds = new Set(matchingEvents.map(e => e.id));
+      const hours = filteredImpacts
+        .filter(i => matchingEventIds.has(i.event_id))
+        .reduce((sum, imp) => sum + imp.volunteer_hours, 0);
+
+      return {
+        ...aof,
+        projectCount: matchingEvents.length,
+        volunteerHours: hours,
+        percentOfTotal: totalVolunteerHours > 0 ? (hours / totalVolunteerHours) * 100 : 0,
+      };
+    });
+  }, [filteredEvents, filteredImpacts, totalVolunteerHours]);
+
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.bg }]} edges={['bottom']}>
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.header}>
           <Text style={[styles.title, { color: themeColors.text }]}>District Analytics</Text>
           <Text style={[styles.subtitle, { color: themeColors.textMuted }]}>District 3800 • Impact & Performance Overview</Text>
+        </View>
+
+        {/* Quick Action Toolbar */}
+        <View style={styles.actionToolbar}>
+          <TouchableOpacity
+            style={[styles.exportBtn, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}
+            onPress={() => exportDistrictImpactCSV(filteredEvents, impacts, clubs)}
+          >
+            <Ionicons name="share-outline" size={16} color={themeColors.primary} />
+            <Text style={[styles.exportBtnText, { color: themeColors.primary }]}>Export Impact (CSV)</Text>
+          </TouchableOpacity>
+
+          {(user?.role === 'DISTRICT_ADMIN' || user?.role === 'APP_ADMIN') && (
+            <TouchableOpacity
+              style={[styles.exportBtn, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}
+              onPress={() => navigation.navigate('AuditLogs')}
+            >
+              <Ionicons name="finger-print" size={16} color={themeColors.primary} />
+              <Text style={[styles.exportBtnText, { color: themeColors.primary }]}>Audit Logs</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         <TouchableOpacity
@@ -94,10 +142,60 @@ export default function AnalyticsScreen({ navigation }: Props) {
               <Text style={[styles.barLabel, { color: themeColors.textMuted }]}>Service Projects ({serviceProjectsCount})</Text>
               <Text style={[styles.barLabel, { color: themeColors.textMuted }]}>Fellowships ({fellowshipsCount})</Text>
             </View>
-            <View style={[styles.barTrack, { backgroundColor: themeColors.surface }]}>
+            <View style={[styles.barTrack, { backgroundColor: isNightMode ? 'rgba(255, 255, 255, 0.14)' : '#E2E8F0' }]}>
               <View style={[styles.barFillService, { width: `${(serviceProjectsCount / Math.max(1, filteredEvents.length)) * 100}%`, backgroundColor: themeColors.success }]} />
               <View style={[styles.barFillFellowship, { width: `${(fellowshipsCount / Math.max(1, filteredEvents.length)) * 100}%`, backgroundColor: themeColors.warning }]} />
             </View>
+          </View>
+        </View>
+
+        {/* 🌟 Rotary 7 Areas of Focus Impact Distribution */}
+        <View style={[styles.sectionCard, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}>
+          <View style={styles.aofSectionHeader}>
+            <Ionicons name="globe-outline" size={16} color={themeColors.primary} />
+            <Text style={[styles.sectionTitle, { color: themeColors.text, marginBottom: 0 }]}>
+              Rotary 7 Areas of Focus Impact
+            </Text>
+          </View>
+          <Text style={[styles.aofSectionSub, { color: themeColors.textMuted }]}>
+            Distribution of service projects & verified hours across Rotary International focus areas
+          </Text>
+
+          <View style={styles.aofList}>
+            {aofStats.map(item => (
+              <View key={item.key} style={styles.aofRow}>
+                <View style={styles.aofTopRow}>
+                  <View style={[styles.aofIconWrap, { backgroundColor: themeColors.primary + '18' }]}>
+                    <Ionicons name={item.icon} size={15} color={themeColors.primary} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.aofLabel, { color: themeColors.text }]}>{item.label}</Text>
+                  </View>
+                  <View style={styles.aofMetricsGroup}>
+                    <View style={[styles.aofProjectsBadge, { backgroundColor: isNightMode ? themeColors.bg : themeColors.surface }]}>
+                      <Text style={[styles.aofProjectsText, { color: themeColors.text }]}>
+                        {item.projectCount} proj{item.projectCount === 1 ? '' : 's'}
+                      </Text>
+                    </View>
+                    <Text style={[styles.aofHoursText, { color: themeColors.primary }]}>
+                      {item.volunteerHours} hrs
+                    </Text>
+                  </View>
+                </View>
+                {/* Horizontal Progress Bar */}
+                <View style={[styles.aofTrack, { backgroundColor: isNightMode ? 'rgba(255, 255, 255, 0.14)' : '#E2E8F0' }]}>
+                  <View
+                    style={[
+                      styles.aofFill,
+                      {
+                        backgroundColor: themeColors.primary,
+                        width: `${Math.min(100, Math.max(item.projectCount > 0 ? 8 : 0, Math.round(item.percentOfTotal)))}%`,
+                      },
+                    ]}
+                  />
+                </View>
+              </View>
+            ))}
           </View>
         </View>
 
@@ -164,9 +262,22 @@ function MetricCard({ title, value, icon, color, colors: c }: { title: string; v
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   container: { padding: 20, paddingBottom: 40 },
-  header: { marginBottom: 16 },
-  title: { fontSize: 26, fontWeight: '800' },
-  subtitle: { fontSize: 13, marginTop: 2 },
+  header: { marginBottom: 12 },
+  title: { fontSize: 24, fontWeight: '800' },
+  subtitle: { fontSize: 13, marginTop: 4 },
+  actionToolbar: { flexDirection: 'row', gap: 10, marginBottom: 12 },
+  exportBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  exportBtnText: { fontSize: 12, fontWeight: '700' },
   scoreboardBanner: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 14, borderWidth: 1, marginBottom: 16 },
   scoreboardIconWrap: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#FFFDF0', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#FFD700' },
   scoreboardTitle: { fontSize: 14, fontWeight: '800' },
@@ -187,6 +298,19 @@ const styles = StyleSheet.create({
   barTrack: { height: 12, borderRadius: 6, flexDirection: 'row', overflow: 'hidden' },
   barFillService: { height: '100%' },
   barFillFellowship: { height: '100%' },
+  aofSectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
+  aofSectionSub: { fontSize: 12, marginBottom: 14, lineHeight: 16 },
+  aofList: { gap: 12 },
+  aofRow: { gap: 6 },
+  aofTopRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  aofIconWrap: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  aofLabel: { fontSize: 12, fontWeight: '700' },
+  aofMetricsGroup: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  aofProjectsBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  aofProjectsText: { fontSize: 10, fontWeight: '700' },
+  aofHoursText: { fontSize: 11, fontWeight: '800' },
+  aofTrack: { height: 6, borderRadius: 3, overflow: 'hidden', marginLeft: 36 },
+  aofFill: { height: '100%', borderRadius: 3 },
   queueRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
   queueItem: { flex: 1, alignItems: 'center' },
   queueVal: { fontSize: 24, fontWeight: '800' },

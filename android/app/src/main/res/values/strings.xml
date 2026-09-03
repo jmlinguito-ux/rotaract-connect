@@ -1,3 +1,4 @@
 <resources>
-  <string name="app_name">rotaract-connect</string>
+  <string name="app_name">Rotaract Connect</string>
+  <string name="expo_runtime_version">1.0.0</string>
 </resources>

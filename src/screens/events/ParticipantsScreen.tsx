@@ -7,11 +7,14 @@ import { colors } from '../../theme/colors';
 import { RootStackParamList } from '../../navigation/types';
 import { useData } from '../../context/DataContext';
 import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
 import { formatDistance } from '../../utils/checkIn';
 import { DeclineReasonModal } from '../../components/DeclineReasonModal';
 import { UserProfileModal } from '../../components/UserProfileModal';
 import UserAvatar from '../../components/UserAvatar';
 import VerifiedCheck, { VerifiedName } from '../../components/VerifiedCheck';
+import { canManageAttendance } from '../../utils/eventApproval';
+import { EventAttendanceScannerModal } from '../../components/events/EventAttendanceScannerModal';
 import { AppUser } from '../../types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Participants'>;
@@ -19,7 +22,8 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Participants'>;
 export default function ParticipantsScreen({ route, navigation }: Props) {
   const { eventId } = route.params;
   const { user } = useAuth();
-  const { events, users, participantsFor, approveParticipant, declineParticipant, getOrCreateConversation } = useData();
+  const { colors: themeColors, isNightMode } = useTheme();
+  const { events, users, participantsFor, approveParticipant, declineParticipant, checkIn, checkOut, getOrCreateConversation } = useData();
   const event = events.find(e => e.id === eventId);
   const all = participantsFor(eventId);
   const joined = all.filter(p => p.status === 'JOINED');
@@ -33,8 +37,9 @@ export default function ParticipantsScreen({ route, navigation }: Props) {
   } | null>(null);
 
   const [selectedUser, setSelectedUser] = useState<AppUser | null>(null);
+  const [scannerVisible, setScannerVisible] = useState(false);
 
-  const isOrganizer = user?.id === event?.organizer_user_id || (user?.role === 'CLUB_PRESIDENT' && user?.club_id === event?.organizing_club_id);
+  const isOrganizer = canManageAttendance(event, user);
 
   const sections = [
     ...(organizerUser ? [{ key: 'organizer', title: 'EVENT ORGANIZER', data: [{ isOrganizerCard: true, user: organizerUser }] }] : []),
@@ -49,20 +54,80 @@ export default function ParticipantsScreen({ route, navigation }: Props) {
     Alert.alert('Declined', 'Join request declined and reason sent to participant inbox.');
   };
 
-  const handleStartChat = (target: AppUser) => {
+  const handleManualCheckIn = (participantId: string, participantName: string) => {
+    Alert.alert(
+      'Manual Check-In Override',
+      `Confirm manual attendance for ${participantName}? This records verified on-site participation on their service portfolio.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Confirm Check-In',
+          style: 'default',
+          onPress: () => {
+            checkIn(participantId, {
+              checkedInAt: new Date().toISOString(),
+              latitude: event?.latitude ?? 0,
+              longitude: event?.longitude ?? 0,
+              distanceMeters: 0,
+              recordedBy: 'ORGANIZER',
+            });
+            Alert.alert('Checked In', `${participantName} marked as attended.`);
+          },
+        },
+      ],
+    );
+  };
+
+  const handleManualCheckOut = (participantId: string, participantName: string) => {
+    Alert.alert(
+      'Manual Check-Out Override',
+      `Check out ${participantName} from this event?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Confirm Check-Out',
+          style: 'destructive',
+          onPress: () => {
+            checkOut(participantId, {
+              checkedOutAt: new Date().toISOString(),
+              recordedBy: 'ORGANIZER',
+            });
+            Alert.alert('Checked Out', `${participantName} marked as departed.`);
+          },
+        },
+      ],
+    );
+  };
+
+  const handleStartChat = (target: AppUser, aboutEvent?: boolean) => {
+    setSelectedUser(null);
     if (!user) return;
-    const conv = getOrCreateConversation(eventId, user, target.id, target.full_name, event?.title);
+    const ctxEventId = aboutEvent ? event?.id : undefined;
+    const conv = getOrCreateConversation(ctxEventId, user, target.id, target.full_name, aboutEvent ? event?.title : undefined);
     navigation.navigate('Chat', {
       conversationId: conv.id,
-      eventId: event?.id,
+      eventId: ctxEventId,
       recipientId: target.id,
       recipientName: target.full_name,
-      eventTitle: event?.title,
+      eventTitle: aboutEvent ? event?.title : undefined,
     });
   };
 
   return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.bg }]} edges={['bottom']}>
+      {isOrganizer && (
+        <View style={styles.topToolbar}>
+          <TouchableOpacity
+            style={[styles.scanQrBtn, { backgroundColor: themeColors.primary }]}
+            onPress={() => setScannerVisible(true)}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="qr-code" size={18} color="#fff" />
+            <Text style={styles.scanQrBtnText}>Scan QR Event Passes</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       <FlatList
         data={sections.flatMap(s => [
           { type: 'header', title: s.title, key: s.key + 'h' } as any,
@@ -71,29 +136,32 @@ export default function ParticipantsScreen({ route, navigation }: Props) {
         keyExtractor={i => i.key}
         contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
         renderItem={({ item }) => {
-          if (item.type === 'header') return <Text style={styles.sectionTitle}>{item.title}</Text>;
+          if (item.type === 'header') return <Text style={[styles.sectionTitle, { color: themeColors.primary }]}>{item.title}</Text>;
 
           if (item.data.isOrganizerCard) {
             const org = item.data.user;
             return (
               <TouchableOpacity
-                style={[styles.row, styles.organizerRow]}
+                style={[
+                  styles.row,
+                  { backgroundColor: isNightMode ? themeColors.cardBg : '#FFFDF0', borderColor: '#FCD34D' },
+                ]}
                 onPress={() => setSelectedUser(org)}
                 activeOpacity={0.8}
               >
                 <UserAvatar user={org} size={40} />
                 <View style={{ flex: 1 }}>
                   <View style={styles.nameBadgeRow}>
-                    <Text style={styles.name}>{org.full_name}</Text>
+                    <Text style={[styles.name, { color: themeColors.text }]}>{org.full_name}</Text>
                     <VerifiedCheck user={org} size={13} />
-                    <View style={styles.orgBadgePill}>
-                      <Ionicons name="star" size={10} color="#B45309" />
-                      <Text style={styles.orgBadgeText}>Organizer</Text>
+                    <View style={[styles.orgBadgePill, { backgroundColor: isNightMode ? themeColors.surface : '#FEF3C7', borderColor: isNightMode ? themeColors.border : '#FCD34D' }]}>
+                      <Ionicons name="star" size={10} color={isNightMode ? themeColors.warning : '#B45309'} />
+                      <Text style={[styles.orgBadgeText, { color: isNightMode ? themeColors.warning : '#B45309' }]}>Organizer</Text>
                     </View>
                   </View>
-                  <Text style={styles.meta}>{org.club_name} • {org.position}</Text>
+                  <Text style={[styles.meta, { color: themeColors.textMuted }]}>{org.club_name} • {org.position}</Text>
                 </View>
-                <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+                <Ionicons name="chevron-forward" size={16} color={themeColors.textMuted} />
               </TouchableOpacity>
             );
           }
@@ -104,7 +172,7 @@ export default function ParticipantsScreen({ route, navigation }: Props) {
 
           return (
             <TouchableOpacity
-              style={styles.row}
+              style={[styles.row, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}
               onPress={() => u && setSelectedUser(u)}
               activeOpacity={0.8}
             >
@@ -116,24 +184,24 @@ export default function ParticipantsScreen({ route, navigation }: Props) {
                 </View>
               )}
               <View style={{ flex: 1 }}>
-                <VerifiedName user={u} textStyle={styles.name} numberOfLines={1} checkSize={13} />
-                <Text style={styles.meta}>{u?.club_name} • {u?.position}</Text>
+                <VerifiedName user={u} textStyle={[styles.name, { color: themeColors.text }]} numberOfLines={1} checkSize={13} />
+                <Text style={[styles.meta, { color: themeColors.textMuted }]}>{u?.club_name} • {u?.position}</Text>
                 {isCheckedIn ? (
                   <View style={styles.checkInBadge}>
-                    <Ionicons name="checkmark-circle" size={12} color={colors.success} />
-                    <Text style={styles.checkInBadgeText}>
+                    <Ionicons name="checkmark-circle" size={12} color={themeColors.success} />
+                    <Text style={[styles.checkInBadgeText, { color: themeColors.success }]}>
                       Checked-In {p.check_in_distance_m ? `(${formatDistance(p.check_in_distance_m)})` : ''}
                     </Text>
                   </View>
                 ) : p.attendance_status === 'ABSENT' ? (
-                  <Text style={[styles.attendance, { color: colors.danger }]}>ABSENT</Text>
+                  <Text style={[styles.attendance, { color: themeColors.danger }]}>ABSENT</Text>
                 ) : null}
               </View>
 
               {isOrganizer && p.status === 'PENDING' && user ? (
                 <View style={{ flexDirection: 'row', gap: 6 }}>
                   <TouchableOpacity
-                    style={styles.approveBtn}
+                    style={[styles.approveBtn, { backgroundColor: themeColors.success }]}
                     onPress={() => {
                       approveParticipant(p.id, user);
                       Alert.alert('Approved!', `${u?.full_name ?? 'Participant'} approved.`);
@@ -142,19 +210,35 @@ export default function ParticipantsScreen({ route, navigation }: Props) {
                     <Ionicons name="checkmark" size={14} color="#fff" />
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={styles.declineBtn}
+                    style={[styles.declineBtn, { borderColor: themeColors.danger }]}
                     onPress={() => setDeclineTarget({ participantId: p.id, applicantName: u?.full_name })}
                   >
-                    <Ionicons name="close" size={14} color={colors.danger} />
+                    <Ionicons name="close" size={14} color={themeColors.danger} />
                   </TouchableOpacity>
                 </View>
+              ) : isOrganizer && p.status === 'JOINED' && isCheckedIn && !p.checked_out_at ? (
+                <TouchableOpacity
+                  style={[styles.manualCheckInBtn, { backgroundColor: isNightMode ? themeColors.surface : '#F1F5F9', borderColor: themeColors.border }]}
+                  onPress={() => handleManualCheckOut(p.id, u?.full_name ?? 'Participant')}
+                >
+                  <Ionicons name="log-out-outline" size={14} color={themeColors.textMuted} />
+                  <Text style={[styles.manualCheckInText, { color: themeColors.textMuted }]}>Check Out</Text>
+                </TouchableOpacity>
+              ) : isOrganizer && p.status === 'JOINED' && !isCheckedIn ? (
+                <TouchableOpacity
+                  style={[styles.manualCheckInBtn, { backgroundColor: themeColors.primary + '18', borderColor: themeColors.primary }]}
+                  onPress={() => handleManualCheckIn(p.id, u?.full_name ?? 'Participant')}
+                >
+                  <Ionicons name="checkbox-outline" size={14} color={themeColors.primary} />
+                  <Text style={[styles.manualCheckInText, { color: themeColors.primary }]}>Check In</Text>
+                </TouchableOpacity>
               ) : (
-                <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+                <Ionicons name="chevron-forward" size={16} color={themeColors.textMuted} />
               )}
             </TouchableOpacity>
           );
         }}
-        ListEmptyComponent={<Text style={styles.empty}>No participants yet.</Text>}
+        ListEmptyComponent={<Text style={[styles.empty, { color: themeColors.textMuted }]}>No participants yet.</Text>}
       />
 
       <DeclineReasonModal
@@ -169,14 +253,47 @@ export default function ParticipantsScreen({ route, navigation }: Props) {
         visible={!!selectedUser}
         targetUser={selectedUser}
         onClose={() => setSelectedUser(null)}
+        eventContext={event ? { eventId: event.id, eventTitle: event.title } : undefined}
         onStartChat={handleStartChat}
       />
+
+      {/* 📷 QR Attendance Scanner Modal */}
+      {event && (
+        <EventAttendanceScannerModal
+          visible={scannerVisible}
+          event={event}
+          onClose={() => setScannerVisible(false)}
+        />
+      )}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
+  topToolbar: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 4,
+  },
+  scanQrBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    borderRadius: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+  },
+  scanQrBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
   sectionTitle: { fontSize: 11, fontWeight: '800', color: colors.primary, letterSpacing: 0.8, marginTop: 14, marginBottom: 8 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: colors.border, marginBottom: 8 },
   organizerRow: { backgroundColor: '#FFFDF0', borderColor: '#FCD34D' },
@@ -190,7 +307,9 @@ const styles = StyleSheet.create({
   attendance: { fontSize: 11, fontWeight: '800', marginTop: 3, letterSpacing: 0.5 },
   checkInBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
   checkInBadgeText: { fontSize: 11, fontWeight: '700', color: colors.success },
-  approveBtn: { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.success, alignItems: 'center', justifyContent: 'center' },
-  declineBtn: { width: 34, height: 34, borderRadius: 17, borderWidth: 1, borderColor: colors.danger, alignItems: 'center', justifyContent: 'center' },
-  empty: { textAlign: 'center', color: colors.textMuted, marginTop: 40 },
+  approveBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.success, alignItems: 'center', justifyContent: 'center' },
+  declineBtn: { width: 32, height: 32, borderRadius: 16, borderWidth: 1, borderColor: colors.danger, alignItems: 'center', justifyContent: 'center' },
+  manualCheckInBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1 },
+  manualCheckInText: { fontSize: 12, fontWeight: '700' },
+  empty: { textAlign: 'center', marginTop: 40, fontSize: 13 },
 });

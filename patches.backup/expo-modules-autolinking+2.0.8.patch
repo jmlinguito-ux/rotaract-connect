@@ -1,0 +1,15 @@
+diff --git a/node_modules/expo-modules-autolinking/scripts/android/autolinking_implementation.gradle b/node_modules/expo-modules-autolinking/scripts/android/autolinking_implementation.gradle
+index 98c404e..e855fd4 100644
+--- a/node_modules/expo-modules-autolinking/scripts/android/autolinking_implementation.gradle
++++ b/node_modules/expo-modules-autolinking/scripts/android/autolinking_implementation.gradle
+@@ -174,8 +174,9 @@ class ExpoAutolinkingManager {
+   }
+ 
+   static private String[] convertOptionsToCommandArgs(String command, Map options) {
++    def nodeExecutable = System.getProperty("NODE_BINARY") ?: "node"
+     String[] args = [
+-      'node',
++      nodeExecutable,
+       '--no-warnings',
+       '--eval',
+       // Resolve the `expo` > `expo-modules-autolinking` chain from the project root

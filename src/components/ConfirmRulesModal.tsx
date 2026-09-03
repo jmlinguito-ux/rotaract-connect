@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, Modal, StyleSheet, TouchableOpacity, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
+import { useTheme } from '../context/ThemeContext';
 
 interface ConfirmRulesModalProps {
   visible: boolean;
@@ -31,6 +32,7 @@ export function ConfirmRulesModal({
   onConfirm,
   onCancel,
 }: ConfirmRulesModalProps) {
+  const { colors: themeColors, isNightMode } = useTheme();
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
       <KeyboardAvoidingView
@@ -42,33 +44,33 @@ export function ConfirmRulesModal({
           keyboardShouldPersistTaps="handled"
           bounces={false}
         >
-          <View style={styles.card}>
+          <View style={[styles.card, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border, borderWidth: isNightMode ? 1 : 0 }]}>
             <View style={styles.header}>
-              <View style={styles.iconCircle}>
-                <Ionicons name="lock-closed" size={20} color={colors.warning} />
+              <View style={[styles.iconCircle, { backgroundColor: isNightMode ? '#78350F44' : '#FEF3C7' }]}>
+                <Ionicons name="lock-closed" size={20} color={themeColors.warning} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.title}>{title}</Text>
-                <Text style={styles.sub}>{intro}</Text>
+                <Text style={[styles.title, { color: themeColors.text }]}>{title}</Text>
+                <Text style={[styles.sub, { color: themeColors.textMuted }]}>{intro}</Text>
               </View>
             </View>
 
-            <Text style={styles.sectionLabel}>WHAT YOU WON'T BE ABLE TO CHANGE</Text>
+            <Text style={[styles.sectionLabel, { color: themeColors.primary }]}>WHAT YOU WON'T BE ABLE TO CHANGE</Text>
 
             <ScrollView style={styles.ruleScroll} contentContainerStyle={styles.ruleList}>
               {rules.map(rule => (
                 <View key={rule} style={styles.ruleRow}>
-                  <Ionicons name="ellipse" size={6} color={colors.textMuted} style={{ marginTop: 6 }} />
-                  <Text style={styles.ruleText}>{rule}</Text>
+                  <Ionicons name="ellipse" size={6} color={themeColors.textMuted} style={{ marginTop: 6 }} />
+                  <Text style={[styles.ruleText, { color: themeColors.text }]}>{rule}</Text>
                 </View>
               ))}
             </ScrollView>
 
             <View style={styles.actions}>
               <TouchableOpacity style={styles.cancelBtn} onPress={onCancel}>
-                <Text style={styles.cancelText}>Go Back</Text>
+                <Text style={[styles.cancelText, { color: themeColors.textMuted }]}>Go Back</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.confirmBtn} onPress={onConfirm}>
+              <TouchableOpacity style={[styles.confirmBtn, { backgroundColor: themeColors.primary }]} onPress={onConfirm}>
                 <Ionicons name={confirmIcon} size={15} color="#fff" />
                 <Text style={styles.confirmText}>{confirmLabel}</Text>
               </TouchableOpacity>

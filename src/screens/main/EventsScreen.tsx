@@ -8,9 +8,10 @@ import {
   TextInput,
   ScrollView,
   Modal,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useIsFocused } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { EventCard } from './MapScreen';
@@ -21,7 +22,10 @@ import { useTheme } from '../../context/ThemeContext';
 import { useAppRefreshControl } from '../../hooks/useAppRefreshControl';
 import { AreaOfFocus, RotaractEvent } from '../../types';
 
-import { visibleEvents } from '../../utils/eventApproval';
+import { visibleEvents, canApproveEvent } from '../../utils/eventApproval';
+import * as Location from 'expo-location';
+import { checkInWindow } from '../../utils/checkIn';
+import { LocationPermissionModal } from '../../components/location/LocationPermissionModal';
 
 type ParticipationOption = 'JOINED' | 'ATTENDED' | 'INVITED' | 'MY' | 'APPROVALS';
 type StatusOption = 'ONGOING' | 'SCHEDULED' | 'RECRUITING' | 'COMPLETED';
@@ -66,7 +70,8 @@ const ALL_AREAS: AreaOfFocus[] = [
 
 export default function EventsScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { events, participants, invitations, userStats, users } = useData();
+  const isFocused = useIsFocused();
+  const { events, participants, invitations, userStats, users, clubs, dataLoaded } = useData();
   const { user } = useAuth();
   const { colors: themeColors } = useTheme();
   const refreshControl = useAppRefreshControl();
@@ -85,8 +90,34 @@ export default function EventsScreen() {
   // Calendar State
   const [calendarMonthDate, setCalendarMonthDate] = useState<Date>(new Date());
   const [selectedDateStr, setSelectedDateStr] = useState<string | null>(null);
+  const [locationModalVisible, setLocationModalVisible] = useState(false);
+  const [isGpsEnabled, setIsGpsEnabled] = useState(true);
 
-  const stats = user ? userStats(user.id) : { joined: 0, hours: 0 };
+  React.useEffect(() => {
+    if (!isFocused) return;
+
+    (async () => {
+      try {
+        const { status } = await Location.getForegroundPermissionsAsync();
+        const services = await Location.hasServicesEnabledAsync();
+        setIsGpsEnabled(status === 'granted' && services);
+      } catch {
+        setIsGpsEnabled(false);
+      }
+    })();
+  }, [isFocused]);
+
+  const hasActiveEventToday = useMemo(() => {
+    if (!user) return false;
+    const now = new Date();
+    return events.some(e => {
+      const isJoined = participants.some(p => p.event_id === e.id && p.user_id === user.id && p.status === 'JOINED' && !p.checked_in_at && p.attendance_status !== 'ATTENDED');
+      if (!isJoined) return false;
+      return checkInWindow(e, now).state === 'OPEN';
+    });
+  }, [events, participants, user]);
+
+  const stats = useMemo(() => (user ? userStats(user.id) : { joined: 0, hours: 0 }), [user, userStats]);
 
   const myInviteCount = useMemo(() => {
     if (!user) return 0;
@@ -109,8 +140,14 @@ export default function EventsScreen() {
       const isJoined = participants.some(p => p.event_id === e.id && p.user_id === user.id && p.status === 'JOINED');
       const isInvited = invitations.some(i => i.event_id === e.id && i.invited_user_id === user.id && i.status === 'PENDING');
       const isPendingApproval = e.status === 'PENDING_APPROVAL';
+      // An event waiting on THIS user's sign-off belongs under "My" even when
+      // another club organised it: as a partner or co-organising club's President
+      // they are not on the organising team, so isMyClubOrOrganized misses it and
+      // the event became unreachable from every tab except All — while still
+      // counting toward the pending-approvals badge.
+      const needsMyApproval = canApproveEvent(e, user, users, clubs);
 
-      if (agendaTab === 'MY') return isMyClubOrOrganized;
+      if (agendaTab === 'MY') return isMyClubOrOrganized || needsMyApproval;
       if (agendaTab === 'JOINED') return isJoined;
       if (agendaTab === 'INVITED') return isInvited;
       return isMyClubOrOrganized || isJoined || isInvited || isPendingApproval;
@@ -160,7 +197,9 @@ export default function EventsScreen() {
       const isPendingApproval = e.status === 'PENDING_APPROVAL';
 
       let include = false;
-      if (agendaTab === 'MY') include = isMyClubOrOrganized;
+      // Must match the list filter above, or a day shows no count while the list
+      // for that same day has the event.
+      if (agendaTab === 'MY') include = isMyClubOrOrganized || canApproveEvent(e, user, users, clubs);
       else if (agendaTab === 'JOINED') include = isJoined;
       else if (agendaTab === 'INVITED') include = isInvited;
       else include = isMyClubOrOrganized || isJoined || isInvited || isPendingApproval;
@@ -179,6 +218,12 @@ export default function EventsScreen() {
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.bg }]} edges={['top']}>
+      {!dataLoaded && (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color={themeColors.primary} />
+        </View>
+      )}
+      {dataLoaded && (<>
       {/* Header Bar */}
       <View style={styles.header}>
         <View>
@@ -289,6 +334,23 @@ export default function EventsScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* 📍 Active Event Today & Location Disabled Notice */}
+      {!isGpsEnabled && hasActiveEventToday && (
+        <TouchableOpacity
+          style={[styles.locationNoticeBanner, { backgroundColor: themeColors.surface, borderColor: '#FCD34D' }]}
+          onPress={() => setLocationModalVisible(true)}
+        >
+          <Ionicons name="warning" size={16} color="#D97706" />
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.locationNoticeTitle, { color: '#B45309' }]}>Location Services Off</Text>
+            <Text style={[styles.locationNoticeSub, { color: themeColors.textMuted }]}>
+              Enable GPS for 1-tap verified check-in on event day.
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={14} color="#D97706" />
+        </TouchableOpacity>
+      )}
+
       {/* Calendar View Component */}
       {viewMode === 'CALENDAR' && (
         <View style={[styles.calendarContainer, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}>
@@ -382,12 +444,39 @@ export default function EventsScreen() {
         }
       />
 
+      {/* 📍 Location Permission Modal */}
+      <LocationPermissionModal
+        visible={locationModalVisible}
+        onClose={() => setLocationModalVisible(false)}
+        onPermissionGranted={() => setIsGpsEnabled(true)}
+      />
+
+      </>)}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
+  locationNoticeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  locationNoticeTitle: {
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  locationNoticeSub: {
+    fontSize: 11,
+    marginTop: 1,
+    lineHeight: 15,
+  },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20, paddingBottom: 8 },
   headerTitle: { fontSize: 28, fontWeight: '800' },
   headerSubtitle: { fontSize: 13, marginTop: 2 },

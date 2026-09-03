@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { MainTabParamList } from './types';
@@ -16,10 +16,13 @@ const Tab = createBottomTabNavigator<MainTabParamList>();
 
 export default function MainTabs() {
   const { user } = useAuth();
-  const { notificationsFor } = useData();
+  const { unreadInboxCountForUser } = useData();
   const { colors: themeColors } = useTheme();
 
-  const unreadCount = user ? notificationsFor(user.id).filter(n => !n.is_read).length : 0;
+  // The badge lookup now resolves against a precomputed unread-count map (O(1)),
+  // but still memoize it so it only re-runs when the underlying data changes —
+  // not on every tab re-render.
+  const unreadCount = useMemo(() => (user ? unreadInboxCountForUser(user.id) : 0), [user, unreadInboxCountForUser]);
 
   return (
     <Tab.Navigator
@@ -52,7 +55,7 @@ export default function MainTabs() {
         options={{
           title: 'Inbox',
           tabBarBadge: unreadCount > 0 ? unreadCount : undefined,
-          tabBarBadgeStyle: { backgroundColor: colors.primary, color: '#fff', fontSize: 11, fontWeight: '800' },
+          tabBarBadgeStyle: { backgroundColor: themeColors.primary, color: '#fff', fontSize: 11, fontWeight: '800' },
         }}
       />
       <Tab.Screen name="ProfileTab" component={ProfileScreen} options={{ title: 'Profile' }} />

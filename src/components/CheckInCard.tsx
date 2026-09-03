@@ -3,6 +3,7 @@ import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'rea
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { colors } from '../theme/colors';
+import { useTheme } from '../context/ThemeContext';
 import { EventParticipant, RotaractEvent } from '../types';
 import { useData } from '../context/DataContext';
 import { useAuth } from '../context/AuthContext';
@@ -14,12 +15,14 @@ import {
   formatDistance,
   punctuality,
 } from '../utils/checkIn';
+import { formatTime } from '../utils/timeFormat';
 
-const timeText = (d: Date) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const timeText = (d: Date) => formatTime(d);
 
 export function CheckInCard({ event, participant }: { event: RotaractEvent; participant: EventParticipant }) {
   const { checkIn } = useData();
   const { user } = useAuth();
+  const { colors: themeColors, isNightMode } = useTheme();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -30,11 +33,11 @@ export function CheckInCard({ event, participant }: { event: RotaractEvent; part
     const at = new Date(participant.checked_in_at);
     const { onTime, lateByMinutes } = punctuality(event, at);
     return (
-      <View style={[styles.card, styles.cardDone]}>
-        <Ionicons name="checkmark-circle" size={22} color={colors.success} />
+      <View style={[styles.card, styles.cardDone, { backgroundColor: isNightMode ? themeColors.cardBg : themeColors.success + '14', borderColor: themeColors.success + '44' }]}>
+        <Ionicons name="checkmark-circle" size={22} color={themeColors.success} />
         <View style={{ flex: 1 }}>
-          <Text style={styles.doneTitle}>Checked in at {timeText(at)}</Text>
-          <Text style={styles.doneSub}>
+          <Text style={[styles.doneTitle, { color: themeColors.text }]}>Checked in at {timeText(at)}</Text>
+          <Text style={[styles.doneSub, { color: themeColors.textMuted }]}>
             {onTime ? 'On time' : `Late by ${lateByMinutes} min`}
             {participant.check_in_distance_m !== undefined &&
               ` • ${formatDistance(participant.check_in_distance_m)} from venue`}
@@ -101,26 +104,26 @@ export function CheckInCard({ event, participant }: { event: RotaractEvent; part
   const disabled = windowState.state !== 'OPEN' || busy;
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, { backgroundColor: themeColors.cardBg, borderColor: themeColors.border }]}>
       <View style={styles.header}>
-        <Ionicons name="location" size={18} color={colors.primary} />
-        <Text style={styles.title}>Check in at the venue</Text>
+        <Ionicons name="location" size={18} color={themeColors.primary} />
+        <Text style={[styles.title, { color: themeColors.text }]}>Check in at the venue</Text>
       </View>
 
-      <Text style={styles.rule}>
+      <Text style={[styles.rule, { color: themeColors.textMuted }]}>
         Opens {CHECK_IN_OPENS_MINUTES_BEFORE} minutes before the start, and you must be within{' '}
         {CHECK_IN_RADIUS_M} m of {event.address}.
       </Text>
 
       {windowState.state === 'BEFORE' && (
-        <Text style={styles.gate}>
+        <Text style={[styles.gate, { color: themeColors.primary }]}>
           Check-in opens at {timeText(windowState.opensAt)}.
         </Text>
       )}
-      {windowState.state === 'CLOSED' && <Text style={styles.gate}>This event has ended.</Text>}
+      {windowState.state === 'CLOSED' && <Text style={[styles.gate, { color: themeColors.textMuted }]}>This event has ended.</Text>}
 
       <TouchableOpacity
-        style={[styles.button, disabled && styles.buttonDisabled]}
+        style={[styles.button, { backgroundColor: themeColors.primary }, disabled && styles.buttonDisabled]}
         onPress={handleCheckIn}
         disabled={disabled}
         accessibilityRole="button"

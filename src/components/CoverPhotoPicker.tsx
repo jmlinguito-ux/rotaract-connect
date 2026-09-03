@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, Alert, Modal, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Alert, Modal, ScrollView, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { colors } from '../theme/colors';
+import { useTheme } from '../context/ThemeContext';
 import { BottomSheet } from './BottomSheet';
+import { useAuth } from '../context/AuthContext';
+import { uploadPublicImage } from '../services/storage';
 
 interface CoverPhotoPickerProps {
   value?: string;
@@ -18,7 +21,10 @@ const PRESET_PHOTOS = [
 ];
 
 export function CoverPhotoPicker({ value, onChange }: CoverPhotoPickerProps) {
+  const { colors: themeColors, isNightMode } = useTheme();
   const [presetModalVisible, setPresetModalVisible] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const { user } = useAuth();
 
   const handleLaunchDevicePicker = async () => {
     try {
@@ -40,10 +46,23 @@ export function CoverPhotoPicker({ value, onChange }: CoverPhotoPickerProps) {
         allowsEditing: true,
         aspect: [16, 9],
         quality: 0.8,
+        base64: true,
       });
 
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        onChange(result.assets[0].uri);
+      if (result.canceled || !result.assets?.length) return;
+      const a = result.assets[0];
+      // Upload immediately and hand back the persistent Supabase URL, so the event
+      // row stores a real URL rather than a local file:// uri that never syncs.
+      setUploading(true);
+      try {
+        const url = await uploadPublicImage('event-covers', user?.id ?? 'covers', {
+          uri: a.uri, base64: a.base64, mimeType: a.mimeType, fileName: a.fileName,
+        });
+        onChange(url);
+      } catch (err: any) {
+        Alert.alert('Upload Failed', err?.message || 'Could not upload the cover photo. Please try again.');
+      } finally {
+        setUploading(false);
       }
     } catch (error) {
       setPresetModalVisible(true);
@@ -65,53 +84,72 @@ export function CoverPhotoPicker({ value, onChange }: CoverPhotoPickerProps) {
   return (
     <View style={styles.container}>
       {value ? (
-        <View style={styles.previewCard}>
+        <View style={[styles.previewCard, { backgroundColor: themeColors.surface, borderColor: themeColors.border }]}>
           <Image source={{ uri: value }} style={styles.previewImage} resizeMode="cover" />
-          <View style={styles.actionRow}>
-            <TouchableOpacity style={styles.changeBtn} onPress={handleOpenOptions}>
+          <View style={[styles.actionRow, { backgroundColor: themeColors.cardBg, borderTopColor: themeColors.border }]}>
+            <TouchableOpacity style={[styles.changeBtn, { backgroundColor: themeColors.primary }]} onPress={handleOpenOptions}>
               <Ionicons name="image-outline" size={14} color="#fff" />
               <Text style={styles.changeText}>Reposition / Change</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.removeBtn} onPress={() => onChange(undefined)}>
-              <Ionicons name="trash-outline" size={14} color={colors.danger} />
-              <Text style={styles.removeText}>Remove</Text>
+            <TouchableOpacity style={[styles.removeBtn, { borderColor: themeColors.danger }]} onPress={() => onChange(undefined)}>
+              <Ionicons name="trash-outline" size={14} color={themeColors.danger} />
+              <Text style={[styles.removeText, { color: themeColors.danger }]}>Remove</Text>
             </TouchableOpacity>
           </View>
         </View>
       ) : (
-        <TouchableOpacity style={styles.uploadPlaceholder} onPress={handleOpenOptions}>
-          <View style={styles.uploadIconCircle}>
-            <Ionicons name="camera-outline" size={24} color={colors.primary} />
-          </View>
-          <Text style={styles.uploadTitle}>Upload Event Cover Photo</Text>
-          <Text style={styles.uploadSub}>Tap to select, crop, zoom, and reposition photo</Text>
+        <TouchableOpacity
+          style={[
+            styles.uploadPlaceholder,
+            {
+              borderColor: themeColors.primary + '40',
+              backgroundColor: themeColors.primary + (isNightMode ? '14' : '0A'),
+            },
+          ]}
+          onPress={handleOpenOptions}
+          disabled={uploading}
+        >
+          {uploading ? (
+            <>
+              <ActivityIndicator color={themeColors.primary} />
+              <Text style={[styles.uploadTitle, { color: themeColors.primary, marginTop: 8 }]}>Uploading photo…</Text>
+            </>
+          ) : (
+            <>
+              <View style={[styles.uploadIconCircle, { backgroundColor: themeColors.primary + '18' }]}>
+                <Ionicons name="camera-outline" size={24} color={themeColors.primary} />
+              </View>
+              <Text style={[styles.uploadTitle, { color: themeColors.primary }]}>Upload Event Cover Photo</Text>
+              <Text style={[styles.uploadSub, { color: themeColors.textMuted }]}>Tap to select, crop, zoom, and reposition photo</Text>
+            </>
+          )}
         </TouchableOpacity>
       )}
 
       <BottomSheet
         visible={presetModalVisible}
         onClose={() => setPresetModalVisible(false)}
-        cardStyle={styles.modalCard}
+        cardStyle={[styles.modalCard, { backgroundColor: themeColors.cardBg }]}
       >
         <View style={styles.modalHeader}>
-          <Text style={styles.modalTitle}>Choose Preset Cover Photo</Text>
+          <Text style={[styles.modalTitle, { color: themeColors.text }]}>Choose Preset Cover Photo</Text>
           <TouchableOpacity onPress={() => setPresetModalVisible(false)}>
-            <Ionicons name="close" size={22} color={colors.text} />
+            <Ionicons name="close" size={22} color={themeColors.text} />
           </TouchableOpacity>
         </View>
         <ScrollView contentContainerStyle={styles.presetGrid}>
           {PRESET_PHOTOS.map(p => (
             <TouchableOpacity
               key={p.id}
-              style={styles.presetItem}
+              style={[styles.presetItem, { borderColor: themeColors.border }]}
               onPress={() => {
                 onChange(p.url);
                 setPresetModalVisible(false);
               }}
             >
               <Image source={{ uri: p.url }} style={styles.presetImage} resizeMode="cover" />
-              <Text style={styles.presetTitle}>{p.title}</Text>
+              <Text style={[styles.presetTitle, { color: themeColors.text, backgroundColor: themeColors.surface }]}>{p.title}</Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
